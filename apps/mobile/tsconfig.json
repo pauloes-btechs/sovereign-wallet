@@ -6,7 +6,11 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "noEmit": true,
-    "types": []
+    "types": [],
+    "paths": {
+      "@sovereign/harness-regtest/simulated-client": ["../../harness/regtest/src/simulated-client.ts"]
+    }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/preview.tsx"]
 }

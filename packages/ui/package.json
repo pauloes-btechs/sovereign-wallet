@@ -12,6 +12,14 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./copy": {
+      "types": "./dist/copy.d.ts",
+      "default": "./dist/copy.js"
+    },
+    "./totals": {
+      "types": "./dist/totals.d.ts",
+      "default": "./dist/totals.js"
+    },
     "./styles.css": "./src/styles.css"
   },
   "files": ["dist"],

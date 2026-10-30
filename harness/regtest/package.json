@@ -5,6 +5,12 @@
   "description": "Regtest integration harness. Ark money-flow tests run the Mode A adapter against a simulated Wavelength client that implements the pinned SDK contract; live-daemon wiring is added when upstream container images are verified.",
   "license": "MIT",
   "type": "module",
+  "exports": {
+    "./simulated-client": {
+      "types": "./src/simulated-client.ts",
+      "default": "./src/simulated-client.ts"
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

@@ -16,6 +16,8 @@ import {
   EntryKindSend,
   EntryPhaseConfirmed,
   EntryPhaseWaitingForPayment,
+  EntryRequestTypeLightning,
+  EntryRequestTypeOnchain,
   EntryStatusComplete,
   EntryStatusFailed,
   EntryStatusPending,
@@ -360,6 +362,24 @@ export class SimulatedWavelengthClient implements WavelengthClient {
       amountSat: prepared.amountSat,
       feeSat: prepared.expectedFeeSat,
       counterparty: prepared.rail === SendRailLightning ? 'swap-server' : 'chain',
+      // The daemon echoes the user-recognizable request that created the
+      // entry — send reconciliation correlates on-chain sends through it.
+      request:
+        prepared.rail === SendRailLightning
+          ? {
+              type: EntryRequestTypeLightning,
+              lightningInvoice: '',
+              paymentHash: prepared.paymentHash,
+              onchainAddress: '',
+              arkAddress: '',
+            }
+          : {
+              type: EntryRequestTypeOnchain,
+              lightningInvoice: '',
+              paymentHash: '',
+              onchainAddress: prepared.destinationSummary,
+              arkAddress: '',
+            },
       createdAt: '2026-10-30T00:00:00Z',
       updatedAt: '2026-10-30T00:00:00Z',
       note: prepared.invoiceDescription,
