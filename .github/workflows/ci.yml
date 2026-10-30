@@ -91,9 +91,24 @@ jobs:
           # read access for node TLS certs + macaroons (mode 0600 in the
           # containers). bitcoind's datadir is excluded: it belongs to the
           # container's non-root user and is never read from the host.
-          for d in lnd-alice lnd-bob litd-lnd litd-lit; do
+          for d in lnd-alice lnd-bob litd-lit; do
             sudo chown -R "$(id -u):$(id -g)" "harness/regtest/data/$d"
           done
+          # litd's terminal healthcheck does not cover its embedded LND,
+          # whose tls.cert can land well after `compose --wait` returns
+          # (bootstrap's own wait window then expires: ENOENT tls.cert).
+          # Wait up to 180s for the cert before handing litd-lnd to the
+          # runner user; on timeout, fail loudly so the compose-logs step
+          # captures the embedded-LND state.
+          for i in $(seq 1 90); do
+            [ -f harness/regtest/data/litd-lnd/tls.cert ] && break
+            sleep 2
+          done
+          [ -f harness/regtest/data/litd-lnd/tls.cert ] || {
+            echo "::error::litd embedded-LND tls.cert did not appear within 180s; see compose logs above"
+            exit 1
+          }
+          sudo chown -R "$(id -u):$(id -g)" harness/regtest/data/litd-lnd
       - name: Harness container logs (on failure)
         if: failure()
         run: docker compose -f harness/regtest/docker-compose.yml logs --tail=200
