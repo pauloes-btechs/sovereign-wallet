@@ -25,7 +25,7 @@ export type IntentState =
 
 export interface Attempt {
   readonly at: string;
-  readonly result: 'dispatched' | 'timeout' | 'rejected' | 'unknown';
+  readonly result: 'dispatched' | 'timeout' | 'rejected' | 'resolved' | 'unknown';
   readonly backendRef?: string;
 }
 
@@ -90,22 +90,43 @@ export function dispatch(intent: PaymentIntent, backendRef: string, at: string):
 /** Result of checking the backend for a recovery-time intent. */
 export type ReconcileResult =
   | { status: 'settled'; backendRef: string }
+  | { status: 'failed'; reason?: string; backendRef?: string }
   | { status: 'unknown' }
   | { status: 'not-found' };
+
+/** Manual resolution of a needs-recovery intent (the only way out of that state). */
+export type RecoveryOutcome =
+  | { status: 'settled'; backendRef: string }
+  | { status: 'failed'; reason?: string };
 
 /**
  * Recovery rule: reconcile — never re-dispatch. A settled backend result
  * transitions to 'settled'; an unknown result transitions to 'needs-recovery'
- * with a user-facing explanation downstream.
+ * with a user-facing explanation downstream. A definitive backend failure
+ * transitions to 'failed'. 'not-found' means nothing ever reached the backend,
+ * so the intent returns to 'authorized' for one safe, re-signed retry.
  */
 export function reconcile(intent: PaymentIntent, result: ReconcileResult, at: string): PaymentIntent {
   if (intent.state !== 'signing' && intent.state !== 'in-flight') {
     throw new InvalidTransitionError(intent.state, 'reconcile');
   }
-  const attempts: Attempt[] = [...intent.attempts, { at, result: 'unknown' }];
+  const attemptResult: Attempt['result'] =
+    result.status === 'settled'
+      ? 'resolved'
+      : result.status === 'failed'
+        ? 'rejected'
+        : 'unknown';
+  const attempts: Attempt[] = [...intent.attempts, { at, result: attemptResult }];
   switch (result.status) {
     case 'settled':
       return { ...intent, state: 'settled', backendRef: result.backendRef, attempts };
+    case 'failed':
+      return {
+        ...intent,
+        state: 'failed',
+        backendRef: result.backendRef ?? intent.backendRef,
+        attempts,
+      };
     case 'not-found':
       // Nothing ever reached the backend; a single authorized retry is safe
       // because the dispatch was never observed. The caller re-signs first.
@@ -117,8 +138,27 @@ export function reconcile(intent: PaymentIntent, result: ReconcileResult, at: st
 
 /** Terminal local failure (policy rejection, validation failure). */
 export function fail(intent: PaymentIntent): PaymentIntent {
-  if (intent.state !== 'authorized' && intent.state !== 'signing') {
+  if (intent.state !== 'draft' && intent.state !== 'authorized' && intent.state !== 'signing') {
     throw new InvalidTransitionError(intent.state, 'fail');
   }
   return { ...intent, state: 'failed' };
+}
+
+/**
+ * Manual path out of 'needs-recovery' after a human (or a dedicated recovery
+ * flow) has established what actually happened to the payment.
+ */
+export function resolveNeedsRecovery(
+  intent: PaymentIntent,
+  outcome: RecoveryOutcome,
+  at: string,
+): PaymentIntent {
+  if (intent.state !== 'needs-recovery') {
+    throw new InvalidTransitionError(intent.state, 'resolve');
+  }
+  const attempts: Attempt[] = [...intent.attempts, { at, result: 'resolved' }];
+  if (outcome.status === 'settled') {
+    return { ...intent, state: 'settled', backendRef: outcome.backendRef, attempts };
+  }
+  return { ...intent, state: 'failed', attempts };
 }

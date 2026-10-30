@@ -1,7 +1,7 @@
 {
   "name": "@sovereign/wallet-core",
   "version": "0.1.0",
-  "description": "Engine-agnostic wallet domain: capability-declaring provider contract. The UI renders what the active provider declares — never inferred parity.",
+  "description": "Engine-agnostic wallet domain layer: capability-declaring provider contract, payment-intent state machine, fees, per-provider balances and history.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,6 +17,9 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "@sovereign/payments": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
