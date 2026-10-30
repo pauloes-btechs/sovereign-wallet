@@ -6,18 +6,29 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "tsc --noEmit && tsc -p tsconfig.preview.json --noEmit",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@sovereign/payments": "workspace:*",
+    "@sovereign/ui": "workspace:*",
     "@sovereign/wallet-core": "workspace:*",
+    "@sovereign/wavelength-adapter": "workspace:*",
     "react": "^19.3.0",
     "react-native": "0.88.1"
   },
   "devDependencies": {
+    "@sovereign/harness-regtest": "workspace:*",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "^19.1.1",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "jsdom": "^27.4.0",
+    "react-dom": "^19.3.1",
+    "react-native-web": "0.21.4",
     "typescript": "^5.7.2",
+    "vite": "^7.3.7",
     "vitest": "^3.0.5"
   }
 }
