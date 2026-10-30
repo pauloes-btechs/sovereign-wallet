@@ -155,6 +155,9 @@ export {
   EntryPhaseWaitingForConfirmation,
   // WalletState is a value (a const object of string literals), not just a type.
   WalletState,
+  // Maps raw daemon walletState (proto number) to the SDK string union; used
+  // by the gateway transport as the numeric fallback of its name mapping.
+  walletStateFromProto,
   EntryFailureCodeTimedOut,
   EntryFailureCodeExpired,
   EntryFailureCodeRefunded,
