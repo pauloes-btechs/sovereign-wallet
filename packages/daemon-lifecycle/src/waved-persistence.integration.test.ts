@@ -197,8 +197,9 @@ describe('waved wallet persistence across a simulated upgrade (real daemon)', ()
     const created = await v1.gateway.createWallet({ password: walletPassword });
     expect(created.mnemonic).toHaveLength(24);
     const identity1 = created.identityPubKey;
-    // 33-byte compressed secp256k1 key: `02` + 32 bytes hex (verified wire shape).
-    expect(identity1).toMatch(/^02[0-9a-f]{64}$/);
+    // 33-byte compressed secp256k1 key: 02/03 parity byte + 32 bytes hex.
+    // Parity is key material, not a fixed prefix — accept both.
+    expect(identity1).toMatch(/^(02|03)[0-9a-f]{64}$/);
 
     // CREATE implies an unlocked session (verified: an unlock call right
     // after create fails `FailedPrecondition: wallet is not locked`); the
