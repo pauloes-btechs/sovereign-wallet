@@ -77,6 +77,9 @@ jobs:
       - run: go install github.com/btcsuite/btcd@v0.26.2
       - name: Boot the regtest harness
         run: docker compose -f harness/regtest/docker-compose.yml up -d --wait
+      - name: Harness container logs (on failure)
+        if: failure()
+        run: docker compose -f harness/regtest/docker-compose.yml logs --tail=200
       - name: Bootstrap seed chain + node wallets (spawns the btcd filter server)
         run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm harness:bootstrap
       - name: Run integration suite
