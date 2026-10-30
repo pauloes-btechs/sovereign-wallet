@@ -67,7 +67,8 @@ export interface ResolvedLitdConfig {
   readonly confLines: readonly string[];
   readonly confPath: string;
   readonly litDir: string;
-  /** litd's own self-signed TLS cert (generated on first boot). */
+  /** TLS cert presented by the wallet-facing gRPC endpoint. Integrated: the
+   * embedded LND's (`<lnddir>/tls.cert`); remote: litd's own proxy cert. */
   readonly tlsCertPath: string;
   /** Admin macaroon path. Integrated: inside the lnd dir. Remote: as given. */
   readonly adminMacaroonPath: string;
@@ -124,13 +125,20 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
   const secretLines: string[] = [];
 
   // --- litd top-level surface (loopback only) ---
-  publicLines.push('rpclisten=127.0.0.1:' + rpcPort);
+  // NOTE: litd's own config has NO `rpclisten` option (verified against the
+  // pinned binary's --help and its config-load error). The wallet-facing
+  // gRPC listener belongs to the embedded LND (`lnd.rpclisten` in
+  // integrated mode) or to litd's TLS proxy (`httpslisten`, remote mode).
   publicLines.push('httpslisten=127.0.0.1:' + uiPort);
   publicLines.push(`tlscertpath=${tlsCertPath}`);
   publicLines.push(`tlskeypath=${litDir}/tls.key`);
   publicLines.push('tlsextraip=127.0.0.1');
 
   let adminMacaroonPath: string;
+  // TLS cert presented by the wallet-facing gRPC endpoint, and the port it
+  // serves on — mode-dependent, resolved below.
+  let rpcTlsCertPath: string;
+  let servingRpcPort: number;
 
   if (options.backend.kind === 'remote-lnd') {
     // Remote mode: litd starts no local lnd — it proxies the user's node.
@@ -140,23 +148,42 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
     publicLines.push(`remote.lnd.macaroonpath=${options.backend.macaroonPath}`);
     publicLines.push(`remote.lnd.tlscertpath=${options.backend.tlsCertPath}`);
     adminMacaroonPath = options.backend.macaroonPath;
+    // litd's remote-mode proxy serves the LND API on its own TLS listener
+    // (httpslisten), presenting litd's certificate.
+    rpcTlsCertPath = tlsCertPath;
+    servingRpcPort = uiPort;
   } else {
     // Integrated mode: lnd runs in-process, flags prefixed with `lnd.`.
     publicLines.push('lnd-mode=integrated');
     publicLines.push(`network=${options.network}`);
+    // Autopilot has no Loop server addresses on regtest/signet, so its
+    // start() aborts BEFORE the embedded LND is ever launched (same failure
+    // the compose harness hit). Disable it on those networks.
+    if (options.network === 'regtest' || options.network === 'signet') {
+      publicLines.push('autopilot.disable=true');
+    }
     publicLines.push(`lnd.lnddir=${lndDir}`);
-    // In-process lnd keeps its own listeners loopback-only; the wallet-facing
-    // surface is the litd mux above.
+    // The embedded LND serves the raw wallet gRPC (LND protos, LND
+    // macaroons, LND TLS) on its own listener — the surface the compose
+    // harness exposes and the pinned-protobuf clients speak.
+    publicLines.push(`lnd.rpclisten=127.0.0.1:${rpcPort}`);
+    // In-process lnd keeps its other listeners loopback-only.
     publicLines.push('lnd.listen=127.0.0.1:0');
     publicLines.push('lnd.norest=true');
     publicLines.push('lnd.tlsextraip=127.0.0.1');
     adminMacaroonPath = `${lndDir}/data/chain/bitcoin/${NETWORK_FLAG[options.network]}/admin.macaroon`;
+    // LND defaults its TLS to <lnddir>/tls.cert — the root cert the gRPC
+    // client pins.
+    rpcTlsCertPath = `${lndDir}/tls.cert`;
+    servingRpcPort = rpcPort;
 
     if (options.backend.kind === 'neutrino') {
       publicLines.push('lnd.bitcoin.active=true');
       publicLines.push(`lnd.bitcoin.${NETWORK_FLAG[options.network]}=true`);
+      // bitcoin.node=neutrino alone selects the Neutrino backend — lnd has
+      // no `neutrino.active` option (the embedded v0.21.5 parser rejects
+      // it as unknown; verified via local launch).
       publicLines.push('lnd.bitcoin.node=neutrino');
-      publicLines.push('lnd.neutrino.active=true');
       for (const peer of options.backend.peers ?? []) {
         publicLines.push(`lnd.neutrino.connect=${peer}`);
       }
@@ -188,10 +215,10 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
     confLines: [...publicLines, ...secretLines],
     confPath,
     litDir,
-    tlsCertPath,
+    tlsCertPath: rpcTlsCertPath,
     adminMacaroonPath,
     rpcHost: '127.0.0.1',
-    rpcPort,
+    rpcPort: servingRpcPort,
   };
 }
 

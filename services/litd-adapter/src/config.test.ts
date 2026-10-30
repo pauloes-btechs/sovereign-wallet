@@ -17,8 +17,12 @@ const NEUTRINO_REGTEST = {
 describe('buildLitdConfig — integrated neutrino (desktop default)', () => {
   const config = buildLitdConfig(NEUTRINO_REGTEST);
 
-  it('binds the RPC mux and UI to loopback only', () => {
-    expect(config.confLines).toContain('rpclisten=127.0.0.1:10009');
+  it('binds the wallet gRPC (lnd.rpclisten) and UI to loopback only', () => {
+    // litd's own config has NO rpclisten option — the wallet-facing gRPC
+    // belongs to the embedded LND, under the `lnd.` prefix (the pinned
+    // binary rejects a bare `rpclisten` line with "unknown option").
+    expect(config.confLines).toContain('lnd.rpclisten=127.0.0.1:10009');
+    expect(config.confLines.some((l) => l.startsWith('rpclisten='))).toBe(false);
     expect(config.confLines).toContain('httpslisten=127.0.0.1:8443');
     expect(config.rpcHost).toBe('127.0.0.1');
     expect(config.rpcPort).toBe(DEFAULT_RPC_PORT);
@@ -26,7 +30,7 @@ describe('buildLitdConfig — integrated neutrino (desktop default)', () => {
 
   it('honors custom ports', () => {
     const custom = buildLitdConfig({ ...NEUTRINO_REGTEST, rpcPort: 20009, uiPort: 9443 });
-    expect(custom.confLines).toContain('rpclisten=127.0.0.1:20009');
+    expect(custom.confLines).toContain('lnd.rpclisten=127.0.0.1:20009');
     expect(custom.confLines).toContain('httpslisten=127.0.0.1:9443');
     expect(custom.rpcPort).toBe(20009);
     expect(DEFAULT_UI_PORT).toBe(8443);
@@ -38,7 +42,20 @@ describe('buildLitdConfig — integrated neutrino (desktop default)', () => {
     expect(config.confLines).toContain('lnd.bitcoin.active=true');
     expect(config.confLines).toContain('lnd.bitcoin.regtest=true');
     expect(config.confLines).toContain('lnd.bitcoin.node=neutrino');
-    expect(config.confLines).toContain('lnd.neutrino.active=true');
+    // bitcoin.node=neutrino selects the backend; neutrino.active is not an
+    // lnd option (embedded v0.21.5 parser rejects it as unknown).
+    expect(config.confLines.some((l) => l.startsWith('lnd.neutrino.active'))).toBe(false);
+  });
+
+  it('disables autopilot on regtest (it aborts startup before lnd launches)', () => {
+    expect(config.confLines).toContain('autopilot.disable=true');
+    // Mainnet keeps autopilot available (Loop server addresses exist there).
+    const mainnet = buildLitdConfig({
+      ...NEUTRINO_REGTEST,
+      network: 'mainnet' as const,
+      backend: { kind: 'neutrino' as const },
+    });
+    expect(mainnet.confLines.some((l) => l.startsWith('autopilot.'))).toBe(false);
   });
 
   it('connects neutrino to the given compact-filter peers', () => {
@@ -50,7 +67,9 @@ describe('buildLitdConfig — integrated neutrino (desktop default)', () => {
     expect(config.adminMacaroonPath).toBe(
       '/home/user/.sovereign/litd-test/lnd/data/chain/bitcoin/regtest/admin.macaroon',
     );
-    expect(config.tlsCertPath).toBe('/home/user/.sovereign/litd-test/tls.cert');
+    expect(config.tlsCertPath).toBe(
+      '/home/user/.sovereign/litd-test/lnd/tls.cert',
+    );
   });
 
   it('passes only --lit-dir on argv, keeping secrets out of ps output', () => {
@@ -124,6 +143,14 @@ describe('buildLitdConfig — remote LND', () => {
     expect(config.confLines.some((l) => l.startsWith('network='))).toBe(false);
     expect(config.confLines.some((l) => l.startsWith('lnd.'))).toBe(false);
     expect(config.adminMacaroonPath).toBe('/secure/admin.macaroon');
+  });
+
+  it('exposes litd\'s TLS proxy as the wallet-facing gRPC surface', () => {
+    // No local lnd: the LND API is proxied through litd's httpslisten TLS
+    // listener, so connection options point at the UI port and litd's own
+    // cert — NOT at the remote node's files.
+    expect(config.rpcPort).toBe(DEFAULT_UI_PORT);
+    expect(config.tlsCertPath).toBe('/data/litd-remote/tls.cert');
   });
 });
 

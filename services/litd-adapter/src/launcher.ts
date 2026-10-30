@@ -51,9 +51,15 @@ export async function launchLitdSidecar(launch: LaunchLitdOptions): Promise<Laun
   // generate config without launching: binding a fixed default here collides
   // with anything already listening on it — a user's own LND, or the regtest
   // harness's docker port mapping for lnd-alice in CI (both observed).
-  const options: LitdSidecarOptions = launch.options.rpcPort === undefined
-    ? { ...launch.options, rpcPort: await pickFreeLoopbackPort() }
-    : launch.options;
+  // Free-pick BOTH serving ports when unpinned: rpcPort is the wallet-facing
+  // gRPC in integrated mode (lnd.rpclisten); uiPort is litd's proxy/UI port —
+  // the wallet-facing gRPC in remote mode. Kernel-assigned ports avoid
+  // colliding with anything already listening on the defaults.
+  const options: LitdSidecarOptions = {
+    ...launch.options,
+    rpcPort: launch.options.rpcPort ?? await pickFreeLoopbackPort(),
+    uiPort: launch.options.uiPort ?? await pickFreeLoopbackPort(),
+  };
   const config = buildLitdConfig(options);
   assertLoopbackOnly(config);
 
