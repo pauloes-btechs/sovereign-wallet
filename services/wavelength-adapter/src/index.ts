@@ -195,3 +195,16 @@ export type {
   SweepWalletResult,
 } from './sdk/index.js';
 export { FORCE_UNROLL_ACK, WavelengthError, errorMessage } from './sdk/index.js';
+
+// Local-daemon gateway transport: the browser/webview WavelengthClient that
+// talks to the waved daemon's HTTP/JSON gateway over loopback. The Tauri
+// sidecar owns the waved process; this is the in-app transport for it.
+export {
+  WavedGatewayClient,
+  createWavedGatewayClient,
+  mapWireBalance,
+  parseWireBalance,
+  normalizeGatewayInfo,
+  DEFAULT_ACTIVITY_POLL_MS,
+} from './sdk/gateway-client.js';
+export type { WavedGatewayClientOptions, WireBalance } from './sdk/gateway-client.js';
