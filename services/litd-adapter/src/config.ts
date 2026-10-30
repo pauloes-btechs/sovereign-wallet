@@ -140,9 +140,24 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
   let rpcTlsCertPath: string;
   let servingRpcPort: number;
 
+  // litd's own network must match the backend's: in remote mode lndclient's
+  // compatibility check compares litd's configured network against the remote
+  // node's actual network and fails with "network mismatch" when they differ
+  // (litd defaults to mainnet when no network is set). Verified against the
+  // pinned v0.17.8 startup path (setupFullLNDClient → NewLndServices).
+  publicLines.push(`network=${options.network}`);
+
+  // Autopilot has no Loop server addresses on regtest/signet, so its start()
+  // aborts — in BOTH modes (integrated: before the embedded LND launches;
+  // remote: before the Lit sub-server starts). Verified against the pinned
+  // v0.17.8 binary in both modes. Disable it on those networks.
+  if (options.network === 'regtest' || options.network === 'signet') {
+    publicLines.push('autopilot.disable=true');
+  }
+
   if (options.backend.kind === 'remote-lnd') {
     // Remote mode: litd starts no local lnd — it proxies the user's node.
-    // The remote node's network governs; do not pass network or lnd.* flags.
+    // The remote node's network governs; pass no lnd.* flags.
     publicLines.push('lnd-mode=remote');
     publicLines.push(`remote.lnd.rpcserver=${options.backend.rpcServer}`);
     publicLines.push(`remote.lnd.macaroonpath=${options.backend.macaroonPath}`);
@@ -155,13 +170,6 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
   } else {
     // Integrated mode: lnd runs in-process, flags prefixed with `lnd.`.
     publicLines.push('lnd-mode=integrated');
-    publicLines.push(`network=${options.network}`);
-    // Autopilot has no Loop server addresses on regtest/signet, so its
-    // start() aborts BEFORE the embedded LND is ever launched (same failure
-    // the compose harness hit). Disable it on those networks.
-    if (options.network === 'regtest' || options.network === 'signet') {
-      publicLines.push('autopilot.disable=true');
-    }
     publicLines.push(`lnd.lnddir=${lndDir}`);
     // The embedded LND serves the raw wallet gRPC (LND protos, LND
     // macaroons, LND TLS) on its own listener — the surface the compose

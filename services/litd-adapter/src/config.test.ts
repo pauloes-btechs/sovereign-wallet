@@ -139,8 +139,10 @@ describe('buildLitdConfig — remote LND', () => {
     expect(config.confLines).toContain('remote.lnd.tlscertpath=/secure/tls.cert');
   });
 
-  it('emits no network or local-lnd flags (the remote node governs)', () => {
-    expect(config.confLines.some((l) => l.startsWith('network='))).toBe(false);
+  it("emits the litd network and no local-lnd flags (the remote node governs)", () => {
+    // lndclient's compatibility check compares litd's configured network
+    // against the remote node's actual network — it must match the backend.
+    expect(config.confLines).toContain('network=mainnet');
     expect(config.confLines.some((l) => l.startsWith('lnd.'))).toBe(false);
     expect(config.adminMacaroonPath).toBe('/secure/admin.macaroon');
   });
