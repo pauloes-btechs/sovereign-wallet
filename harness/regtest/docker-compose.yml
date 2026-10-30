@@ -1,0 +1,64 @@
+# Regtest harness — Docker compose stub.
+# Full wiring (bitcoind + 2xLND with pre-mined regtest coins) lands with the
+# Mode B integration-test task. Autonomous financial testing is regtest/signet
+# ONLY — never mainnet (spec-locked).
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:27.0
+    command: [
+      "-regtest",
+      "-fallbackfee=0.0002",
+      "-mintxfee=0.0001",
+      "-txindex",
+      "-rpcbind=0.0.0.0",
+      "-rpcallowip=0.0.0.0/0",
+      "-rpcuser=regtest",
+      "-rpcpassword=regtest" # local-only harness credential, never a real secret
+    ]
+    ports:
+      - "18443:18443"
+    volumes:
+      - bitcoind-data:/home/bitcoin/.bitcoin
+
+  lnd-alice:
+    image: lightninglabs/lnd:0.21.0-beta
+    command: [
+      "--noseedbackup",
+      "--norest",
+      "--regtest",
+      "--bitcoin.active",
+      "--bitcoin.node=bitcoind",
+      "--bitcoind.rpchost=bitcoind",
+      "--bitcoind.rpcuser=regtest",
+      "--bitcoind.rpcpass=regtest",
+      "--bitcoind.zmqpubrawblock=tcp://bitcoind:28332",
+      "--bitcoind.zmqpubrawtx=tcp://bitcoind:28333"
+    ]
+    depends_on:
+      - bitcoind
+    ports:
+      - "9735:9735"
+      - "10009:10009"
+
+  lnd-bob:
+    image: lightninglabs/lnd:0.21.0-beta
+    command: [
+      "--noseedbackup",
+      "--norest",
+      "--regtest",
+      "--bitcoin.active",
+      "--bitcoin.node=bitcoind",
+      "--bitcoind.rpchost=bitcoind",
+      "--bitcoind.rpcuser=regtest",
+      "--bitcoind.rpcpass=regtest",
+      "--bitcoind.zmqpubrawblock=tcp://bitcoind:28332",
+      "--bitcoind.zmqpubrawtx=tcp://bitcoind:28333"
+    ]
+    depends_on:
+      - bitcoind
+    ports:
+      - "9736:9736"
+      - "10010:10009"
+
+volumes:
+  bitcoind-data:
