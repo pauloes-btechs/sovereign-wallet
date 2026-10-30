@@ -90,6 +90,10 @@ importers:
         version: 3.2.7(@types/node@26.6.6)(terser@5.51.2)
 
   packages/wallet-core:
+    dependencies:
+      '@sovereign/payments':
+        specifier: workspace:*
+        version: link:../payments
     devDependencies:
       typescript:
         specifier: ^5.7.2
