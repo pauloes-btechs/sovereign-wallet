@@ -58,6 +58,11 @@ export function createWavedSidecar(config: WavedSidecarConfig): SidecarLifecycle
       `--datadir=${dataDir}`,
       '--rpc.listenaddr=127.0.0.1:10029', // waved loopback defaults, pinned
       '--rpc.gateway.listenaddr=127.0.0.1:10031',
+      // The gateway 403s any browser origin not on this list (verified waved
+      // v0.2.0). Cover both Tauri 2 webview origins: tauri://localhost on
+      // macOS/Linux, http://tauri.localhost on Windows.
+      '--rpc.gateway.allowedorigins=tauri://localhost',
+      '--rpc.gateway.allowedorigins=http://tauri.localhost',
       `--network=${network}`,
       // The default lwwallet backend requires an Esplora URL. Fresh-install
       // boot uses an unreachable loopback placeholder until wallet setup
