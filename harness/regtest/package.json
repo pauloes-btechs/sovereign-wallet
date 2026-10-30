@@ -1,0 +1,22 @@
+{
+  "name": "@sovereign/harness-regtest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Regtest integration harness. Ark money-flow tests run the Mode A adapter against a simulated Wavelength client that implements the pinned SDK contract; live-daemon wiring is added when upstream container images are verified.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sovereign/payments": "workspace:*",
+    "@sovereign/wallet-core": "workspace:*",
+    "@sovereign/wavelength-adapter": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
+  }
+}
