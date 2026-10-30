@@ -34,6 +34,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Workspace packages publish their .d.ts under dist/ — build first or
+      # typecheck fails with TS2307 on a fresh checkout (no dist to resolve).
+      - run: pnpm build
       - run: pnpm typecheck
 
   build-and-test:
