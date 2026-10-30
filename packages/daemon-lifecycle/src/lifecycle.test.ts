@@ -278,15 +278,19 @@ describe('SidecarLifecycle', () => {
       args: () => [`--port=${port}`, '--never-live'],
     });
 
+    // Attach the rejection expectation BEFORE any await: start() rejects as
+    // soon as stop() bumps the generation, and a rejection observed while no
+    // handler is attached fails the vitest run as an unhandled error.
     const startPromise = lifecycle.start();
+    const startRejected = expect(startPromise).rejects.toMatchObject({
+      name: 'SidecarLifecycleError',
+      code: 'boot-interrupted-by-stop',
+    });
     await waitForPhase(lifecycle, 'starting');
     await new Promise((resolve) => setTimeout(resolve, 150));
     await lifecycle.stop();
 
-    await expect(startPromise).rejects.toMatchObject({
-      name: 'SidecarLifecycleError',
-      code: 'boot-interrupted-by-stop',
-    });
+    await startRejected;
     expect(lifecycle.phase).toBe('stopped');
     await eventually(() => lastChild()?.exitCode != null, 3000);
   });
