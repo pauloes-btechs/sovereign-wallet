@@ -210,6 +210,17 @@ export class WavelengthProvider implements WalletProvider {
     return received.invoice;
   }
 
+  /**
+   * Live VTXO classification for hosts (mobile/desktop UIs): the current
+   * inventory mapped through the spec's four-state machine, built from
+   * walletInfo + the vtxos view + the exit summary. This is the read the
+   * Home screen and balance buckets are built on.
+   */
+  async classifyVtxos(): Promise<VtxoWithState[]> {
+    this.assertStarted();
+    return this.classifyCurrentInventory();
+  }
+
   /** Fresh boarding address for an on-chain deposit into the Ark wallet. */
   async depositOnchain(amountSatHint?: number): Promise<string> {
     this.assertStarted();
