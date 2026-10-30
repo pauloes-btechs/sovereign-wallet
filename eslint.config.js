@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -43,5 +44,11 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    // Plain-Node scripts and test stubs run under Node — give them the Node
+    // globals instead of sprinkling /* global */ comments.
+    files: ['**/*.mjs', 'scripts/**/*.cjs'],
+    languageOptions: { globals: { ...globals.node } },
   },
 );

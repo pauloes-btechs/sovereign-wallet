@@ -6,6 +6,9 @@ coverage/
 .vite/
 # Tauri / Rust build artifacts
 target/
+# Sidecar binaries are fetched at build time by scripts/fetch-waved.mjs —
+# never commit upstream binaries into the repo.
+apps/desktop/src-tauri/binaries/
 # Environment and secrets — never commit
 .env
 .env.*

@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window: core access plus a shell scope restricted to the bundled waved sidecar. No open/other shell permissions.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/waved",
+          "sidecar": true
+        }
+      ]
+    }
+  ]
+}
