@@ -185,6 +185,17 @@ describe('litd sidecar on the regtest harness', () => {
   });
 
   it('opens and closes a channel to lnd-alice', async () => {
+    // The send test mined blocks that confirm the wallet's change, but the
+    // Neutrino wallet may still be processing them (cfilters + rescan) when
+    // this test starts — openChannelSync requires CONFIRMED outputs and sees
+    // zero until the rescan lands. Poll before touching the channel flow.
+    await poll(
+      async () => (await client!.walletBalance(WalletBalanceRequest.create({})).response).confirmedBalance,
+      (confirmed) => confirmed >= 1_000_000n,
+      'confirmed balance >= channel funding amount',
+      180_000,
+    );
+
     const alice = await getNodeInfo(ALICE);
 
     // Connect the sidecar to alice's published P2P port.
