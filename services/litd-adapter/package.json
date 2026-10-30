@@ -12,7 +12,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
@@ -21,5 +23,9 @@
   "devDependencies": {
     "typescript": "^5.7.2",
     "vitest": "^3.0.5"
+  },
+  "dependencies": {
+    "@protobuf-ts/grpc-transport": "^2.11.1",
+    "@sovereign/litd-proto": "workspace:*"
   }
 }

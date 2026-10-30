@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "noImplicitOverride": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src"]
+}
