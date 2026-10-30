@@ -25,3 +25,25 @@ export function sidecarBinaryPath(): string {
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+/**
+ * Poll an async probe until it resolves, or throw after the deadline with
+ * the last error attached. For surfaces that become ready asynchronously —
+ * litd's proxied-LND sub-server answers "lnd is not ready" until its
+ * connection to the remote node is up, seconds after the TLS channel does.
+ */
+export async function pollUntil<T>(what: string, probe: () => Promise<T>, timeoutMs: number): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown;
+  while (Date.now() < deadline) {
+    try {
+      return await probe();
+    } catch (err) {
+      lastErr = err;
+      await sleep(250);
+    }
+  }
+  throw new Error(
+    `timed out waiting for ${what}: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+  );
+}

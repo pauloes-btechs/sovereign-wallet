@@ -24,6 +24,7 @@ export {
   createWalletUnlockerClient,
   probeRpcReady,
   readMacaroonHex,
+  waitForServices,
 } from './client.js';
 export type { LitdConnectionOptions } from './client.js';
 

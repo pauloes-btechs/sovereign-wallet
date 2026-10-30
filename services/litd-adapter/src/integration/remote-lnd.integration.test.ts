@@ -21,7 +21,7 @@ import {
   REMOTE_LND_REQUIREMENTS,
   type LaunchedLitd,
 } from '../index.js';
-import { sidecarBinaryPath } from './helpers.js';
+import { sidecarBinaryPath, pollUntil } from './helpers.js';
 
 // Remote-LND connection option: the sidecar runs `lnd-mode=remote` and
 // proxies an existing, user-controlled LND. lnd-alice is that node
@@ -65,7 +65,13 @@ describe('remote-LND connection option', () => {
   it('proxies lnd-alice through the sidecar (same node identity)', async () => {
     const conn = connectionOptionsFromConfig(launched!.config);
     const client = await createLightningClient(conn);
-    const throughSidecar = (await client.getInfo(GetInfoRequest.create({})).response).identityPubkey;
+    // litd's proxied-LND sub-server answers "lnd is not ready" until its
+    // connection to lnd-alice is up — seconds after the TLS channel opens.
+    const throughSidecar = await pollUntil(
+      'litd proxy to serve GetInfo for lnd-alice',
+      async () => (await client.getInfo(GetInfoRequest.create({})).response).identityPubkey,
+      30_000,
+    );
     const direct = await getNodeInfo(ALICE);
     expect(throughSidecar).toBe(direct.identityPubkey);
   });

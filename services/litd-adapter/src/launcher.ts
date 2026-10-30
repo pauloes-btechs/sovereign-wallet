@@ -10,7 +10,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { ChildProcess } from 'node:child_process';
 
 import { assertLoopbackOnly, buildLitdConfig, pickFreeLoopbackPort } from './config.js';
-import { probeRpcReady } from './client.js';
+import { connectionOptionsFromConfig, probeRpcReady, waitForServices } from './client.js';
 import type { LitdSidecarOptions, ResolvedLitdConfig } from './config.js';
 
 const LOG_TAIL_LINES = 80;
@@ -106,6 +106,13 @@ export async function launchLitdSidecar(launch: LaunchLitdOptions): Promise<Laun
     // litd generates its TLS cert on first boot; probe needs it to exist.
     await waitForFile(config.tlsCertPath, readyTimeoutMs, earlyExit);
     await probeRpcReady(config, readyTimeoutMs);
+    // Sub-servers register AFTER the listener opens — without this gate the
+    // first wallet call races startup and fails with "waiting to start".
+    await waitForServices(
+      connectionOptionsFromConfig(config),
+      options.backend.kind === 'remote-lnd' ? 'lightning' : 'unlocker',
+      readyTimeoutMs,
+    );
   })();
 
   try {

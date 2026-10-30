@@ -37,6 +37,7 @@ import {
   createWalletUnlockerClient,
   launchLitdSidecar,
   probeRpcReady,
+  waitForServices,
   type LaunchedLitd,
   type LitdConnectionOptions,
 } from '../index.js';
@@ -95,6 +96,10 @@ beforeAll(async () => {
       }),
     )
     .response;
+  // After InitWallet, the Lightning sub-server registers asynchronously —
+  // the same startup window the launcher gate covers pre-init. Wait for it
+  // to actually serve before handing the client to the tests.
+  await waitForServices(conn, 'lightning', 60_000);
   client = await createLightningClient(conn);
 }, 240_000);
 
