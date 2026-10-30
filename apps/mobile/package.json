@@ -1,0 +1,23 @@
+{
+  "name": "@sovereign/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile app: React Native >=0.76 (New Architecture). Mode A uses native Wavelength SDK bindings; Mode B is LNC-only — no LND-in-app, ever.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sovereign/wallet-core": "workspace:*",
+    "react": "^19.3.0",
+    "react-native": "0.88.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
+  }
+}
