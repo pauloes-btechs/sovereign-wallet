@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -19,7 +20,10 @@ export default defineConfig({
           exclude: ['**/node_modules/**', '**/dist/**', 'apps/mobile/**'],
         },
       },
-      './apps/mobile/vitest.config.ts',
+      // Anchored to this file's location: vitest walks up from a package
+      // cwd (e.g. CI running tests inside packages/daemon-lifecycle) and
+      // resolves project paths against that cwd, not this config.
+      fileURLToPath(new URL('./apps/mobile/vitest.config.ts', import.meta.url)),
     ],
   },
 });
