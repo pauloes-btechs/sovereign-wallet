@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { assertLoopbackOnly, buildLitdConfig, DEFAULT_RPC_PORT, DEFAULT_UI_PORT } from './config.js';
+import {
+  assertLoopbackOnly,
+  buildLitdConfig,
+  DEFAULT_RPC_PORT,
+  DEFAULT_UI_PORT,
+  pickFreeLoopbackPort,
+} from './config.js';
 
 const NEUTRINO_REGTEST = {
   network: 'regtest' as const,
@@ -144,5 +150,21 @@ describe('assertLoopbackOnly', () => {
     expect(() =>
       buildLitdConfig({ ...NEUTRINO_REGTEST, extraLndArgs: ['bitcoin.node=neutrino'] }),
     ).toThrow(/lnd\./);
+  });
+});
+
+describe('pickFreeLoopbackPort', () => {
+  it('returns a loopback port the kernel had free', async () => {
+    const port = await pickFreeLoopbackPort();
+    expect(Number.isInteger(port)).toBe(true);
+    expect(port).toBeGreaterThanOrEqual(1024);
+    expect(port).toBeLessThanOrEqual(65535);
+    expect(port).not.toBe(DEFAULT_RPC_PORT);
+  });
+
+  it('returns usable ports on consecutive calls', async () => {
+    const [a, b] = await Promise.all([pickFreeLoopbackPort(), pickFreeLoopbackPort()]);
+    expect(Number.isInteger(a)).toBe(true);
+    expect(Number.isInteger(b)).toBe(true);
   });
 });

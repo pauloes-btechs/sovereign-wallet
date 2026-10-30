@@ -11,6 +11,7 @@
  * Secrets (UI password, bitcoind RPC password) are written ONLY to the lit.conf
  * file (0600) — never to argv, where they would be visible in `ps` output.
  */
+import { createServer } from 'node:net';
 
 export type LitdNetwork = 'mainnet' | 'testnet' | 'signet' | 'regtest';
 
@@ -76,6 +77,28 @@ export interface ResolvedLitdConfig {
 
 export const DEFAULT_RPC_PORT = 10_009;
 export const DEFAULT_UI_PORT = 8443;
+
+/**
+ * Ask the kernel for a free loopback port (bind 127.0.0.1:0, read, release).
+ * Launching on a kernel-assigned port avoids colliding with anything already
+ * listening on the litd/LND default ports — a user's own LND on 10009, or a
+ * regtest harness's host port mapping in CI.
+ */
+export function pickFreeLoopbackPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      if (addr === null || typeof addr === 'string') {
+        server.close();
+        reject(new Error('kernel assigned no TCP port for the loopback listener'));
+        return;
+      }
+      server.close(() => resolve(addr.port));
+    });
+  });
+}
 
 const NETWORK_FLAG: Record<LitdNetwork, string> = {
   mainnet: 'mainnet',

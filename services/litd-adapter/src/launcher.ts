@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { ChildProcess } from 'node:child_process';
 
-import { assertLoopbackOnly, buildLitdConfig } from './config.js';
+import { assertLoopbackOnly, buildLitdConfig, pickFreeLoopbackPort } from './config.js';
 import { probeRpcReady } from './client.js';
 import type { LitdSidecarOptions, ResolvedLitdConfig } from './config.js';
 
@@ -46,7 +46,15 @@ class LogTail {
 }
 
 export async function launchLitdSidecar(launch: LaunchLitdOptions): Promise<LaunchedLitd> {
-  const config = buildLitdConfig(launch.options);
+  // Launch on a kernel-assigned port unless the caller pinned one. The
+  // config-builder default (10009) is only a fallback for callers that
+  // generate config without launching: binding a fixed default here collides
+  // with anything already listening on it — a user's own LND, or the regtest
+  // harness's docker port mapping for lnd-alice in CI (both observed).
+  const options: LitdSidecarOptions = launch.options.rpcPort === undefined
+    ? { ...launch.options, rpcPort: await pickFreeLoopbackPort() }
+    : launch.options;
+  const config = buildLitdConfig(options);
   assertLoopbackOnly(config);
 
   await mkdir(launch.options.dataDir, { recursive: true });
