@@ -32,9 +32,18 @@ importers:
       '@sovereign/daemon-lifecycle':
         specifier: workspace:*
         version: link:../../packages/daemon-lifecycle
+      '@sovereign/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
+      '@sovereign/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@sovereign/wallet-core':
         specifier: workspace:*
         version: link:../../packages/wallet-core
+      '@sovereign/wavelength-adapter':
+        specifier: workspace:*
+        version: link:../../services/wavelength-adapter
       '@tauri-apps/api':
         specifier: ^2.2.0
         version: 2.12.4
@@ -48,6 +57,9 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.50.0
+        version: 1.64.1
       '@tauri-apps/cli':
         specifier: ^2.2.0
         version: 2.12.4
@@ -146,6 +158,9 @@ importers:
 
   packages/daemon-lifecycle:
     devDependencies:
+      '@sovereign/wavelength-adapter':
+        specifier: workspace:*
+        version: link:../../services/wavelength-adapter
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.5
@@ -1073,6 +1088,11 @@ packages:
     resolution: {integrity: sha512-VPoCAhKvCQTlG7vxqaBXcmuvbh77BfnGXj8g0pbvVXpm1F/R8rDVwqIWcEbMzrI1JvJlm8v7T9uMVQb6UctMRg==}
     cpu: [x64]
     os: [win32]
+
+  '@playwright/test@1.64.1':
+    resolution: {integrity: sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@react-native/asset-utils@0.88.1':
     resolution: {integrity: sha512-BLb5FF7NgggGYiCsA7KKkK2qFhn0K+6iGXOI+4Ucd+G7Robzw9Gt4WsWwxLt+Od+G+/hyqfz8ASokyWFZ6VcLw==}
@@ -2576,6 +2596,16 @@ packages:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
 
+  playwright-core@1.64.1:
+    resolution: {integrity: sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.64.1:
+    resolution: {integrity: sha512-HCrVhHr5QQuwYoswEUGTb7gGp522yflbv/ST8nF4sFWGuLjQCt17Q/EubpGGSNKYn1tsTCPZxqHhHCfVURu7UA==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   postcss-value-parser@4.2.0:
     resolution: {integrity: sha512-1NNCs6uurfkVbeXG4S8JFT9t19m45ICnif8zWLd5oPSZ50QnwMfK+H3jv408d4jw/7Bttv5axS5IiHoLaVNHeQ==}
 
@@ -3841,6 +3871,10 @@ snapshots:
 
   '@oxc-resolver/binding-win32-x64-msvc@11.21.2':
     optional: true
+
+  '@playwright/test@1.64.1':
+    dependencies:
+      playwright: 1.64.1
 
   '@react-native/asset-utils@0.88.1': {}
 
@@ -5509,6 +5543,12 @@ snapshots:
   picomatch@2.3.2: {}
 
   picomatch@4.0.7: {}
+
+  playwright-core@1.64.1: {}
+
+  playwright@1.64.1:
+    dependencies:
+      playwright-core: 1.64.1
 
   postcss-value-parser@4.2.0: {}
 
