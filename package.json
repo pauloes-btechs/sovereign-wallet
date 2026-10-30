@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:integration": "cd services/litd-adapter && SOVEREIGN_INTEGRATION=1 vitest run --config vitest.integration.config.ts",
+    "harness:bootstrap": "node harness/regtest/dist/cli.js",
     "sidecar:fetch": "node scripts/fetch-sidecars.mjs"
   },
   "devDependencies": {

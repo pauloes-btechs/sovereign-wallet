@@ -136,6 +136,15 @@ importers:
 
   harness/regtest:
     dependencies:
+      '@grpc/grpc-js':
+        specifier: ^1.14.7
+        version: 1.14.7
+      '@protobuf-ts/grpc-transport':
+        specifier: ^2.11.1
+        version: 2.11.1(@grpc/grpc-js@1.14.7)
+      '@sovereign/litd-proto':
+        specifier: workspace:*
+        version: link:../../packages/litd-proto
       '@sovereign/payments':
         specifier: workspace:*
         version: link:../../packages/payments
