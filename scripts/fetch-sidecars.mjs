@@ -11,8 +11,11 @@
  *   apps/desktop/src-tauri/binaries/litd-<tauri-triple>[.exe]
  *
  * Usage:
- *   node scripts/fetch-sidecars.mjs          # fetch for the current platform
- *   node scripts/fetch-sidecars.mjs --all    # fetch every platform in the lock
+ *   node scripts/fetch-sidecars.mjs                    # fetch for the current platform
+ *   node scripts/fetch-sidecars.mjs --all              # fetch every platform in the lock
+ *   node scripts/fetch-sidecars.mjs --triple=<triple>  # fetch for one Tauri target
+ *                                                      # (matches the desktop-artifacts
+ *                                                      # job matrix on CI runners)
  *
  * Platform notes: .tar.gz extraction uses tar(1); .zip (Windows asset)
  * extraction needs bsdtar (default on macOS, built into Windows 10+); GNU tar
@@ -44,6 +47,19 @@ function currentPlatformKey() {
   const key = `${process.platform}-${process.arch}`;
   if (!(key in PLATFORMS)) {
     throw new Error(`Unsupported platform ${key}: no pinned sidecar in sidecars.lock.json`);
+  }
+  return key;
+}
+
+/** Tauri triple -> platform key, for jobs that target a specific triple. */
+const TRIPLE_TO_KEY = Object.fromEntries(
+  Object.entries(PLATFORMS).map(([key, platform]) => [platform.triple, key]),
+);
+
+function platformKeyFromTriple(triple) {
+  const key = TRIPLE_TO_KEY[triple];
+  if (key === undefined) {
+    throw new Error(`Unknown Tauri triple ${triple}: no pinned sidecar platform matches it`);
   }
   return key;
 }
@@ -132,8 +148,12 @@ async function fetchSidecar(platformKey) {
   }
 }
 
-const fetchAll = process.argv.includes('--all');
-const targets = fetchAll ? Object.keys(PLATFORMS) : [currentPlatformKey()];
+const tripleArg = process.argv.find((arg) => arg.startsWith('--triple='));
+const targets = tripleArg
+  ? [platformKeyFromTriple(tripleArg.slice('--triple='.length))]
+  : process.argv.includes('--all')
+    ? Object.keys(PLATFORMS)
+    : [currentPlatformKey()];
 for (const key of targets) {
   await fetchSidecar(key);
 }

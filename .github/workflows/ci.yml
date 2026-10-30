@@ -191,6 +191,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Fetch + hash-verify waved for this target
         run: node scripts/fetch-waved.mjs --triple=${{ matrix.triple }}
+      - name: Fetch + hash-verify litd for this target
+        run: node scripts/fetch-sidecars.mjs --triple=${{ matrix.triple }}
       - name: Build debug bundle (dev artifact, unsigned)
         run: pnpm --filter @sovereign/desktop tauri build --debug
       - name: Upload bundle
