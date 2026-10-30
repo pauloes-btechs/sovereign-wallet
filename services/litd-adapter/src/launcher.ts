@@ -13,7 +13,9 @@ import { assertLoopbackOnly, buildLitdConfig, pickFreeLoopbackPort } from './con
 import { connectionOptionsFromConfig, probeRpcReady, waitForServices } from './client.js';
 import type { LitdSidecarOptions, ResolvedLitdConfig } from './config.js';
 
-const LOG_TAIL_LINES = 80;
+// Sized so litd's startup errors survive the readiness canary's ~4 req/s
+// INF request-log spam for a full 60s readiness window.
+const LOG_TAIL_LINES = 800;
 
 export interface LaunchLitdOptions {
   /** Path to the checksum-verified litd binary (see scripts/fetch-sidecars.mjs). */
@@ -118,9 +120,12 @@ export async function launchLitdSidecar(launch: LaunchLitdOptions): Promise<Laun
   try {
     await Promise.race([ready, earlyExit]);
   } catch (err) {
-    // Never leave a half-started daemon behind.
+    // Never leave a half-started daemon behind, and never fail blind: attach
+    // the captured log tail so readiness/timeout failures diagnose themselves.
     await forceKill(child);
-    throw err;
+    throw new Error(
+      `${err instanceof Error ? err.message : String(err)}\n--- litd log tail ---\n${logs.dump()}`,
+    );
   }
   if (earlyExitError !== undefined) {
     // earlyExit settled first and ready resolved concurrently — belt and braces.
