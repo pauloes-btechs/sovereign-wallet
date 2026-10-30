@@ -53,6 +53,38 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  integration:
+    name: Integration (regtest harness)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Checksum-verified litd sidecar for the integration suite.
+      - run: pnpm sidecar:fetch
+      # btcd (pinned v0.26.2) is the BIP157 filter source for the Neutrino
+      # sidecar test — bitcoind cannot serve compact filters. Built here and
+      # spawned host-side by the harness CLI (see harness/regtest/README.md).
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: go install github.com/btcsuite/btcd@v0.26.2
+      - name: Boot the regtest harness
+        run: docker compose -f harness/regtest/docker-compose.yml up -d --wait
+      - name: Bootstrap seed chain + node wallets (spawns the btcd filter server)
+        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm harness:bootstrap
+      - name: Run integration suite
+        run: pnpm test:integration
+      - name: Teardown
+        if: always()
+        run: docker compose -f harness/regtest/docker-compose.yml down -v || true
+
   dependency-audit:
     name: Dependency audit
     runs-on: ubuntu-latest

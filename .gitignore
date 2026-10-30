@@ -16,3 +16,5 @@ apps/desktop/src-tauri/binaries/
 # OS noise
 .DS_Store
 Thumbs.db
+# Regtest harness runtime state (TLS certs, macaroons, chain data) — never commit
+harness/regtest/data/

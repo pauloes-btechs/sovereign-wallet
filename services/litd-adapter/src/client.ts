@@ -73,13 +73,14 @@ export async function createWalletUnlockerClient(options: LitdConnectionOptions)
  */
 export function probeRpcReady(
   options: Pick<LitdConnectionOptions, 'rpcHost' | 'rpcPort' | 'tlsCertPath'>,
-  deadlineMs: number,
+  timeoutMs: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     readFile(options.tlsCertPath)
       .then((rootCert) => {
         const client = new Client(`${options.rpcHost}:${options.rpcPort}`, ChannelCredentials.createSsl(rootCert));
-        client.waitForReady(deadlineMs, (err?: Error) => {
+        // grpc-js deadlines are epoch milliseconds; callers pass a timeout.
+        client.waitForReady(Date.now() + timeoutMs, (err?: Error) => {
           client.close();
           if (err) {
             reject(new Error(`litd RPC not ready within deadline: ${err.message}`));

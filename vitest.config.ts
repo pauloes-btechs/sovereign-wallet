@@ -18,6 +18,9 @@ const invokedAtRoot = process.cwd().replace(/\/$/, '') === configDir;
  *
  *  - node: every package test that runs in plain Node (the historical root
  *    behavior — wallet-core, payments, ui copy, adapter, harness, desktop).
+ *    Integration suites (services/litd-adapter/src/integration/**) are
+ *    excluded: they need the Docker regtest harness and run via
+ *    `pnpm test:integration` (locally and in CI).
  *  - mobile: the React Native screen tests, which need the package's own
  *    config (react-native-web alias + jsdom) and would otherwise be picked
  *    up here without it.
@@ -30,7 +33,12 @@ export default defineConfig({
             test: {
               environment: 'node',
               include: ['**/*.test.{ts,tsx}'],
-              exclude: ['**/node_modules/**', '**/dist/**', 'apps/mobile/**'],
+              exclude: [
+                '**/node_modules/**',
+                '**/dist/**',
+                'apps/mobile/**',
+                '**/src/integration/**',
+              ],
             },
           },
           // Anchored to this file's location: vitest walks up from a package
