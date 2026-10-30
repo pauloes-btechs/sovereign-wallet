@@ -151,7 +151,9 @@ export async function waitForBitcoinReady(timeoutMs: number): Promise<void> {
 export async function ensureBitcoinWallet(name: string): Promise<void> {
   const wallets = await bitcoinRpcRequest<string[]>('listwallets', []);
   if (!wallets.includes(name)) {
-    await bitcoinRpcRequest('createwallet', [{ wallet_name: name }]);
+    // createwallet takes the wallet name as a positional string arg —
+    // named-style object params make bitcoind reject the call.
+    await bitcoinRpcRequest('createwallet', [name]);
   }
 }
 
