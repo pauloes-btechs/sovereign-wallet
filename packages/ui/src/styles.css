@@ -1,0 +1,464 @@
+/*
+ * Sovereign Wallet — dark, minimalist design system.
+ * Tokens are CSS custom properties; components use `.sovl-*` classes only.
+ * The whole surface ships in this one file (`@sovereign/ui/styles.css`).
+ */
+
+:root,
+.sovl-root {
+  --sovl-bg: #0d0d10;
+  --sovl-surface: #15161b;
+  --sovl-surface-raised: #1c1e24;
+  --sovl-border: #26282f;
+  --sovl-border-strong: #343741;
+  --sovl-text: #e8e8ea;
+  --sovl-text-secondary: #9a9ba3;
+  --sovl-text-faint: #5f6069;
+  --sovl-accent: #f7931a;
+  --sovl-accent-contrast: #161006;
+  --sovl-positive: #2fbf9c;
+  --sovl-warning: #f0b429;
+  --sovl-danger: #e5484d;
+  --sovl-info: #5c8df6;
+  --sovl-radius: 10px;
+  --sovl-radius-sm: 8px;
+  --sovl-font:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --sovl-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.sovl-root {
+  background: var(--sovl-bg);
+  color: var(--sovl-text);
+  font-family: var(--sovl-font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- primitives ---------- */
+
+.sovl-card {
+  background: var(--sovl-surface);
+  border: 1px solid var(--sovl-border);
+  border-radius: var(--sovl-radius);
+  padding: 20px;
+}
+
+.sovl-card-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sovl-text-secondary);
+}
+
+.sovl-button {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: var(--sovl-radius-sm);
+  font: inherit;
+  font-weight: 600;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+
+.sovl-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sovl-button--primary {
+  background: var(--sovl-accent);
+  color: var(--sovl-accent-contrast);
+}
+
+.sovl-button--primary:hover:not(:disabled) {
+  background: #ffab3d;
+}
+
+.sovl-button--secondary {
+  background: transparent;
+  color: var(--sovl-text);
+  border-color: var(--sovl-border-strong);
+}
+
+.sovl-button--secondary:hover:not(:disabled) {
+  border-color: var(--sovl-text-faint);
+}
+
+.sovl-button--danger {
+  background: transparent;
+  color: var(--sovl-danger);
+  border-color: var(--sovl-danger);
+}
+
+.sovl-button--ghost {
+  background: transparent;
+  color: var(--sovl-text-secondary);
+}
+
+.sovl-button--ghost:hover:not(:disabled) {
+  color: var(--sovl-text);
+}
+
+.sovl-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--sovl-border-strong);
+  color: var(--sovl-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.sovl-badge--positive {
+  color: var(--sovl-positive);
+  border-color: var(--sovl-positive);
+}
+
+.sovl-badge--warning {
+  color: var(--sovl-warning);
+  border-color: var(--sovl-warning);
+}
+
+.sovl-badge--danger {
+  color: var(--sovl-danger);
+  border-color: var(--sovl-danger);
+}
+
+.sovl-badge--info {
+  color: var(--sovl-info);
+  border-color: var(--sovl-info);
+}
+
+.sovl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.sovl-field:last-child {
+  margin-bottom: 0;
+}
+
+.sovl-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sovl-text-secondary);
+}
+
+.sovl-input {
+  background: var(--sovl-surface-raised);
+  border: 1px solid var(--sovl-border);
+  border-radius: var(--sovl-radius-sm);
+  color: var(--sovl-text);
+  font: inherit;
+  padding: 9px 12px;
+}
+
+.sovl-input:focus {
+  outline: none;
+  border-color: var(--sovl-accent);
+}
+
+.sovl-input:disabled {
+  opacity: 0.5;
+}
+
+.sovl-input::placeholder {
+  color: var(--sovl-text-faint);
+}
+
+.sovl-hint {
+  font-size: 12.5px;
+  color: var(--sovl-text-faint);
+}
+
+.sovl-error {
+  font-size: 13px;
+  color: var(--sovl-danger);
+}
+
+/* ---------- amounts ---------- */
+
+.sovl-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.sovl-amount--sm {
+  font-size: 14px;
+}
+
+.sovl-amount--md {
+  font-size: 16px;
+}
+
+.sovl-amount--lg {
+  font-size: 22px;
+}
+
+.sovl-amount--xl {
+  font-size: 32px;
+}
+
+.sovl-amount-suffix {
+  color: var(--sovl-text-secondary);
+  font-size: 0.62em;
+  font-weight: 500;
+  margin-left: 6px;
+}
+
+/* ---------- balance summary ---------- */
+
+.sovl-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sovl-balance-total {
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.sovl-balance-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.sovl-balance-row {
+  align-items: baseline;
+  border-top: 1px solid var(--sovl-border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.sovl-balance-row-label {
+  color: var(--sovl-text-secondary);
+  font-size: 14px;
+}
+
+.sovl-balance-row-sub {
+  color: var(--sovl-text-faint);
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+/* ---------- notices (VTXO lifecycle + failures) ---------- */
+
+.sovl-notice {
+  background: var(--sovl-surface-raised);
+  border: 1px solid var(--sovl-border);
+  border-left: 3px solid var(--sovl-border-strong);
+  border-radius: var(--sovl-radius-sm);
+  padding: 14px 16px;
+}
+
+.sovl-notice--positive {
+  border-left-color: var(--sovl-positive);
+}
+
+.sovl-notice--warning {
+  border-left-color: var(--sovl-warning);
+}
+
+.sovl-notice--danger {
+  border-left-color: var(--sovl-danger);
+}
+
+.sovl-notice--info {
+  border-left-color: var(--sovl-info);
+}
+
+.sovl-notice-title {
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.sovl-notice-body {
+  color: var(--sovl-text-secondary);
+  font-size: 14px;
+  margin: 0;
+}
+
+.sovl-notice-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* ---------- send / receive ---------- */
+
+.sovl-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.sovl-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--sovl-radius-sm);
+  color: var(--sovl-text-secondary);
+  cursor: pointer;
+  flex: 1;
+  font: inherit;
+  font-weight: 600;
+  padding: 8px 12px;
+}
+
+.sovl-tab--active {
+  background: var(--sovl-surface-raised);
+  border-color: var(--sovl-border-strong);
+  color: var(--sovl-text);
+}
+
+.sovl-mechanism-tag {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(247, 147, 26, 0.08);
+  border: 1px solid rgba(247, 147, 26, 0.45);
+  border-radius: var(--sovl-radius-sm);
+  color: var(--sovl-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 3px 10px;
+}
+
+.sovl-mono-value {
+  background: var(--sovl-surface-raised);
+  border: 1px solid var(--sovl-border);
+  border-radius: var(--sovl-radius-sm);
+  font-family: var(--sovl-mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+  padding: 12px;
+  user-select: all;
+}
+
+.sovl-fee-line {
+  align-items: baseline;
+  border-top: 1px solid var(--sovl-border);
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.sovl-fee-line-label {
+  color: var(--sovl-text-secondary);
+  font-size: 14px;
+}
+
+/* ---------- seed grids ---------- */
+
+.sovl-seed-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 12px 0;
+}
+
+.sovl-seed-word {
+  background: var(--sovl-surface-raised);
+  border: 1px solid var(--sovl-border);
+  border-radius: var(--sovl-radius-sm);
+  font-family: var(--sovl-mono);
+  font-size: 13px;
+  overflow: hidden;
+  padding: 6px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sovl-seed-index {
+  color: var(--sovl-text-faint);
+  margin-right: 8px;
+}
+
+/* ---------- capability / dependency disclosure ---------- */
+
+.sovl-dependency {
+  background: var(--sovl-surface-raised);
+  border: 1px solid var(--sovl-border);
+  border-radius: var(--sovl-radius-sm);
+  margin-top: 10px;
+  padding: 14px 16px;
+}
+
+.sovl-dependency-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sovl-dependency-kind {
+  font-weight: 600;
+}
+
+.sovl-dependency-disclosure {
+  color: var(--sovl-text-secondary);
+  font-size: 13.5px;
+  margin: 0;
+}
+
+.sovl-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sovl-chip {
+  background: transparent;
+  border: 1px solid var(--sovl-border-strong);
+  border-radius: 999px;
+  color: var(--sovl-text-secondary);
+  font-size: 11.5px;
+  padding: 1px 8px;
+}
+
+.sovl-capability-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.sovl-capability-row {
+  border-top: 1px solid var(--sovl-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.sovl-capability-row:first-child {
+  border-top: none;
+}
+
+.sovl-capability-label {
+  color: var(--sovl-text-secondary);
+  font-size: 14px;
+}
+
+.sovl-capability-value {
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+}
