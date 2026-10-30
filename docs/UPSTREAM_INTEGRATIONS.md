@@ -10,8 +10,8 @@ time — upstream APIs in this ecosystem move (spec: research artifacts of
 
 | Component | Role | Verified version (2026-10-30) | Pin policy | Trust boundary |
 | --- | --- | --- | --- | --- |
-| litd | Mode B engine — LND + tapd + Loop + Pool + Faraday in one binary | v0.17.8 (bundles LND v0.21.5-beta.rc1, tapd v0.8.6) | Exact tag; built from source | Self-hosted daemon; loopback RPC, least-privilege macaroons |
-| LND | Node core inside litd | v0.21.x line | Pinned `rpc.proto` per litd release | Breaking-change cadence ~6–12 months |
+| litd | Mode B engine — LND + tapd + Loop + Pool + Faraday in one binary | v0.17.8 (bundles LND v0.21.5-beta.rc1, tapd v0.8.6) — re-pinned 2026-10-30: release assets + signed SHA256 manifest verified via GitHub API; checksums locked in `sidecars.lock.json` | Exact tag; release binary + checksum lock (`scripts/fetch-sidecars.mjs`) | Self-hosted daemon; loopback RPC, least-privilege macaroons |
+| LND | Node core inside litd | v0.21.x line | Protos vendored at the litd-pinned tag (`lightning.proto` + `walletunlocker.proto`, v0.21.5-beta.rc1); generated TS committed | Breaking-change cadence ~6–12 months |
 | Neutrino (CDNSync) | Desktop light-client sync | LND v0.21 | Via litd pin | SPV trust model — disclosed in onboarding |
 | Loop / AutoLoop | Liquidity swaps | v0.35.2-beta, production-ready | Via litd pin / go.mod revision at build | Quotes rendered live; budget-governed automation |
 | Pool | Liquidity market (optional) | v0.7.0-beta | Feature-detected; behind availability check | Thin market is a first-class UI state |
