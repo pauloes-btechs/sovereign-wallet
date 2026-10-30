@@ -167,7 +167,7 @@ describe('litd sidecar on the regtest harness', () => {
         .sendCoins(
           SendCoinsRequest.create({
             addr: destination,
-            amount: 100_000_000n, // 0.1 BTC in sats
+            amount: 10_000_000n, // 0.1 BTC in sats
             satPerVbyte: 2n,
           }),
         )
@@ -177,11 +177,11 @@ describe('litd sidecar on the regtest harness', () => {
     await mineBlocks(6);
     const after = await poll(
       async () => (await client!.walletBalance(WalletBalanceRequest.create({})).response).confirmedBalance,
-      (confirmed) => before - confirmed >= 100_000_000n,
+      (confirmed) => before - confirmed >= 10_000_000n,
       'balance to drop by >= 0.1 BTC',
       120_000,
     );
-    expect(before - after).toBeGreaterThanOrEqual(100_000_000n);
+    expect(before - after).toBeGreaterThanOrEqual(10_000_000n);
   });
 
   it('opens and closes a channel to lnd-alice', async () => {
@@ -206,7 +206,8 @@ describe('litd sidecar on the regtest harness', () => {
         }),
       )
       .response;
-    expect(fundingPoint.fundingTxid.oneofKind).toBe('fundingTxidStr');
+    // lnd returns the funding txid in the `fundingTxidBytes` oneof variant.
+    expect(fundingPoint.fundingTxid.oneofKind).toBe('fundingTxidBytes');
     await mineBlocks(6);
 
     const opened = await poll(
@@ -227,7 +228,8 @@ describe('litd sidecar on the regtest harness', () => {
     const closeDone = (async () => {
       for await (const update of closeCall.responses) {
         if (update.update.oneofKind === 'chanClose') {
-          return update.update.chanClose.closingTxid;
+          // closingTxid is bytes on the wire; render as hex for the assertion.
+          return Buffer.from(update.update.chanClose.closingTxid).toString('hex');
         }
       }
       throw new Error('closeChannel stream ended without a chanClose update');
