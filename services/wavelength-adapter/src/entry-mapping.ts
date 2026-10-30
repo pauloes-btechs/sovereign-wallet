@@ -74,6 +74,15 @@ export function entryMatchesBackendRef(entry: Entry, backendRef: string): boolea
 }
 
 /**
+ * A Bitcoin txid is exactly 64 hex characters — the only format-stable way
+ * to tell a persisted txid backendRef apart from a send-intent id, whose
+ * shape the SDK does not fix.
+ */
+export function isTxid(ref: string): boolean {
+  return /^[0-9a-f]{64}$/i.test(ref);
+}
+
+/**
  * Correlates an entry with an on-chain send payload when no payment hash
  * exists (the on-chain path has no pre-dispatch hash): same destination,
  * same amount when the payload specified one.

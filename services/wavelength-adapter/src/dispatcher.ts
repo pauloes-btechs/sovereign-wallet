@@ -42,6 +42,7 @@ import {
   dispatchOutcomeFromEntry,
   entryMatchesBackendRef,
   entryMatchesOnchainPayload,
+  isTxid,
   reconcileFromEntry,
 } from './entry-mapping.js';
 import type { LightningSendPayload, OnchainSendPayload } from './payloads.js';
@@ -169,7 +170,7 @@ export class WavelengthPaymentDispatcher implements PaymentDispatcher {
         const ref = intent.backendRef;
         // A txid backendRef (persisted by a settled dispatch) matches
         // directly; otherwise correlate by destination/amount.
-        if (ref !== undefined && !ref.startsWith('send_')) {
+        if (ref !== undefined && isTxid(ref)) {
           const byTxid = await this.findEntry((e) => entryMatchesBackendRef(e, ref));
           return this.reconcileResultFor(byTxid, ref, intent);
         }
