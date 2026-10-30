@@ -256,9 +256,23 @@ export async function waitForRpcReady(n: HarnessNode, timeoutMs: number): Promis
 export type WalletState = 'initialized' | 'unlocked';
 
 /**
- * Idempotent wallet bootstrap for a harness node: first run initializes an
- * aezeed wallet with the harness password; later runs unlock it.
+ * Unlocker RPCs that mean "the wallet is already in the state we wanted":
+ * lnd unregisters the WalletUnlocker service the moment a wallet becomes
+ * unlocked, so ANY unlocker call against a ready wallet fails with
+ * "wallet already unlocked, WalletUnlocker service is no longer available",
+ * and initWallet against an existing wallet fails with "already exists".
+ * A bootstrap that races a prior bootstrap (the CI workflow step, or a
+ * parallel vitest worker's beforeAll) must treat those as success.
  */
+const WALLET_ALREADY_READY =
+  /already unlocked|already initialized|already exists|WalletUnlocker service is no longer available/i;
+
+/** Exported for tests. Matches only the idempotency errors — never others. */
+export function isWalletAlreadyReady(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return WALLET_ALREADY_READY.test(message);
+}
+
 export async function initOrUnlockWallet(n: HarnessNode): Promise<WalletState> {
   const transport = await makeTransport(n);
   const unlocker = new WalletUnlockerClient(transport);
@@ -271,29 +285,48 @@ export async function initOrUnlockWallet(n: HarnessNode): Promise<WalletState> {
       macaroonExists = false;
     }
     if (macaroonExists) {
+      // The macaroon proves the wallet was initialized at SOME point, not
+      // that it is locked right now. When a previous bootstrap (the workflow
+      // step, or a parallel vitest worker) left it unlocked, the unlocker
+      // service is unregistered and unlockWallet fails with the
+      // already-ready error — the success outcome, not a failure. A
+      // genuinely wrong password does not match and is surfaced.
+      try {
+        await unlocker
+          .unlockWallet(
+            UnlockWalletRequest.create({
+              walletPassword: Buffer.from(HARNESS_WALLET_PASSWORD, 'utf8'),
+              recoveryWindow: 0,
+            }),
+          )
+          .response;
+        return 'unlocked';
+      } catch (err) {
+        if (!isWalletAlreadyReady(err)) throw err;
+        return 'unlocked';
+      }
+    }
+    try {
+      const seed = await unlocker.genSeed(GenSeedRequest.create({})).response;
       await unlocker
-        .unlockWallet(
-          UnlockWalletRequest.create({
+        .initWallet(
+          InitWalletRequest.create({
             walletPassword: Buffer.from(HARNESS_WALLET_PASSWORD, 'utf8'),
+            cipherSeedMnemonic: seed.cipherSeedMnemonic,
+            aezeedPassphrase: new Uint8Array(0),
             recoveryWindow: 0,
+            statelessInit: false,
           }),
         )
         .response;
-      return 'unlocked';
+      return 'initialized';
+    } catch (err) {
+      // Lost an init race, or the wallet reached an initialized state
+      // between the macaroon check and here: the wallet now exists in the
+      // state the bootstrap wanted. Anything else is a real error.
+      if (!isWalletAlreadyReady(err)) throw err;
+      return 'initialized';
     }
-    const seed = await unlocker.genSeed(GenSeedRequest.create({})).response;
-    await unlocker
-      .initWallet(
-        InitWalletRequest.create({
-          walletPassword: Buffer.from(HARNESS_WALLET_PASSWORD, 'utf8'),
-          cipherSeedMnemonic: seed.cipherSeedMnemonic,
-          aezeedPassphrase: new Uint8Array(0),
-          recoveryWindow: 0,
-          statelessInit: false,
-        }),
-      )
-      .response;
-    return 'initialized';
   } finally {
     transport.close();
   }
