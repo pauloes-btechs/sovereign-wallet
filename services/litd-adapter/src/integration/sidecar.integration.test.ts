@@ -29,7 +29,7 @@ import {
   getNodeInfo,
   HARNESS_WALLET_PASSWORD,
   mineBlocks,
-} from '@sovereign/regtest-harness';
+} from '@sovereign/harness-regtest';
 
 import {
   connectionOptionsFromConfig,

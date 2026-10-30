@@ -11,7 +11,7 @@ import {
   getNodeInfo,
   tlsCertPath,
   ALICE,
-} from '@sovereign/regtest-harness';
+} from '@sovereign/harness-regtest';
 
 import {
   connectionOptionsFromConfig,
