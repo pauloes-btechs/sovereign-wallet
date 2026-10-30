@@ -174,20 +174,45 @@ export async function bitcoinSendTo(address: string, amountBtc: number): Promise
 }
 
 /**
- * Waits until `txid` is present in bitcoind's mempool. A wallet-side
- * broadcast (litd → btcd relay → bitcoind) lands asynchronously after
- * SendCoins returns, so callers must wait before mining or the tx misses
- * the generated blocks and the wallet's funds stay unconfirmed.
+ * Waits until one of `txid` candidates is present in bitcoind's mempool. A
+ * wallet-side broadcast (litd → btcd relay → bitcoind) lands asynchronously
+ * after SendCoins returns, so callers must wait before mining or the tx
+ * misses the generated blocks and the wallet's funds stay unconfirmed.
+ * Accepts multiple candidates because LND's byte-typed txids use wire
+ * (little-endian) order while bitcoind's mempool uses big-endian hex.
  */
-export async function waitForTxInMempool(txid: string, timeoutMs = 60_000): Promise<void> {
+export async function waitForTxInMempool(
+  txid: string | string[],
+  timeoutMs = 60_000,
+): Promise<void> {
+  const wanted = new Set(Array.isArray(txid) ? txid : [txid]);
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const mempool = await bitcoinRpcRequest<string[]>('getrawmempool', []);
-    if (mempool.includes(txid)) {
+    if (mempool.some((t) => wanted.has(t))) {
       return;
     }
     if (Date.now() > deadline) {
-      throw new Error(`txid ${txid} not in bitcoind mempool within ${timeoutMs}ms`);
+      throw new Error(`no candidate of [${[...wanted].join(', ')}] in bitcoind mempool within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+/**
+ * Waits until bitcoind's mempool holds at least `minCount` transactions.
+ * Used where the in-flight txid is unknown (e.g. the cooperative close
+ * stream opens before the closing tx id is revealed).
+ */
+export async function waitForMempoolNonEmpty(minCount = 1, timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const mempool = await bitcoinRpcRequest<string[]>('getrawmempool', []);
+    if (mempool.length >= minCount) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`mempool did not reach ${minCount} tx(s) within ${timeoutMs}ms`);
     }
     await new Promise((r) => setTimeout(r, 500));
   }

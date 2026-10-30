@@ -29,6 +29,7 @@ import {
   getNodeInfo,
   HARNESS_WALLET_PASSWORD,
   mineBlocks,
+  waitForMempoolNonEmpty,
   waitForTxInMempool,
 } from '@sovereign/harness-regtest';
 
@@ -225,7 +226,17 @@ describe('litd sidecar on the regtest harness', () => {
       )
       .response;
     // lnd returns the funding txid in the `fundingTxidBytes` oneof variant.
-    expect(fundingPoint.fundingTxid.oneofKind).toBe('fundingTxidBytes');
+    if (fundingPoint.fundingTxid.oneofKind !== 'fundingTxidBytes') {
+      throw new Error('openChannelSync returned no fundingTxidBytes');
+    }
+    // The funding broadcast also travels litd → btcd → bitcoind
+    // asynchronously; mine only once it lands or the blocks miss it and the
+    // channel never activates. LND byte-typed txids use wire (little-endian)
+    // order — match both it and the big-endian hex bitcoind reports.
+    const fundingBytes = fundingPoint.fundingTxid.fundingTxidBytes;
+    const wireHex = Buffer.from(fundingBytes).toString('hex');
+    const beHex = Buffer.from(fundingBytes).reverse().toString('hex');
+    await waitForTxInMempool([wireHex, beHex]);
     await mineBlocks(6);
 
     const opened = await poll(
@@ -252,6 +263,12 @@ describe('litd sidecar on the regtest harness', () => {
       }
       throw new Error('closeChannel stream ended without a chanClose update');
     })();
+    // As the channel initiator, litd broadcasts the cooperative closing tx
+    // over the same asynchronous relay path (litd → btcd → bitcoind); the
+    // closing txid is only revealed via the stream once it confirms. The
+    // funding and send txs are already mined, so the closing tx is the only
+    // thing that can appear in the mempool — wait for it before mining.
+    await waitForMempoolNonEmpty();
     await mineBlocks(6);
     const closingTxid = await closeDone;
     expect(closingTxid).toMatch(/^[0-9a-f]{64}$/);
