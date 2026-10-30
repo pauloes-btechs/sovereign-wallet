@@ -29,6 +29,7 @@ import {
   getNodeInfo,
   HARNESS_WALLET_PASSWORD,
   mineBlocks,
+  waitForTxInMempool,
 } from '@sovereign/harness-regtest';
 
 import {
@@ -174,6 +175,12 @@ describe('litd sidecar on the regtest harness', () => {
         .response
     ).txid;
     expect(txid).toMatch(/^[0-9a-f]{64}$/);
+    // The broadcast travels litd → btcd → bitcoind asynchronously; SendCoins
+    // returns before bitcoind has the tx. Wait for the relay to land, then
+    // mine — otherwise the generated blocks miss the tx and the wallet's
+    // change stays unconfirmed (the channel test would then see zero
+    // confirmed funds).
+    await waitForTxInMempool(txid);
     await mineBlocks(6);
     const after = await poll(
       async () => (await client!.walletBalance(WalletBalanceRequest.create({})).response).confirmedBalance,

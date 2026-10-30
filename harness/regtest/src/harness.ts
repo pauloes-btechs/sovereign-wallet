@@ -174,6 +174,26 @@ export async function bitcoinSendTo(address: string, amountBtc: number): Promise
 }
 
 /**
+ * Waits until `txid` is present in bitcoind's mempool. A wallet-side
+ * broadcast (litd → btcd relay → bitcoind) lands asynchronously after
+ * SendCoins returns, so callers must wait before mining or the tx misses
+ * the generated blocks and the wallet's funds stay unconfirmed.
+ */
+export async function waitForTxInMempool(txid: string, timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const mempool = await bitcoinRpcRequest<string[]>('getrawmempool', []);
+    if (mempool.includes(txid)) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`txid ${txid} not in bitcoind mempool within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+/**
  * Seeds the chain so coinbase outputs are mature and spendable
  * (100-block coinbase maturity + headroom).
  */
