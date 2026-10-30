@@ -146,6 +146,9 @@ importers:
 
   packages/daemon-lifecycle:
     devDependencies:
+      '@sovereign/wavelength-adapter':
+        specifier: workspace:*
+        version: link:../../services/wavelength-adapter
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.5
