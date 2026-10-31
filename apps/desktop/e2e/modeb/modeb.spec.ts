@@ -15,7 +15,7 @@ import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { Invoice, Payment_PaymentStatus, RouterClient, type SendPaymentUpdate } from '@sovereign/litd-proto';
+import { Invoice, Payment_PaymentStatus, RouterClient, SendPaymentRequest, type SendPaymentUpdate } from '@sovereign/litd-proto';
 import {
   ALICE,
   bitcoinSendTo,
@@ -155,6 +155,7 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
   await page.getByLabel('Peer node pubkey (66 hex)').fill(bootstrap.peerPubkey);
   await page.getByLabel(/Peer host/).fill(bootstrap.peerHost);
   await page.getByLabel('Funding amount (sats, min 20,000)').fill('20000000'); // 0.2 BTC — wallet holds ~0.4 BTC at this point; 1 BTC funding can never confirm
+  await page.getByLabel('Fee rate (sat/vbyte)').fill('2');
   await page.getByRole('button', { name: 'Open channel' }).click();
 
   await expect(page.getByTestId('channel-opened')).toBeVisible();
@@ -224,7 +225,13 @@ test('lightning inbound: alice pays our invoice through the channel', async ({ p
   const router = new RouterClient(transport);
   const updates: SendPaymentUpdate[] = [];
   for await (const update of router
-    .sendPaymentV2({ paymentRequest: ourInvoice!.trim(), noInflightLimit: true }).responses) {
+    .sendPaymentV2(
+      // Raw literals break protobuf-ts serialization for unset bytes fields
+      // (run8: "Cannot read properties of undefined (reading 'length')");
+      // create() fills proto3 defaults.
+      SendPaymentRequest.create({ paymentRequest: ourInvoice!.trim(), noInflightLimit: true }),
+    )
+    .responses) {
     updates.push(update);
     if (update.state !== Payment_PaymentStatus.IN_FLIGHT) break;
   }

@@ -297,7 +297,10 @@ export function createLitdBridgeServer(options: BridgeServerOptions): Server {
           nodePubkeyHex: requireString(body, 'nodePubkeyHex'),
           host: optionalString(body, 'host'),
           localFundingSat,
-          satPerVbyte: parseNumber(body.satPerVbyte, 'satPerVbyte', 0),
+          // Required on purpose — never fabricate a fee: a silent 0 default
+          // produces a misleading downstream validation error instead of a
+          // clear 400 at the contract boundary.
+          satPerVbyte: parseNumber(body.satPerVbyte, 'satPerVbyte'),
           isPrivate: optionalBool(body, 'isPrivate'),
         }),
       );

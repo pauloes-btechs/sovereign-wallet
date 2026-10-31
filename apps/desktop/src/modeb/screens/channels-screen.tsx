@@ -130,6 +130,7 @@ function OpenChannelForm({ client, onOpened }: { readonly client: BridgeClient; 
   const [pubkey, setPubkey] = useState('');
   const [host, setHost] = useState('');
   const [amount, setAmount] = useState('');
+  const [feeRate, setFeeRate] = useState('5');
   const [privateChannel, setPrivateChannel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +152,11 @@ function OpenChannelForm({ client, onOpened }: { readonly client: BridgeClient; 
       setError('Node pubkey must be 66 hex characters.');
       return;
     }
+    const feeRateSat = Number(feeRate);
+    if (!Number.isInteger(feeRateSat) || feeRateSat < 1) {
+      setError('Fee rate must be a whole number of satoshis per vbyte (≥ 1).');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -158,6 +164,7 @@ function OpenChannelForm({ client, onOpened }: { readonly client: BridgeClient; 
         nodePubkeyHex: pubkey.trim(),
         ...(host.trim() === '' ? {} : { host: host.trim() }),
         localFundingSat: amountSat,
+        satPerVbyte: feeRateSat,
         isPrivate: privateChannel,
       });
       setOpened('Channel opening — it appears as pending until the funding transaction confirms.');
@@ -174,6 +181,7 @@ function OpenChannelForm({ client, onOpened }: { readonly client: BridgeClient; 
       <TextField label="Peer node pubkey (66 hex)" value={pubkey} onChange={setPubkey} placeholder="03a5…" />
       <TextField label="Peer host (needed to connect, e.g. 1.2.3.4:9735)" value={host} onChange={setHost} />
       <TextField label="Funding amount (sats, min 20,000)" value={amount} onChange={setAmount} />
+      <TextField label="Fee rate (sat/vbyte)" value={feeRate} onChange={setFeeRate} />
       <label style={{ display: 'block', margin: '8px 0', color: '#9aa0a6' }}>
         <input type="checkbox" checked={privateChannel} onChange={(e) => setPrivateChannel(e.target.checked)} /> Private
         channel (unannounced — other nodes won't route through it)
