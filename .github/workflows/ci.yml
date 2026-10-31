@@ -190,6 +190,13 @@ jobs:
       # the filter server the sidecar's Neutrino sync depends on.
       - name: Run Mode B e2e
         run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm --filter @sovereign/desktop test:e2e:modeb
+      - name: Visual evidence captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modeb-e2e-evidence
+          path: apps/desktop/test-results/modeb-evidence/
+          retention-days: 7
       - name: Playwright trace on failure
         if: failure()
         uses: actions/upload-artifact@v4

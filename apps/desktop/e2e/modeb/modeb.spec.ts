@@ -11,7 +11,9 @@
  *
  * Regtest only. No mainnet anywhere in this file.
  */
+import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { Invoice, Payment_PaymentStatus, RouterClient, type SendPaymentUpdate } from '@sovereign/litd-proto';
 import {
@@ -26,6 +28,16 @@ import {
 import { MODEB_BOOTSTRAP_FILE, type ModeBE2eBootstrap } from './bootstrap-path.js';
 
 let bootstrap: ModeBE2eBootstrap;
+
+// Visual-evidence captures land here; CI uploads the directory and the
+// QA flow attaches the PNGs to the PR against the tested head SHA.
+const ARTIFACT_DIR = process.env.E2E_ARTIFACT_DIR ?? 'test-results/modeb-evidence';
+
+async function capture(page: Page, name: string): Promise<void> {
+  const path = join(ARTIFACT_DIR, `${name}.png`);
+  mkdirSync(dirname(path), { recursive: true });
+  await page.screenshot({ path, fullPage: true });
+}
 
 test.beforeAll(async () => {
   bootstrap = JSON.parse(await readFile(MODEB_BOOTSTRAP_FILE, 'utf8')) as ModeBE2eBootstrap;
@@ -93,6 +105,7 @@ test('create → ready: aezeed wallet creation over the real sidecar', async ({ 
   // Ready wallet: node health renders from the live sidecar.
   await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('node-health')).toContainText(/synced to chain/);
+  await capture(page, 'tc-1-wallet-created-dashboard');
 });
 
 test('on-chain receive: a mined deposit reaches the Neutrino wallet', async ({ page }) => {
@@ -111,6 +124,7 @@ test('on-chain receive: a mined deposit reaches the Neutrino wallet', async ({ p
 
   await pollTotalBalance(page, (sats) => sats >= 50_000_000n);
   await expect(page.getByTestId('balance-confirmed')).toContainText('50,000,000');
+  await capture(page, 'tc-2-onchain-funded');
 });
 
 test('on-chain send: review → authorize → txid, verified in the mempool', async ({ page }) => {
@@ -167,6 +181,7 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
   await expect(page.getByTestId('open-channels').getByTestId('channel-row').first()).toContainText('open');
   // Channel funds appear in the Lightning balance card.
   await expect(page.getByTestId('channel-balance')).toContainText('Spendable');
+  await capture(page, 'tc-4-channel-open');
 });
 
 test('lightning outbound: decode → review → pay succeeds over the channel', async ({ page }) => {
@@ -191,6 +206,7 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
 
   await expect(page.getByTestId('payment-outcome')).toContainText('succeeded', { timeout: 60_000 });
   await expect(page.getByTestId('pay-error')).toHaveCount(0);
+  await capture(page, 'tc-5-lightning-payment-succeeded');
 });
 
 test('lightning inbound: alice pays our invoice through the channel', async ({ page }) => {
