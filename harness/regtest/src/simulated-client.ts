@@ -9,7 +9,6 @@
  * payment engine end-to-end — only the daemon is faked. Live-daemon wiring is
  * added when the harness verifies upstream images.
  */
-import { createHash } from 'node:crypto';
 import {
   EntryFailureCodeFailed,
   EntryKindDeposit,
@@ -127,7 +126,24 @@ export class OperatorIndexer {
  * wallet.
  */
 export function simWalletKey(mnemonic: readonly string[]): string {
-  return createHash('sha256').update(mnemonic.join(' ')).digest('hex');
+  return fnv1aHex(mnemonic.join(' '));
+}
+
+/**
+ * Dependency-free deterministic sim wallet key: two 32-bit FNV-1a passes with
+ * different offset bases, hex-encoded (16 chars). The sim's wallet key needs
+ * only per-mnemonic stability — `node:crypto` is unavailable in the React
+ * Native compile graph that typechecks this file.
+ */
+function fnv1aHex(input: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < input.length; i += 1) {
+    const code = input.charCodeAt(i);
+    h1 = ((h1 ^ code) * 0x01000193) >>> 0;
+    h2 = ((h2 ^ code) * 0x811c9dc5) >>> 0;
+  }
+  return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
 }
 
 /**
