@@ -134,7 +134,7 @@ test('on-chain send: review → authorize → txid, verified in the mempool', as
 
   await gotoTab(page, 'On-chain');
   await page.getByLabel('Bitcoin address').fill(dest);
-  await page.getByLabel('Amount (sats)').fill('100000000'); // 0.1 BTC
+  await page.getByLabel('Amount (sats)').fill('10000000'); // 0.1 BTC = 10M sats (run7: 100000000 sats = 1 BTC > 0.5 BTC balance → lnd correctly refused)
   await page.getByLabel('Fee rate (sat/vbyte)').fill('2');
   await page.getByRole('button', { name: 'Review send' }).click();
   await page.getByRole('button', { name: 'Authorize and send' }).click();
@@ -154,7 +154,7 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
   await gotoTab(page, 'Channels');
   await page.getByLabel('Peer node pubkey (66 hex)').fill(bootstrap.peerPubkey);
   await page.getByLabel(/Peer host/).fill(bootstrap.peerHost);
-  await page.getByLabel('Funding amount (sats, min 20,000)').fill('100000000');
+  await page.getByLabel('Funding amount (sats, min 20,000)').fill('20000000'); // 0.2 BTC — wallet holds ~0.4 BTC at this point; 1 BTC funding can never confirm
   await page.getByRole('button', { name: 'Open channel' }).click();
 
   await expect(page.getByTestId('channel-opened')).toBeVisible();
@@ -192,7 +192,8 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
   const invoice = await alice
     .addInvoice(Invoice.create({ memo: 'e2e outbound', value: 21_000n }))
     .then((call) => call.response);
-  expect(invoice.paymentRequest).toMatch(/^lntb/);
+  // Harness nodes are regtest — invoices start lnbcrt (run7 received a valid lnbcrt invoice).
+  expect(invoice.paymentRequest).toMatch(/^lnbcrt/);
 
   await gotoTab(page, 'Lightning');
   await page.getByLabel('Invoice (BOLT-11)').fill(invoice.paymentRequest);
@@ -216,7 +217,7 @@ test('lightning inbound: alice pays our invoice through the channel', async ({ p
   await page.getByLabel('Amount (sats — leave empty for a zero-amount invoice)').fill('12000');
   await page.getByRole('button', { name: 'Create invoice' }).click();
   const ourInvoice = await page.getByTestId('invoice-request').textContent();
-  expect(ourInvoice ?? '').toMatch(/^lntb/);
+  expect(ourInvoice ?? '').toMatch(/^lnbcrt/);
 
   // Alice pays it over the channel (router streaming API).
   const transport = await makeTransport(ALICE);
