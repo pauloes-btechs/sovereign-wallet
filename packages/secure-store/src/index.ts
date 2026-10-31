@@ -11,11 +11,11 @@ export {
   databaseKeyAccount,
 } from './db-key.js';
 export {
-  openSecureDatabase,
   PlaintextBackendError,
   type EncryptedDatabase,
   type DatabaseCapabilities,
   type OpenSecureDatabaseOptions,
 } from './encrypted-db.js';
+export { openSecureDatabase } from './open-secure-db-node.js';
 export { openNodeSqliteDatabase } from './db-node-sqlite.js';
 export { openTauriSqlcipherDatabase } from './db-tauri-sqlcipher.js';

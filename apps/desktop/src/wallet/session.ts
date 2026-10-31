@@ -15,7 +15,7 @@ import {
   createDurablePaymentIntentStore,
   createPaymentEngine,
 } from './payments.js';
-import type { TauriInvoke } from '@sovereign/secure-store';
+import type { TauriInvoke } from '@sovereign/secure-store/browser';
 import { WavelengthProvider, WavedGatewayClient } from '@sovereign/wavelength-adapter';
 import type { PaymentEngine } from '@sovereign/payments';
 import type { WalletInfo } from '@sovereign/wavelength-adapter';

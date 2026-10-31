@@ -12,7 +12,7 @@ import {
   type SidecarLifecycleOptions,
   type SidecarRuntime,
 } from '@sovereign/daemon-lifecycle';
-import { validateSidecarListenArgs } from '@sovereign/privacy';
+import { validateSidecarListenArgs } from '@sovereign/privacy/loopback';
 
 export interface WavedSidecarConfig {
   /** Port for waved's loopback health server (/livez, /readyz). */

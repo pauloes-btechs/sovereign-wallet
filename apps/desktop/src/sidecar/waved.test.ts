@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryKeyringStore } from '@sovereign/secure-store';
-import { validateSidecarListenArgs } from '@sovereign/privacy';
+import { validateSidecarListenArgs } from '@sovereign/privacy/loopback';
 import { wavedSidecarArgs } from './waved.js';
 
 describe('wavedSidecarArgs: loopback-only binding, fail-closed', () => {

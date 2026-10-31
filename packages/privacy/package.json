@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./loopback": {
+      "types": "./dist/loopback.d.ts",
+      "default": "./dist/loopback.js"
     }
   },
   "files": ["dist"],

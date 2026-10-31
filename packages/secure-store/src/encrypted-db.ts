@@ -49,21 +49,3 @@ export interface OpenSecureDatabaseOptions {
   /** Explicit dev/CI opt-in to a plaintext-capable backend. */
   allowPlaintext?: boolean;
 }
-
-export async function openSecureDatabase(
-  options: OpenSecureDatabaseOptions,
-): Promise<EncryptedDatabase> {
-  if (options.tauriInvoke && options.devNode) {
-    throw new Error('openSecureDatabase: pass exactly one backend (tauriInvoke or devNode).');
-  }
-  if (options.tauriInvoke) {
-    const { openTauriSqlcipherDatabase } = await import('./db-tauri-sqlcipher.js');
-    return openTauriSqlcipherDatabase(options.profile, options.tauriInvoke, options.keyring);
-  }
-  if (options.devNode) {
-    if (!options.allowPlaintext) throw new PlaintextBackendError('node-sqlite-plaintext');
-    const { openNodeSqliteDatabase } = await import('./db-node-sqlite.js');
-    return openNodeSqliteDatabase(options.profile, options.devNode.dataRoot);
-  }
-  throw new Error('openSecureDatabase: no backend provided.');
-}

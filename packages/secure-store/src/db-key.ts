@@ -5,8 +5,8 @@
  * signal: the service throws instead of silently re-keying (a silent re-key
  * orphans the existing database with no explanation).
  */
-import { randomBytes } from 'node:crypto';
 import type { KeyringStore } from './keyring.js';
+import { base64UrlToBytes, bytesToBase64Url } from './encoding.js';
 
 export const KEYRING_SERVICE = 'io.btechs.sovereign-wallet';
 
@@ -36,12 +36,14 @@ export class DatabaseKeyService {
     const existing = await this.keyring.getPassword(KEYRING_SERVICE, account);
     if (existing !== undefined) {
       if (!BASE64URL.test(existing)) throw new CorruptKeyError(profile);
-      const key = Buffer.from(existing, 'base64url');
+      const key = base64UrlToBytes(existing);
       if (key.length !== 32) throw new CorruptKeyError(profile);
-      return new Uint8Array(key);
+      return key;
     }
-    const key = new Uint8Array(randomBytes(32));
-    await this.keyring.setPassword(KEYRING_SERVICE, account, Buffer.from(key).toString('base64url'));
+    // WebCrypto's getRandomValues is the one RNG available in every runtime
+    // we ship (Node 22 and the desktop WebView).
+    const key = globalThis.crypto.getRandomValues(new Uint8Array(32));
+    await this.keyring.setPassword(KEYRING_SERVICE, account, bytesToBase64Url(key));
     return key;
   }
 }

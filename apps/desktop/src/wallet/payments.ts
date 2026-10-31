@@ -17,8 +17,8 @@ import {
   type PaymentIntent,
   type PaymentIntentStore,
 } from '@sovereign/payments';
-import { TauriKeyringStore, openSecureDatabase } from '@sovereign/secure-store';
-import type { TauriInvoke } from '@sovereign/secure-store';
+import { TauriKeyringStore, openSecureDatabase } from '@sovereign/secure-store/browser';
+import type { TauriInvoke } from '@sovereign/secure-store/browser';
 import {
   WavelengthPaymentDispatcher,
   SDK_PIN,

@@ -6,6 +6,7 @@
  * key-before-any-query ordering — in tests with a scripted invoke.
  */
 import { DatabaseKeyService } from './db-key.js';
+import { bytesToHex } from './encoding.js';
 import type { DatabaseCapabilities, EncryptedDatabase } from './encrypted-db.js';
 import type { KeyringStore } from './keyring.js';
 import type { TauriInvoke } from './keyring-tauri.js';
@@ -25,7 +26,7 @@ export async function openTauriSqlcipherDatabase(
   // as PRAGMA key = "x'<hex>'" before any other statement on the connection.
   const { handle } = await invoke<OpenReply>('secure_db_open', {
     profile,
-    keyHex: Buffer.from(key).toString('hex'),
+    keyHex: bytesToHex(key),
   });
 
   const capabilities: DatabaseCapabilities = {
