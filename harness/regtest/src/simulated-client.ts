@@ -85,6 +85,73 @@ interface SimExitJob {
   bestCaseBlocksRemaining: number;
 }
 
+/** The Ark operator's record of a VTXO it batched for some wallet. */
+export interface OperatorVtxoRecord {
+  readonly outpoint: string;
+  readonly amountSat: number;
+  /** Chain height at which the VTXO's batch expires. */
+  readonly batchExpiry: number;
+  readonly relativeExpiry: number;
+}
+
+/**
+ * The operator-side indexer SimulatedWavelengthClients SHARE. Models the
+ * recovery contract the drill depends on: a seed restore rebuilds off-chain
+ * VTXO state from the OPERATOR's view — a fresh daemon recovers exactly the
+ * VTXOs the operator still holds in live (unexpired) batches, and nothing
+ * else. Records whose batch has expired are unrecoverable off-chain; the
+ * only path back is the wallet's own unilateral exit.
+ */
+export class OperatorIndexer {
+  private readonly wallets = new Map<string, OperatorVtxoRecord[]>();
+
+  record(walletKey: string, record: OperatorVtxoRecord): void {
+    const existing = this.wallets.get(walletKey) ?? [];
+    if (!existing.some((r) => r.outpoint === record.outpoint)) {
+      existing.push(record);
+    }
+    this.wallets.set(walletKey, existing);
+  }
+
+  /** VTXOs the operator still holds in live (unexpired) batches for a wallet. */
+  liveFor(walletKey: string, atHeight: number): OperatorVtxoRecord[] {
+    return (this.wallets.get(walletKey) ?? []).filter((r) => r.batchExpiry > atHeight);
+  }
+}
+
+/**
+ * Deterministic per-seed wallet key. Models the real property that makes
+ * recovery work at all: wallet identity and keys derive from the seed, so
+ * any daemon initialized from the same words maps to the same operator-side
+ * wallet.
+ */
+export function simWalletKey(mnemonic: readonly string[]): string {
+  return fnv1aHex(mnemonic.join(' '));
+}
+
+/**
+ * Dependency-free deterministic sim wallet key: two 32-bit FNV-1a passes with
+ * different offset bases, hex-encoded (16 chars). The sim's wallet key needs
+ * only per-mnemonic stability — `node:crypto` is unavailable in the React
+ * Native compile graph that typechecks this file.
+ */
+function fnv1aHex(input: string): string {
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < input.length; i += 1) {
+    const code = input.charCodeAt(i);
+    h1 = ((h1 ^ code) * 0x01000193) >>> 0;
+    h2 = ((h2 ^ code) * 0x811c9dc5) >>> 0;
+  }
+  return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0');
+}
+
+/**
+ * Process-wide fresh-mnemonic counter — see freshMnemonic. Unique words per
+ * simulated wallet keep identities disjoint even across many sim instances.
+ */
+let globalMnemonicSeq = 0;
+
 export class SimulatedWavelengthClient implements WavelengthClient {
   // ——— test-driver state ———
   blockHeight = 805_000;
@@ -103,6 +170,12 @@ export class SimulatedWavelengthClient implements WavelengthClient {
   /** Quotes the driver may settle or fail by id. */
   readonly entries: Entry[] = [];
   readonly exits = new Map<string, SimExitJob>();
+  /** Operator-side state shared across daemon instances (recovery drills). */
+  readonly indexer: OperatorIndexer;
+
+  // ——— wallet state (lifecycle drills) ———
+  walletMnemonic: string[] | undefined;
+  walletKeyHex: string | undefined;
 
   // ——— observability for the tests ———
   sendPreparedCalls = 0;
@@ -114,6 +187,11 @@ export class SimulatedWavelengthClient implements WavelengthClient {
   private disposed = false;
   private streamOpen = false;
   private readonly listeners = new Set<WavelengthListener>();
+
+  /** `indexer` is shared between daemons simulating restore from the operator. */
+  constructor(indexer: OperatorIndexer = new OperatorIndexer()) {
+    this.indexer = indexer;
+  }
 
   private nextId(prefix: string): string {
     this.seq += 1;
@@ -196,6 +274,17 @@ export class SimulatedWavelengthClient implements WavelengthClient {
       commitmentTxid: 'sim-commitment-txid',
     });
     this.balances.confirmedSat += amountSat;
+    // The operator indexes whatever exists — including wallets the current
+    // daemon has not created yet (another instance may restore them later).
+    const key = this.walletKeyHex ?? (this.walletMnemonic ? simWalletKey(this.walletMnemonic) : undefined);
+    if (key !== undefined) {
+      this.indexer.record(key, {
+        outpoint,
+        amountSat,
+        batchExpiry: this.blockHeight + blocksToExpiry,
+        relativeExpiry: 40,
+      });
+    }
   }
 
   /** Funds the backing wallet (the fee source a unilateral exit requires). */
@@ -246,7 +335,7 @@ export class SimulatedWavelengthClient implements WavelengthClient {
       walletType: 'ark',
       walletState: WalletState.Ready,
       walletReady: true,
-      identityPubKey: 'sim-identity',
+      identityPubKey: this.simIdentity(),
       serverInfo: { freeRefreshWindowBlocks: this.freeRefreshWindowBlocks },
     } as WalletInfo;
   }
@@ -266,12 +355,100 @@ export class SimulatedWavelengthClient implements WavelengthClient {
     return { ...this.balances };
   }
 
-  async createWallet(_req: CreateWalletRequest): Promise<CreateWalletResult> {
-    throw new Error('sim: createWallet not simulated');
+  /**
+   * Wallet identity derives from the seed once one exists — the property the
+   * recovery drills depend on (same words ⇒ same identity on any daemon).
+   */
+  private simIdentity(): string {
+    return this.walletKeyHex === undefined ? 'sim-identity' : `sim-${this.walletKeyHex.slice(0, 16)}`;
+  }
+
+  /** Deterministic fake mnemonic — the drills treat it as opaque seed words. */
+  private freshMnemonic(): string[] {
+    // Module-level counter: two sim daemons must never derive the same wallet
+    // identity — a shared operator indexer pools records under the wallet key,
+    // so mnemonic collisions would cross-contaminate independent wallets.
+    globalMnemonicSeq += 1;
+    return Array.from({ length: 12 }, (_, i) => `word${globalMnemonicSeq}of${globalMnemonicSeq}-${i + 1}`);
+  }
+
+  /** Adopts an operator-side (or locally backed-up) VTXO record as inventory. */
+  private adoptRecord(record: OperatorVtxoRecord): void {
+    if (this.vtxos.some((v) => v.outpoint === record.outpoint)) return;
+    this.vtxos.push({
+      outpoint: record.outpoint,
+      amountSat: record.amountSat,
+      status: 'available',
+      batchExpiry: record.batchExpiry,
+      relativeExpiry: record.relativeExpiry,
+      commitmentTxid: 'sim-commitment-txid',
+    });
+    this.balances.confirmedSat += record.amountSat;
+  }
+
+  async createWallet(req: CreateWalletRequest): Promise<CreateWalletResult> {
+    if (this.walletMnemonic !== undefined) {
+      throw new WavelengthError('sim: wallet already exists — a daemon holds one wallet', 'already_exists');
+    }
+    const mnemonicIn = req.mnemonic ?? [];
+    const recoverStateWanted = req.recoverState ?? false;
+    const restoring = mnemonicIn.length > 0;
+    const mnemonic = restoring ? [...mnemonicIn] : this.freshMnemonic();
+    this.walletMnemonic = mnemonic;
+    this.walletKeyHex = simWalletKey(mnemonic);
+
+    const recoveryRan = restoring && recoverStateWanted;
+    let recoveredVTXOs = 0;
+    if (recoveryRan) {
+      if (!this.operatorReachable) {
+        // The wallet exists (keys work) but the off-chain state scan needs
+        // the operator's view of live batches — exactly what the real daemon
+        // rebuilds VTXO state from on a restore.
+        throw new WavelengthError(
+          'sim: recovery scan failed — Ark operator unreachable; VTXO state not rebuilt',
+          'unavailable',
+        );
+      }
+      for (const record of this.indexer.liveFor(this.walletKeyHex, this.blockHeight)) {
+        this.adoptRecord(record);
+        recoveredVTXOs += 1;
+      }
+    }
+    return {
+      mnemonic,
+      encipheredSeed: `sim-enc(${this.walletKeyHex.slice(0, 12)})`,
+      identityPubKey: this.simIdentity(),
+      recoveryRan,
+      recoveredBoardingAddresses: 0,
+      recoveredBoardingUTXOs: 0,
+      recoveredVTXOs,
+      recoveredOORReceiveScripts: 0,
+      recoveredOORRecipientEvents: 0,
+    };
   }
 
   async unlockWallet(_req: UnlockWalletRequest): Promise<UnlockWalletResult> {
-    throw new Error('sim: unlockWallet not simulated');
+    if (this.walletMnemonic === undefined) {
+      throw new WavelengthError('sim: no wallet to unlock — create or restore one first', 'not_found');
+    }
+    return { identityPubKey: this.simIdentity() };
+  }
+
+  /**
+   * Restores VTXO state from the wallet's OWN encrypted backup (the local
+   * records our app layer keeps alongside the seed) — the fallback when the
+   * operator is unreachable and the operator-side scan cannot rebuild state.
+   * Adopts records regardless of expiry (the unilateral-exit path follows);
+   * returns how many records were newly adopted.
+   */
+  restoreVtxoStateFromBackup(records: readonly OperatorVtxoRecord[]): number {
+    let adopted = 0;
+    for (const record of records) {
+      if (this.vtxos.some((v) => v.outpoint === record.outpoint)) continue;
+      this.adoptRecord(record);
+      adopted += 1;
+    }
+    return adopted;
   }
 
   async openWalletFromPasskey(

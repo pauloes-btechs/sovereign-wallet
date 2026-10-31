@@ -8,18 +8,20 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GrpcTransport } from '@protobuf-ts/grpc-transport';
-import { tapdAssets, tapdMint } from '@sovereign/litd-proto';
+import { tapdAssets, tapdMint, tapdWallet } from '@sovereign/litd-proto';
 
 import { AssetManager, batchIsConfirmed, toRegistryEntry } from './asset-manager.js';
 import type { TapdClients } from './tapd-clients.js';
 
 /** Test double over the generated clients: records calls; full RPC surface
  * is exercised by the regtest integration suite, not here. */
-function fakeClients(calls: { exportProof: number; newAddr: number }): {
+function fakeClients(calls: { exportProof: number; newAddr: number; backupExport?: number; backupImport?: number }): {
   clients: TapdClients;
   balancesRequests: tapdAssets.ListBalancesRequest[];
+  backupRequests: tapdWallet.ExportAssetWalletBackupRequest[];
 } {
   const balancesRequests: tapdAssets.ListBalancesRequest[] = [];
+  const backupRequests: tapdWallet.ExportAssetWalletBackupRequest[] = [];
   const clients = {
     transport: { close: () => undefined } as unknown as GrpcTransport,
     assets: {
@@ -39,8 +41,29 @@ function fakeClients(calls: { exportProof: number; newAddr: number }): {
     mint: {
       listBatches: async () => ({ response: tapdMint.ListBatchResponse.create({}) }),
     } as unknown as TapdClients['mint'],
+    wallet: {
+      // Non-async: the real client returns a UnaryCall whose `.response` is
+      // a Promise — the manager awaits `.response` off the returned object.
+      exportAssetWalletBackup: (req: tapdWallet.ExportAssetWalletBackupRequest) => {
+        calls.backupExport = (calls.backupExport ?? 0) + 1;
+        backupRequests.push(tapdWallet.ExportAssetWalletBackupRequest.clone(req));
+        return {
+          response: Promise.resolve(
+            tapdWallet.ExportAssetWalletBackupResponse.create({ backup: new Uint8Array([9, 9]) }),
+          ),
+        };
+      },
+      importAssetsFromBackup: () => {
+        calls.backupImport = (calls.backupImport ?? 0) + 1;
+        return {
+          response: Promise.resolve(
+            tapdWallet.ImportAssetsFromBackupResponse.create({ numImported: 2, numSkipped: 0 }),
+          ),
+        };
+      },
+    } as unknown as TapdClients['wallet'],
   } as unknown as TapdClients;
-  return { clients, balancesRequests };
+  return { clients, balancesRequests, backupRequests };
 }
 
 describe('listBalances — group_by selection', () => {
@@ -140,3 +163,27 @@ describe('AssetManager — validate before any tapd call', () => {
     expect(calls.newAddr).toBe(0);
   });
 });
+
+describe('AssetManager — wallet backup (recovery surface)', () => {
+  it('exports the backup blob, defaulting to RAW mode (self-contained proofs)', async () => {
+    const { clients, backupRequests } = fakeClients({ exportProof: 0, newAddr: 0 });
+    const manager = new AssetManager(clients);
+    const blob = await manager.exportWalletBackup();
+    expect(blob).toEqual(new Uint8Array([9, 9]));
+    expect(backupRequests).toHaveLength(1);
+    expect(backupRequests[0]?.mode).toBe(tapdWallet.BackupMode.RAW);
+  });
+
+  it('passes an explicit backup mode through to tapd', async () => {
+    const { clients, backupRequests } = fakeClients({ exportProof: 0, newAddr: 0 });
+    await new AssetManager(clients).exportWalletBackup(tapdWallet.BackupMode.COMPACT);
+    expect(backupRequests[0]?.mode).toBe(tapdWallet.BackupMode.COMPACT);
+  });
+
+  it('returns the import report with honest counts', async () => {
+    const { clients } = fakeClients({ exportProof: 0, newAddr: 0 });
+    const report = await new AssetManager(clients).importAssetsFromBackup(new Uint8Array([1, 2, 3]));
+    expect(report).toEqual({ numImported: 2, numSkipped: 0 });
+  });
+});
+

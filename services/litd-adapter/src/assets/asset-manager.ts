@@ -9,7 +9,7 @@
  * behind the experimental flag (experimental.ts) and land only when that
  * gate opens.
  */
-import { tapdAssets, tapdMint } from '@sovereign/litd-proto';
+import { tapdAssets, tapdMint, tapdWallet } from '@sovereign/litd-proto';
 import {
   type AssetIdHex,
   type AssetRegistryEntryInput,
@@ -261,9 +261,47 @@ export class AssetManager {
     return this.clients.assets.unpackProofFile(tapdAssets.UnpackProofFileRequest.create({ rawProofFile })).response;
   }
 
+  // -- wallet backup (recovery) ----------------------------------------------
+
+  /**
+   * Exports the encrypted asset-wallet backup blob (tapd v0.8.6
+   * ExportAssetWalletBackup). The blob is encrypted with a key derived from
+   * the LND seed — restoring it requires an LND restored from the SAME seed
+   * (the asset-proof restore drill proves the negative too: the seed alone
+   * recovers nothing). RAW keeps complete proof data in the blob, so restore
+   * needs no universe server.
+   */
+  async exportWalletBackup(
+    mode: tapdWallet.BackupMode = tapdWallet.BackupMode.RAW,
+  ): Promise<Uint8Array> {
+    const res = await this.clients.wallet
+      .exportAssetWalletBackup(tapdWallet.ExportAssetWalletBackupRequest.create({ mode }))
+      .response;
+    return res.backup;
+  }
+
+  /**
+   * Imports a previously exported asset-wallet backup into THIS tapd (fresh
+   * datadir, LND restored from the same seed). Returns how many assets were
+   * imported and how many were skipped — a skipped count is a failed restore,
+   * not a success with caveats.
+   */
+  async importAssetsFromBackup(backup: Uint8Array): Promise<AssetBackupImportReport> {
+    const res = await this.clients.wallet
+      .importAssetsFromBackup(tapdWallet.ImportAssetsFromBackupRequest.create({ backup }))
+      .response;
+    return { numImported: res.numImported, numSkipped: res.numSkipped };
+  }
+
   close(): void {
     this.clients.transport.close();
   }
+}
+
+/** Result of ImportAssetsFromBackup, surfaced with honest field names. */
+export interface AssetBackupImportReport {
+  readonly numImported: number;
+  readonly numSkipped: number;
 }
 
 function sleep(ms: number): Promise<void> {
