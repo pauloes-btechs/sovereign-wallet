@@ -130,6 +130,12 @@ export function simWalletKey(mnemonic: readonly string[]): string {
   return createHash('sha256').update(mnemonic.join(' ')).digest('hex');
 }
 
+/**
+ * Process-wide fresh-mnemonic counter — see freshMnemonic. Unique words per
+ * simulated wallet keep identities disjoint even across many sim instances.
+ */
+let globalMnemonicSeq = 0;
+
 export class SimulatedWavelengthClient implements WavelengthClient {
   // ——— test-driver state ———
   blockHeight = 805_000;
@@ -161,7 +167,6 @@ export class SimulatedWavelengthClient implements WavelengthClient {
   startedConfig: RuntimeConfig | undefined;
 
   private seq = 0;
-  private mnemonicSeq = 0;
   private started = false;
   private disposed = false;
   private streamOpen = false;
@@ -344,8 +349,11 @@ export class SimulatedWavelengthClient implements WavelengthClient {
 
   /** Deterministic fake mnemonic — the drills treat it as opaque seed words. */
   private freshMnemonic(): string[] {
-    this.mnemonicSeq += 1;
-    return Array.from({ length: 12 }, (_, i) => `word${this.mnemonicSeq}of${this.mnemonicSeq}-${i + 1}`);
+    // Module-level counter: two sim daemons must never derive the same wallet
+    // identity — a shared operator indexer pools records under the wallet key,
+    // so mnemonic collisions would cross-contaminate independent wallets.
+    globalMnemonicSeq += 1;
+    return Array.from({ length: 12 }, (_, i) => `word${globalMnemonicSeq}of${globalMnemonicSeq}-${i + 1}`);
   }
 
   /** Adopts an operator-side (or locally backed-up) VTXO record as inventory. */
