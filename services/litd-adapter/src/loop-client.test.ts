@@ -107,6 +107,7 @@ describe('mapLiquidityParameters', () => {
         autoloopBudgetSat: 150_000n,
         autoloopBudgetStartSec: 1_793_472_000n,
         maxSwapFeePpm: 2_500n,
+        sweepFeeRateSatPerVbyte: 30n,
         maxMinerFeeSat: 10_000n,
         maxPrepaySat: 5_000n,
         sweepConfTarget: 6,
@@ -118,6 +119,7 @@ describe('mapLiquidityParameters', () => {
       budgetSat: 150_000,
       budgetStartSec: 1_793_472_000,
       maxSwapFeePpm: 2_500,
+      sweepFeeRateSatPerVbyte: 30,
       maxMinerFeeSat: 10_000,
       maxPrepaySat: 5_000,
       sweepConfTarget: 6,
@@ -132,23 +134,30 @@ describe('autoLoopParamsOntoLiquidityParameters', () => {
       sweepConfTarget: 2,
       maxSwapAmount: 10_000_000n,
       autoloopDestAddress: 'bcrt1qdefault',
+      // A fresh daemon read carries loopd's default flat fee ppm — it must
+      // never ride into a category-based write (loopd rejects both-set).
+      feePpm: 2_500n,
     });
     const merged = autoLoopParamsOntoLiquidityParameters(current, {
       autoloopEnabled: true,
       budgetSat: 150_000,
       budgetStartSec: 0,
       maxSwapFeePpm: 2_500,
+      sweepFeeRateSatPerVbyte: 30,
       maxMinerFeeSat: 10_000,
       maxPrepaySat: 5_000,
       sweepConfTarget: 6,
       failureBackoffSec: 3_600,
     });
     expect(merged.autoloop).toBe(true);
+    expect(merged.sweepFeeRateSatPerVbyte).toBe(30n);
     expect(merged.autoloopBudgetSat).toBe(150_000n);
     // Monthly ceiling, expressed as loopd's refresh period.
     expect(merged.autoloopBudgetRefreshPeriodSec).toBe(30n * 24n * 60n * 60n);
     expect(merged.maxMinerFeeSat).toBe(10_000n);
     expect(merged.maxPrepaySat).toBe(5_000n);
+    // The engine writes categories, so the daemon's flat ppm is zeroed.
+    expect(merged.feePpm).toBe(0n);
     // Daemon-owned fields ride through untouched.
     expect(merged.sweepConfTarget).toBe(2);
     expect(merged.maxSwapAmount).toBe(10_000_000n);

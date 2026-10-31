@@ -72,6 +72,9 @@ export interface AutoLoopParams {
   budgetStartSec: number;
   /** Max server fee in ppm of the swap amount. */
   maxSwapFeePpm: number;
+  /** On-chain sweep fee ceiling for automated swaps, sat/vB. loopd
+   * requires either this or the deprecated flat fee ppm to be set. */
+  sweepFeeRateSatPerVbyte: number;
   /** Max miner fee per swap. */
   maxMinerFeeSat: number;
   /** Max prepay (probe) fee per swap. */

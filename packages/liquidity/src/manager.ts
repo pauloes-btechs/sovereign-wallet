@@ -45,6 +45,11 @@ export interface LiquidityManagerDeps {
 export interface EnableAutoLoopOptions {
   /** Server-fee bound in ppm of swap amount. Default 2500 (0.25%). */
   maxSwapFeePpm?: number;
+  /** On-chain sweep fee ceiling, sat/vB. Default 30 — the app's
+   * conservative default; loopd rejects params that set neither this nor
+   * the deprecated flat fee ppm ("set either fee ppm, or individual fee
+   * categories" — observed against the pinned binary). */
+  sweepFeeRateSatPerVbyte?: number;
   /** Per-swap miner-fee bound. Default: the per-action cap. */
   maxMinerFeeSat?: number;
   /** Per-swap prepay bound. Default: min(per-action cap, 5,000 sats). */
@@ -151,6 +156,7 @@ export class LiquidityManager {
       budgetSat: policy.monthlyBudgetSat,
       budgetStartSec: opts.budgetStartSec ?? Math.floor(nowMs / 1000),
       maxSwapFeePpm: opts.maxSwapFeePpm ?? 2500,
+      sweepFeeRateSatPerVbyte: opts.sweepFeeRateSatPerVbyte ?? 30,
       maxMinerFeeSat: opts.maxMinerFeeSat ?? policy.perActionCapSat,
       maxPrepaySat: opts.maxPrepaySat ?? Math.min(policy.perActionCapSat, 5_000),
       sweepConfTarget: opts.sweepConfTarget ?? 6,
@@ -164,6 +170,7 @@ export class LiquidityManager {
       dailyBudgetSat: policy.dailyBudgetSat,
       monthlyBudgetSat: policy.monthlyBudgetSat,
       maxSwapFeePpm: params.maxSwapFeePpm,
+      sweepFeeRateSatPerVbyte: params.sweepFeeRateSatPerVbyte,
       maxMinerFeeSat: params.maxMinerFeeSat,
       maxPrepaySat: params.maxPrepaySat,
     }));

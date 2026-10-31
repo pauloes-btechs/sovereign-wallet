@@ -106,6 +106,7 @@ export function mapLiquidityParameters(p: Readonly<Loop.LiquidityParameters>): A
     budgetSat: Number(p.autoloopBudgetSat),
     budgetStartSec: Number(p.autoloopBudgetStartSec),
     maxSwapFeePpm: Number(p.maxSwapFeePpm),
+    sweepFeeRateSatPerVbyte: Number(p.sweepFeeRateSatPerVbyte),
     maxMinerFeeSat: Number(p.maxMinerFeeSat),
     maxPrepaySat: Number(p.maxPrepaySat),
     sweepConfTarget: p.sweepConfTarget,
@@ -125,12 +126,20 @@ export function autoLoopParamsOntoLiquidityParameters(
 ): Loop.LiquidityParameters {
   return Loop.LiquidityParameters.create({
     ...current,
+    // The engine writes per-category fee limits (below). loopd rejects a
+    // request that sets BOTH the deprecated flat feePpm and any category —
+    // and a fresh daemon's read returns a non-zero default feePpm — so the
+    // merged write must always zero the flat ppm.
+    feePpm: 0n,
     autoloop: params.autoloopEnabled,
     autoloopBudgetSat: BigInt(params.budgetSat),
     // loopd's deprecated start field: the refresh period governs budgets now.
     autoloopBudgetStartSec: BigInt(0),
     autoloopBudgetRefreshPeriodSec: BigInt(30 * 24 * 60 * 60), // 30 days — the app's monthly ceiling
     maxSwapFeePpm: BigInt(params.maxSwapFeePpm),
+    // loopd requires a sweep fee rate (or the deprecated flat ppm) — the
+    // engine's AutoLoopParams always carries it.
+    sweepFeeRateSatPerVbyte: BigInt(params.sweepFeeRateSatPerVbyte),
     maxMinerFeeSat: BigInt(params.maxMinerFeeSat),
     maxPrepaySat: BigInt(params.maxPrepaySat),
     // sweepConfTarget stays daemon-owned: the engine never clobbers the

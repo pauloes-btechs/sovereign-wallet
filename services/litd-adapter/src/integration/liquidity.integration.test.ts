@@ -26,12 +26,16 @@ import { sidecarBinaryPath, sleep } from './helpers.js';
 //
 // Honest boundary: Loop swap EXECUTION and Pool lease EXECUTION need the
 // Lightning Labs swap server / auctioneer, which serve mainnet and testnet
-// only — there is no public regtest swap server. What this suite proves on
-// regtest is the full client path: sub-server registration, macaroon auth,
-// protobuf compatibility, the daemon-side AutoLoop parameter round-trip
-// (client-side state — no server needed), and classified provider failures
-// for the server-dependent RPCs. Mainnet/testing of executed swaps stays
-// strictly opt-in per the spec's safety boundaries.
+// only — there is no public regtest swap server. AutoLoop PARAMETER WRITES
+// also need a live operator: loopd's liquidity manager validates params
+// against the swap server's restrictions on every SetLiquidityParams (loop
+// at the pinned commit, liquidity.setParameters → cfg.Restrictions). What
+// this suite proves on regtest is the full client path: sub-server
+// registration, macaroon auth, protobuf compatibility, the live AutoLoop
+// defaults read, fail-closed opt-in at the operator boundary, and
+// classified provider failures for the server-dependent RPCs. Mainnet
+// testing of executed swaps stays strictly opt-in per the spec's safety
+// boundaries.
 
 let launched: LaunchedLitd | undefined;
 let conn: LitdConnectionOptions | undefined;
@@ -114,6 +118,15 @@ beforeAll(async () => {
         'pool-mode=integrated',
         'loop.server.host=127.0.0.1:1',
         'pool.auctionserver=127.0.0.1:1',
+        // Sub-server macaroon DBs default to ~/.loop and ~/.pool — a SHARED
+        // store encrypted against whichever root key first created it. A
+        // later run with a different wallet hits "unable to unlock macaroon
+        // DB: invalid password": the RPC surface registers but loopd/poold
+        // start half-initialized (their RPCs panic with nil managers —
+        // observed). Pointing each daemon at this run's temp dir keeps runs
+        // hermetic on reused machines (warm CI runners included).
+        `loop.datadir=${dataDir}/loop`,
+        `pool.basedir=${dataDir}/pool`,
       ],
       // Sub-server RPCs reject LND's admin macaroon (litd's sub-server
       // caveat check answers "signature mismatch after caveat
@@ -168,51 +181,56 @@ afterAll(async () => {
 });
 
 describe('Loop sub-server over litd on regtest', () => {
-  it('round-trips AutoLoop parameters through the daemon (client-side state)', async () => {
-    // loopd starts with nothing configured.
+  it('serves fresh AutoLoop defaults over the live RPC', async () => {
+    // A fresh loopd serves its DEFAULT parameters (autoloop disabled) —
+    // observed live against the pinned binary; it does not answer with an
+    // empty message, so the port reports concrete defaults, not null.
+    // Values are loopd's deterministic start-up constants for this pin:
+    // budget 335544 sats, sweep target 100 blocks, 24h failure backoff.
     const initial = await loopPort!.getAutoLoopParams();
-    expect(initial).toBeNull();
-
-    // Enable with the engine's budget shape — the opt-in flow's exact call.
-    await loopPort!.setAutoLoopParams({
-      autoloopEnabled: true,
-      budgetSat: 150_000,
-      budgetStartSec: Math.floor(Date.now() / 1000),
-      maxSwapFeePpm: 2_500,
-      maxMinerFeeSat: 10_000,
-      maxPrepaySat: 5_000,
-      sweepConfTarget: 6,
-      failureBackoffSec: 3_600,
-    });
-
-    const enabled = await poll(
-      () => loopPort!.getAutoLoopParams(),
-      (params) => params !== null && params.autoloopEnabled,
-      'AutoLoop params to persist as enabled',
-      30_000,
-    );
-    expect(enabled?.budgetSat).toBe(150_000);
-    expect(enabled?.maxMinerFeeSat).toBe(10_000);
-    expect(enabled?.maxSwapFeePpm).toBe(2_500);
-
-    // Disable — the reverse flow the budget-enforcement path uses.
-    await loopPort!.setAutoLoopParams({
+    expect(initial).toEqual({
       autoloopEnabled: false,
-      budgetSat: 150_000,
+      budgetSat: 335_544,
       budgetStartSec: 0,
-      maxSwapFeePpm: 2_500,
-      maxMinerFeeSat: 10_000,
-      maxPrepaySat: 5_000,
-      sweepConfTarget: 6,
-      failureBackoffSec: 3_600,
+      maxSwapFeePpm: 0,
+      sweepFeeRateSatPerVbyte: 0,
+      maxMinerFeeSat: 0,
+      maxPrepaySat: 0,
+      sweepConfTarget: 100,
+      failureBackoffSec: 86_400,
     });
-    const disabled = await poll(
-      () => loopPort!.getAutoLoopParams(),
-      (params) => params !== null && !params.autoloopEnabled,
-      'AutoLoop params to persist as disabled',
-      30_000,
-    );
-    expect(disabled?.budgetSat).toBe(150_000);
+  });
+
+  it('fails closed: AutoLoop opt-in is refused while the operator is unreachable', async () => {
+    // Upstream contract (loop at the pinned commit, liquidity.setParameters):
+    // SetLiquidityParams validates params against the swap server's
+    // restrictions — a LIVE operator is required for any AutoLoop write.
+    // With the operator pinned to a dead loopback endpoint the write must
+    // fail with a CLASSIFIED provider error, leave the policy off, record
+    // nothing as enabled in the journal (the daemon write is the commit
+    // point, not the user's click), and leave daemon state untouched.
+    const managerJournal = new MemoryLiquidityJournal();
+    const manager: LiquidityManager = new LiquidityManager({
+      loop: loopPort!,
+      pool: poolPort!,
+      journal: managerJournal,
+      newId: () => globalThis.crypto.randomUUID(),
+    });
+    await manager.start();
+    expect(manager.isAutoLoopEnabled()).toBe(false);
+
+    await expect(
+      manager.enableAutoLoop({
+        perActionCapSat: 10_000,
+        dailyBudgetSat: 50_000,
+        monthlyBudgetSat: 150_000,
+      }),
+    ).rejects.toBeInstanceOf(LiquidityProviderError);
+
+    expect(manager.isAutoLoopEnabled()).toBe(false);
+    expect(await managerJournal.list()).toEqual([]);
+    const after = await loopPort!.getAutoLoopParams();
+    expect(after?.autoloopEnabled).toBe(false);
   });
 
   it('serves swap bookkeeping (no swaps yet) and classified quote failures', async () => {
@@ -256,44 +274,5 @@ describe('Pool sub-server over litd on regtest', () => {
     );
     expect(failure).toBeInstanceOf(LiquidityProviderError);
     expect((failure as LiquidityProviderError).kind).toBe('unavailable');
-  });
-});
-
-describe('LiquidityManager over the live litd ports', () => {
-  it('keeps automation off by default and journals the enable/disable cycle', async () => {
-    const manager: LiquidityManager = new LiquidityManager({
-      loop: loopPort!,
-      pool: poolPort!,
-      journal: new MemoryLiquidityJournal(),
-      newId: () => globalThis.crypto.randomUUID(),
-    });
-    await manager.start();
-
-    // The opt-in default: automation never touches the daemon unprompted.
-    expect(manager.isAutoLoopEnabled()).toBe(false);
-
-    await manager.enableAutoLoop({
-      perActionCapSat: 10_000,
-      dailyBudgetSat: 50_000,
-      monthlyBudgetSat: 150_000,
-    });
-
-    // The manager's policy reaches the daemon as autoloop=true params.
-    const params = await poll(
-      () => loopPort!.getAutoLoopParams(),
-      (p) => p !== null && p.autoloopEnabled,
-      'daemon AutoLoop to enable via the manager',
-      30_000,
-    );
-    expect(params?.budgetSat).toBe(150_000);
-
-    await manager.disableAutoLoop('integration test teardown');
-    const off = await poll(
-      () => loopPort!.getAutoLoopParams(),
-      (p) => p !== null && !p.autoloopEnabled,
-      'daemon AutoLoop to disable via the manager',
-      30_000,
-    );
-    expect(off).not.toBeNull();
   });
 });
