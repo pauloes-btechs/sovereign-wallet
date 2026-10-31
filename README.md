@@ -20,7 +20,7 @@ active provider declares.
 ```
 apps/
   desktop/        Tauri 2 + React + Vite (daemons as signed sidecars)
-  mobile/         React Native ≥0.76, New Architecture (Mode B is LNC-only)
+  mobile/         React Native 0.88, New Architecture + android/ + ios/ shells
 packages/
   wallet-core/    Capability-declaring provider contract + domain types
   payments/       Payment intent state machine (reconcile, never re-dispatch)
@@ -28,7 +28,8 @@ services/
   wavelength-adapter/  ALL Wavelength SDK contact, isolated
   litd-adapter/        litd/LND gRPC (protobuf-ts, pinned protos)
 harness/regtest/ Docker regtest harness (autonomous testing: regtest ONLY)
-docs/            UPSTREAM_INTEGRATIONS.md and friends
+harness/recovery/ Five release-blocking recovery drills
+docs/            Architecture, docs set, release engineering
 ```
 
 ## Development
@@ -42,6 +43,32 @@ pnpm test
 ```
 
 Requires Node ≥20 and pnpm (version pinned via `packageManager`).
+
+### Mobile native shells
+
+`apps/mobile/android` and `apps/mobile/ios` are committed React Native 0.88
+projects wired to the `SovereignWallet` AppRegistry entry in `index.js`:
+
+```sh
+pnpm --filter @sovereign/mobile start            # Metro (JS for dev builds)
+cd apps/mobile/android && ./gradlew assembleDebug  # debug APK (no signing)
+cd apps/mobile/ios && pod install && open SovereignWallet.xcworkspace
+```
+
+Debug builds load JS from Metro — they are dev artifacts, not releases.
+CI builds both (Android debug APK; unsigned iOS simulator app) and desktop
+installers for Windows/macOS with install smoke tests — see
+[docs/RELEASE.md](docs/RELEASE.md).
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — two engines, one contract, process model
+- [Upstream integrations](docs/UPSTREAM_INTEGRATIONS.md) — full dependency inventory with pins and licenses
+- [Wallet recovery](docs/WALLET_RECOVERY.md) — what restores from what, per mode
+- [Privacy](docs/PRIVACY.md) — egress disclosure and enforcement
+- [Security](docs/SECURITY.md) — trust boundaries and defenses ([review pass](docs/SECURITY_REVIEW.md))
+- [Test results](docs/TEST_RESULTS.md) — recovery drill evidence + build verification
+- [Release](docs/RELEASE.md) — artifacts, smoke tests, signing status and blockers
 
 ## Safety invariants
 

@@ -35,6 +35,27 @@ Drills:
    seed yields identical identity keys, and the wallet-core identity guard
    refuses the second registration before funds can be double-spent.
 
+## Release engineering evidence (2026-10-31)
+
+Beyond the drills, the CI run attached to each PR verifies the build
+deliverables. Evidence lives as run artifacts (7-day retention) —
+see [RELEASE](RELEASE.md) for the artifact table.
+
+| Deliverable | CI job | Evidence |
+| --- | --- | --- |
+| Windows installer (NSIS + MSI, debug, unsigned) | Desktop dev artifacts (windows-latest) | Uploaded bundle + install smoke test: NSIS `/S` and MSI `/qn` installs succeed; `Sovereign Wallet.exe` + `litd.exe` + `waved.exe` present |
+| macOS bundle (dmg, debug, unsigned — Apple silicon + Intel) | Desktop dev artifacts (macos-latest / macos-15-intel) | Uploaded bundle + install smoke test: dmg mounts, app copies to /Applications, main binary + `litd` + `waved` present, codesign state recorded (unsigned) |
+| Linux bundle (best-effort tier) | Desktop dev artifacts (ubuntu-24.04, `continue-on-error`) | Bundle inventory; never a release blocker |
+| Android dev build | Android dev build (debug APK) | APK with dex + manifest + arm64 Hermes runtime, uploaded |
+| iOS dev build | iOS dev build (simulator, unsigned) | Simulator .app with main binary; `CODE_SIGNING_ALLOWED=NO` |
+| Parser robustness | Fuzz job | 100k iterations/seed on destination, invoice, asset-id, listen-args parsers |
+| Egress discipline | Build & unit tests (egress scan) + integration suite | Source-scan test (no undisclosed host literals) + runtime egress-detection test |
+| Supply chain | Dependency audit + Secret scan + sidecar hash checks | `pnpm audit --prod` (high threshold); gitleaks full history; sidecar SHA256 vs signed manifests |
+
+Signing/notarization: **not verifiable — no credentials exist** (documented
+external blocker, owner: Pauloes; see [RELEASE](RELEASE.md)). Smoke tests
+therefore assert install correctness and sidecar presence, not signatures.
+
 <!-- recovery-results:start -->
 
 Rendered: 2026-10-31T05:26:58.423Z · drills recorded: 3
