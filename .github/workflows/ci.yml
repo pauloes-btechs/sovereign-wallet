@@ -504,7 +504,8 @@ jobs:
           test -f "$apk" || { echo "::error::debug APK not produced"; exit 1; }
           unzip -l "$apk" | grep -E 'classes\d*\.dex|AndroidManifest\.xml' >/dev/null \
             || { echo "::error::APK missing dex/manifest"; exit 1; }
-          unzip -l "$apk" | grep 'lib/arm64-v8a/libhermes.so' >/dev/null \
+          # RN <0.84 ships libhermes.so; RN 0.84+ renames the runtime to libhermesvm.so
+          unzip -l "$apk" | grep -E 'lib/arm64-v8a/libhermes(vm)?\.so' >/dev/null \
             || { echo "::error::APK missing Hermes runtime (arm64)"; exit 1; }
           ls -la "$apk"
       - name: Upload APK
