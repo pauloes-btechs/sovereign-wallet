@@ -12,6 +12,7 @@ import {
   type SidecarLifecycleOptions,
   type SidecarRuntime,
 } from '@sovereign/daemon-lifecycle';
+import { validateSidecarListenArgs } from '@sovereign/privacy';
 
 export interface WavedSidecarConfig {
   /** Port for waved's loopback health server (/livez, /readyz). */
@@ -48,27 +49,45 @@ export async function wavedReadiness(port: number): Promise<{ ready: boolean }> 
   }
 }
 
+/**
+ * The exact args the sidecar runs with — pure so tests can pin them. Every
+ * listener is loopback-bound and the list is validated against the privacy
+ * package's fail-closed checker before a sidecar may be constructed: a
+ * future edit that moves a listener off loopback throws at assembly, not at
+ * first payment.
+ */
+export function wavedSidecarArgs(config: {
+  healthPort: number;
+  dataDir: string;
+  network: string;
+}): string[] {
+  return [
+    `--health.listen=127.0.0.1:${config.healthPort}`,
+    `--datadir=${config.dataDir}`,
+    '--rpc.listenaddr=127.0.0.1:10029', // waved loopback defaults, pinned
+    '--rpc.gateway.listenaddr=127.0.0.1:10031',
+    // The gateway 403s any browser origin not on this list (verified waved
+    // v0.2.0). Cover both Tauri 2 webview origins: tauri://localhost on
+    // macOS/Linux, http://tauri.localhost on Windows.
+    '--rpc.gateway.allowedorigins=tauri://localhost',
+    '--rpc.gateway.allowedorigins=http://tauri.localhost',
+    `--network=${config.network}`,
+    // The default lwwallet backend requires an Esplora URL. Fresh-install
+    // boot uses an unreachable loopback placeholder until wallet setup
+    // replaces it — the daemon still initializes and serves health.
+    '--wallet.esploraurl=http://127.0.0.1:1',
+  ];
+}
+
 export function createWavedSidecar(config: WavedSidecarConfig): SidecarLifecycle {
   const { healthPort, dataDir, network = 'regtest', runtime, bootTimeoutMs = 30_000 } = config;
+  const args = (): string[] => wavedSidecarArgs({ healthPort, dataDir, network });
+  // Fail-closed loopback enforcement (see validateSidecarListenArgs).
+  validateSidecarListenArgs(args(), { label: 'waved' });
   const options: SidecarLifecycleOptions = {
     runtime,
     health: wavedLivezProbe(healthPort),
-    args: () => [
-      `--health.listen=127.0.0.1:${healthPort}`,
-      `--datadir=${dataDir}`,
-      '--rpc.listenaddr=127.0.0.1:10029', // waved loopback defaults, pinned
-      '--rpc.gateway.listenaddr=127.0.0.1:10031',
-      // The gateway 403s any browser origin not on this list (verified waved
-      // v0.2.0). Cover both Tauri 2 webview origins: tauri://localhost on
-      // macOS/Linux, http://tauri.localhost on Windows.
-      '--rpc.gateway.allowedorigins=tauri://localhost',
-      '--rpc.gateway.allowedorigins=http://tauri.localhost',
-      `--network=${network}`,
-      // The default lwwallet backend requires an Esplora URL. Fresh-install
-      // boot uses an unreachable loopback placeholder until wallet setup
-      // replaces it — the daemon still initializes and serves health.
-      '--wallet.esploraurl=http://127.0.0.1:1',
-    ],
+    args,
     bootTimeoutMs,
   };
   return new SidecarLifecycle(options);

@@ -10,7 +10,12 @@
  * + hex macaroon arrive via URL params (`?devGateway=&devMacaroonHex=`) —
  * the SAME session code runs in both; only transport bootstrap differs.
  */
-import { createPaymentEngine } from './payments.js';
+import {
+  BrowserPaymentIntentStore,
+  createDurablePaymentIntentStore,
+  createPaymentEngine,
+} from './payments.js';
+import type { TauriInvoke } from '@sovereign/secure-store';
 import { WavelengthProvider, WavedGatewayClient } from '@sovereign/wavelength-adapter';
 import type { PaymentEngine } from '@sovereign/payments';
 import type { WalletInfo } from '@sovereign/wavelength-adapter';
@@ -82,17 +87,36 @@ export function sessionPhaseFromInfo(
 export interface WalletSession {
   provider: WavelengthProvider;
   /** Crash-safe payment engine over the same gateway client (intents persist
-   *  to localStorage before any dispatch — never blind re-dispatch). */
+   *  to SQLCipher-at-rest SQLite in the packaged app, localStorage in dev —
+   *  before any dispatch, never blind re-dispatch). */
   engine: PaymentEngine;
   dispose(): Promise<void>;
 }
 
-export async function connectGatewaySession(bootstrap: GatewayBootstrap): Promise<WalletSession> {
+/** True inside the packaged Tauri shell (Tauri IPC available). */
+export function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/** Storage bootstrap for the session. In the packaged app the Tauri invoke
+ *  unlocks the SQLCipher-backed store; dev/e2e sessions pass nothing and get
+ *  the browser store. */
+export interface SessionStorageOptions {
+  tauriInvoke?: TauriInvoke;
+}
+
+export async function connectGatewaySession(
+  bootstrap: GatewayBootstrap,
+  storage: SessionStorageOptions = {},
+): Promise<WalletSession> {
   const client = new WavedGatewayClient({
     gatewayUrl: bootstrap.gatewayUrl,
     macaroonHex: bootstrap.macaroonHex,
   });
   const provider = new WavelengthProvider({ client });
   await provider.start({ network: 'regtest', dataDir: '' });
-  return { provider, engine: createPaymentEngine(client), dispose: () => provider.stop() };
+  const store = storage.tauriInvoke
+    ? await createDurablePaymentIntentStore(storage.tauriInvoke)
+    : new BrowserPaymentIntentStore();
+  return { provider, engine: createPaymentEngine(client, store), dispose: () => provider.stop() };
 }
