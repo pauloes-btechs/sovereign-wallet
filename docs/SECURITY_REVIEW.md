@@ -61,13 +61,24 @@ misrouted. Sending to a legacy address will require explicit support work
 unless a UI path silently strips or "fixes" rejected input — none exists
 (rejection surfaces a typed reason).
 
-### F-6 — desktop native encryption unverified until CI cargo runs (CRITICAL GATE, OPEN)
+### F-6 — desktop native encryption unverified until CI cargo runs (CRITICAL GATE, RESOLVED)
 
 The Tauri Rust commands (keyring get/set/delete, SQLCipher
 open/get/set/delete/list with fail-cipher checks) cannot be compiled locally —
 no cargo toolchain in the sandbox. CI runs `cargo test` on the macOS/Windows
 desktop matrix. **Merge gate:** those jobs must be green before merge;
 production desktop encryption is unverified until then.
+
+**RESOLVED 2026-10-31** at head 547ea71: all three desktop-artifacts jobs
+(macos-latest, macos-15-intel, windows-latest) passed, including
+`sqlcipher_engages_and_rejects_non_hex_keys` (`PRAGMA cipher_version` proves a
+real SQLCipher build is engaged), `wrong_key_cannot_read_the_database`
+(a different valid key cannot decrypt the file), and the per-platform
+`keyring_round_trip_on_platform_store`. Two fixes landed en route: the
+`DbRegistry` state was restructured to `Mutex`-guarded state (rusqlite's
+`Connection` is `Send`, not `Sync`, so Tauri's managed state rejected it), and
+keyring v3's `NoEntry` on deleting an already-absent credential is mapped to
+success, matching the documented idempotent-delete contract.
 
 ### F-7 — egress instrumentation covers the patchable surface (MEDIUM, ACCEPTED WITH DISCLOSURE)
 
