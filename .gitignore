@@ -18,3 +18,6 @@ apps/desktop/src-tauri/binaries/
 Thumbs.db
 # Regtest harness runtime state (TLS certs, macaroons, chain data) — never commit
 harness/regtest/data/
+
+# Recovery drill run output (the rendered doc is committed; raw records are not)
+harness/recovery/results/
