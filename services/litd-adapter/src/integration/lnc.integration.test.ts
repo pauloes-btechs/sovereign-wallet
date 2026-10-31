@@ -450,20 +450,20 @@ describe('LNC pairing to the user\u2019s own litd', () => {
       );
       for await (const update of paymentStream.responses) {
         payment = update;
-        if (
-          update.status === Payment_PaymentStatus.SUCCEEDED ||
-          update.status === Payment_PaymentStatus.FAILED
-        ) {
-          if (update.status === Payment_PaymentStatus.FAILED) {
-            console.log(
-              '[e2e-marker]',
-              new Date().toISOString(),
-              `payment attempt ${attempt} FAILED: reason=${update.failureReason} htlcFailures=${JSON.stringify(update.htlcs ?? []).slice(0, 600)}`,
-            );
-          }
-          break;
+        if (update.status === Payment_PaymentStatus.FAILED) {
+          console.log(
+            '[e2e-marker]',
+            new Date().toISOString(),
+            `payment attempt ${attempt} FAILED: reason=${update.failureReason} htlcFailures=${JSON.stringify(update.htlcs ?? []).slice(0, 600)}`,
+          );
         }
       }
+      // No mid-stream cancellation here: sendPaymentV2 ends its own stream
+      // once the payment reaches a terminal state. Breaking out of the
+      // for-await would cancel the RPC and tear down the shared mailbox
+      // websocket, and lnc-web 0.3.6-alpha's reconnect retry loop can wedge
+      // the worker event loop mid-reconnect (run 41174579405: 28-minute
+      // silent hang after a first-attempt failure).
       if (payment?.status === Payment_PaymentStatus.SUCCEEDED) break;
       await new Promise((r) => setTimeout(r, 2_000));
     }
