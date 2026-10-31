@@ -28,6 +28,19 @@ export {
 } from './client.js';
 export type { LitdConnectionOptions } from './client.js';
 
+export {
+  LitdLoopPort,
+  autoLoopParamsOntoLiquidityParameters,
+  mapInQuoteToLoopQuote,
+  mapLiquidityParameters,
+  mapOutQuoteToLoopQuote,
+  mapSwapStatusToSwapUpdate,
+  mapSwapState,
+  mapTransportError,
+  swapTimestampToMs,
+} from './loop-client.js';
+export { LitdPoolPort, batchSnapshotsToMarketRaw } from './pool-client.js';
+
 export { launchLitdSidecar } from './launcher.js';
 export type { LaunchedLitd, LaunchLitdOptions } from './launcher.js';
 
