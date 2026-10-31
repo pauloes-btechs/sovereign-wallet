@@ -53,6 +53,25 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  fuzz:
+    name: Fuzz (destination, invoice, asset-id, listen-args parsers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # CI budget: 100k iterations per seed — 4x the local default. Seeds are
+      # fixed, so a failure is reproducible by re-running with the same seed
+      # and a higher FUZZ_ITERATIONS locally.
+      - run: pnpm test
+        env:
+          FUZZ_ITERATIONS: '100000'
+
   integration:
     name: Integration (regtest harness)
     runs-on: ubuntu-latest
