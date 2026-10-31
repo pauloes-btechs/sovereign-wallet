@@ -27,6 +27,11 @@ The router and faraday services are served by the litd sidecar: routerrpc on
 the embedded LND's wallet-facing gRPC listener, frdrpc through litd's proxy
 mux. The Faraday surface backs the Mode B diagnostics pane; revenue numbers
 come from the node's own forwarded-HTLC history.
+- `lit-sessions.proto` — the `litrpc.Sessions` service (AddSession,
+  ListSessions, RevokeSession), vendored **unmodified** from
+  [`lightninglabs/lightning-terminal` at tag `v0.17.8`](https://github.com/lightninglabs/lightning-terminal/blob/v0.17.8/litrpc/lit-sessions.proto)
+  (`litrpc/lit-sessions.proto`). Self-contained; no imports. Used by the
+  LNC mobile mode to create/revoke macaroon-scoped LNC sessions.
 
 > Note: the spec's "pinned `rpc.proto`" is this surface. Modern LND names the
 > main service proto `lightning.proto`; `rpc.proto` no longer exists at this

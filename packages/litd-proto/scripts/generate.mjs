@@ -21,7 +21,13 @@ const plugin = path.join(pkgRoot, 'node_modules/.bin/protoc-gen-ts');
 
 mkdirSync(outDir, { recursive: true });
 
-const protoFiles = ['lightning.proto', 'walletunlocker.proto', 'router.proto', 'faraday.proto'];
+const protoFiles = [
+  'lightning.proto',
+  'walletunlocker.proto',
+  'router.proto',
+  'faraday.proto',
+  'lit-sessions.proto',
+];
 const res = spawnSync(
   process.execPath,
   [

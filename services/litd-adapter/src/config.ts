@@ -56,6 +56,12 @@ export interface LitdSidecarOptions {
   readonly uiPort?: number;
   /** UI password. Generated when omitted; written to lit.conf only. */
   readonly uiPassword?: string;
+  /**
+   * Bake a disk super macaroon at startup (litrpc admin surface auth for
+   * session management — LNC session create/list/revoke). litd bakes it
+   * once its sub-servers start; the file lives in the lit dir.
+   */
+  readonly superMacaroon?: { readonly bake: 'read-write' | 'read-only' };
   /** Extra LND flags, already prefixed with `lnd.`, appended to lit.conf. */
   readonly extraLndArgs?: readonly string[];
 }
@@ -72,6 +78,8 @@ export interface ResolvedLitdConfig {
   readonly tlsCertPath: string;
   /** Admin macaroon path. Integrated: inside the lnd dir. Remote: as given. */
   readonly adminMacaroonPath: string;
+  /** Baked super macaroon path, when requested via superMacaroon. */
+  readonly superMacaroonPath?: string;
   readonly rpcHost: '127.0.0.1';
   readonly rpcPort: number;
 }
@@ -211,6 +219,15 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
   const uiPassword = options.uiPassword ?? generateUiPassword();
   secretLines.push(`uipassword=${uiPassword}`);
 
+  // Disk super macaroon: session administration (LNC create/revoke) runs
+  // through the litd proxy and needs a macaroon the admin side can read.
+  let superMacaroonPath: string | undefined;
+  if (options.superMacaroon) {
+    superMacaroonPath = `${litDir}/super.macaroon`;
+    publicLines.push(`bake-super-macaroon=${options.superMacaroon.bake}`);
+    publicLines.push(`super-macaroon-path=${superMacaroonPath}`);
+  }
+
   for (const extra of options.extraLndArgs ?? []) {
     if (!extra.startsWith('lnd.')) {
       throw new Error(`extraLndArgs entries must be prefixed with "lnd." (got: ${extra})`);
@@ -227,6 +244,7 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
     adminMacaroonPath,
     rpcHost: '127.0.0.1',
     rpcPort: servingRpcPort,
+    superMacaroonPath,
   };
 }
 

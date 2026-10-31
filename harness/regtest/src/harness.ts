@@ -495,6 +495,15 @@ export async function bootstrapHarness(): Promise<BootstrapStatus> {
   await waitForBitcoinReady(60_000);
   await ensureBitcoinWallet('harness');
   const bitcoinBlocks = await seedChain(110);
+  // Chain height alone is not funds: after a wallet-dir wipe on persistent
+  // chain data (or any partial teardown), the wallet has no UTXOs even with
+  // 110+ blocks behind it — seedChain skips mining and every bitcoinSendTo
+  // call fails with "Insufficient funds". Ensure the wallet is actually
+  // spendable before handing the harness to tests.
+  const spendable = await bitcoinRpcRequest<number>('getbalance', []);
+  if (spendable < 10) {
+    await mineBlocks(110);
+  }
   const wallets: Record<string, WalletState> = {};
   for (const n of HARNESS_NODES) {
     await waitForRpcReady(n, 60_000);
