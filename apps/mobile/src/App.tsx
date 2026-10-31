@@ -19,6 +19,9 @@ import {
 } from '@sovereign/wavelength-adapter';
 import type { WavelengthClient } from '@sovereign/wavelength-adapter';
 import { ModeAController } from './flows/modeAController.js';
+import { ModeBRemoteController } from './flows/modeBRemoteController.js';
+import type { LncRpcPort } from './flows/modeBRemoteController.js';
+import { ModeBRemoteApp } from './ui/modeBScreens.js';
 import {
   BackupConfirmationScreen,
   OnboardingScreen,
@@ -102,11 +105,27 @@ export function ModeAApp(ports: ModeAAppPorts): ReactNode {
 export interface NativeAppProps {
   /** Resolves the connected client before the app mounts (native shell provided). */
   readonly resolveClient?: () => Promise<WavelengthClient>;
+  /**
+   * Mode B (remote node): resolves the LNC port built on
+   * `@lightninglabs/lnc-rn`. Present → the app renders the remote-node
+   * experience (pairing phrase → user's own litd). The phone hosts NO node.
+   */
+  readonly resolveLncPort?: () => Promise<LncRpcPort>;
+  /** Wallet mode; defaults to everyday (Mode A). */
+  readonly mode?: 'everyday' | 'remote-node';
   readonly network?: 'mainnet' | 'testnet' | 'signet' | 'regtest';
   readonly dataDir?: string;
 }
 
 export default function App(props: NativeAppProps): ReactNode {
+  if (props.mode === 'remote-node') {
+    return <ModeBEntry {...props} />;
+  }
+  return <ModeAEntry {...props} />;
+}
+
+/** Mode A entry — unchanged behavior (everyday Wavelength wallet). */
+function ModeAEntry(props: NativeAppProps): ReactNode {
   const [client, setClient] = useState<WavelengthClient | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +164,62 @@ export default function App(props: NativeAppProps): ReactNode {
     <Text>
       Native shell not configured: this build needs the platform entry to inject a Wavelength
       client resolver (SDK RN native bindings).
+    </Text>
+  );
+}
+
+/**
+ * Mode B entry — the remote-node experience. The shell resolves the LNC port
+ * (built on @lightninglabs/lnc-rn); the entry stays diagnosable like Mode A's:
+ * a missing resolver names the missing configuration, never a blank screen.
+ */
+function ModeBEntry(props: NativeAppProps): ReactNode {
+  const [controller, setController] = useState<ModeBRemoteController | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Resolve the port once per (resolver, network); the effect does NOT depend
+  // on `controller` — a stale-dep loop would mint a new controller per render.
+  useEffect(() => {
+    if (props.resolveLncPort === undefined) return;
+    let cancelled = false;
+    props
+      .resolveLncPort()
+      .then((port) => {
+        if (!cancelled) {
+          setController(
+            new ModeBRemoteController({ port, network: props.network ?? 'mainnet' }),
+          );
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.resolveLncPort, props.network]);
+
+  // Stop the PREVIOUS controller when a new one replaces it, and stop the
+  // live one on unmount.
+  useEffect(() => {
+    return () => {
+      controller?.stop();
+    };
+  }, [controller]);
+
+  if (controller !== null) {
+    return <ModeBRemoteApp controller={controller} network={props.network ?? 'mainnet'} />;
+  }
+  if (error !== null) {
+    return <Text>The node connection failed to start: {error}</Text>;
+  }
+  if (props.resolveLncPort !== undefined) {
+    return <Text>Starting wallet…</Text>;
+  }
+  return (
+    <Text>
+      Native shell not configured: remote-node mode needs the platform entry to inject an LNC
+      port resolver (@lightninglabs/lnc-rn native module).
     </Text>
   );
 }
