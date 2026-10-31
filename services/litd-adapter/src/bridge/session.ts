@@ -582,9 +582,11 @@ export async function createRealBridgeDeps(options: {
           await client.initWallet({
             walletPassword: new Uint8Array(Buffer.from(input.password, 'utf8')),
             cipherSeedMnemonic: [...input.mnemonic],
-            aezeedPassphrase: new Uint8Array(
-              Buffer.from(input.aezeedPassphrase ?? 'sovereign-wallet', 'utf8'),
-            ),
+            // Must match the genSeed passphrase exactly: the aezeed was
+            // encrypted with it at generation time and any mismatch fails
+            // InitWallet with "invalid passphrase". Default is empty because
+            // genSeed encrypts with an empty passphrase.
+            aezeedPassphrase: new Uint8Array(Buffer.from(input.aezeedPassphrase ?? '', 'utf8')),
             recoveryWindow: input.recoveryWindow ?? 0,
             channelBackups: undefined,
             statelessInit: false,
