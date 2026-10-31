@@ -1,0 +1,25 @@
+{
+  "name": "@sovereign/liquidity",
+  "version": "0.1.0",
+  "description": "Liquidity engine over litd's bundled Loop/Pool: plain-language quotes, opt-in AutoLoop with per-action caps and daily/monthly budgets, journaled automation, and Pool market-availability detection with thin-market as a first-class state.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
+  }
+}

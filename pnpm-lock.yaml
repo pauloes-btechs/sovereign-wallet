@@ -195,6 +195,15 @@ importers:
         specifier: ^3.0.5
         version: 3.2.7(@types/node@22.20.5)(jsdom@30.1.3)(terser@5.51.2)
 
+  packages/liquidity:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.5
+        version: 3.2.7(@types/node@26.6.6)(jsdom@30.1.3)(terser@5.51.2)
+
   packages/litd-proto:
     dependencies:
       '@protobuf-ts/runtime':
@@ -327,6 +336,9 @@ importers:
       '@protobuf-ts/grpc-transport':
         specifier: ^2.11.1
         version: 2.11.1(@grpc/grpc-js@1.14.7)
+      '@sovereign/liquidity':
+        specifier: workspace:*
+        version: link:../../packages/liquidity
       '@sovereign/litd-proto':
         specifier: workspace:*
         version: link:../../packages/litd-proto
