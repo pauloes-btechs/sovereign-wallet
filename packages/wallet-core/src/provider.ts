@@ -40,7 +40,8 @@ export interface WalletCapabilities {
   assets: AssetSupport;
   unilateralExit: UnilateralExit;
   recoveryModel: RecoveryModel;
-  operatorDependencies: OperatorDependency[];
+  /** Static declarations never mutate — the UI renders what is declared. */
+  readonly operatorDependencies: readonly OperatorDependency[];
 }
 
 export type ProviderId = 'wavelength' | 'litd-local' | 'lnc-remote';

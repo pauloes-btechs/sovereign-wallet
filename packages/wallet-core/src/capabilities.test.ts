@@ -3,6 +3,7 @@ import {
   LITD_LOCAL_DECLARATION,
   LNC_REMOTE_DECLARATION,
   PROVIDER_DECLARATIONS,
+  PROOF_COURIER_DISCLOSURE,
   WAVELENGTH_DECLARATION,
   validateDeclaration,
 } from './capabilities.js';
@@ -40,7 +41,7 @@ describe('builtin capability declarations (golden)', () => {
     });
   });
 
-  it('litd-local: channel-based Lightning, layer-1 assets, instant unilateral exit, no operator', () => {
+  it('litd-local: channel-based Lightning, layer-1 assets, instant unilateral exit, courier disclosed', () => {
     expect(LITD_LOCAL_DECLARATION).toEqual({
       id: 'litd-local',
       capabilities: {
@@ -52,7 +53,13 @@ describe('builtin capability declarations (golden)', () => {
         assets: 'layer1',
         unilateralExit: 'instant',
         recoveryModel: 'aezeed+scb',
-        operatorDependencies: [],
+        operatorDependencies: [
+          {
+            kind: 'proof-courier',
+            requiredFor: ['send', 'receive'],
+            disclosure: PROOF_COURIER_DISCLOSURE,
+          },
+        ],
       },
       seedCompatibility: ['aezeed+scb'],
     });
