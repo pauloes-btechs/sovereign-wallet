@@ -15,14 +15,24 @@ import { mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { Invoice, Payment_PaymentStatus, RouterClient, SendPaymentRequest, type SendPaymentUpdate } from '@sovereign/litd-proto';
+import {
+  Invoice,
+  ListChannelsRequest,
+  Payment_PaymentStatus,
+  RouterClient,
+  SendPaymentRequest,
+  type Payment,
+} from '@sovereign/litd-proto';
 import {
   ALICE,
   bitcoinSendTo,
   getNewAddress,
   makeLightningClient,
+  makeSidecarLightningClient,
   makeTransport,
   mineBlocks,
+  sidecarRpc,
+  waitForRoutable,
   waitForTxInMempool,
 } from '@sovereign/harness-regtest';
 import { MODEB_BOOTSTRAP_FILE, type ModeBE2eBootstrap } from './bootstrap-path.js';
@@ -185,6 +195,7 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
 });
 
 test('lightning outbound: decode → review → pay succeeds over the channel', async ({ page }) => {
+  test.slow(); // probe + payment ride behind Neutrino's block-filter sync
   await openApp(page);
   await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
@@ -203,6 +214,11 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
   await expect(page.getByTestId('payment-review')).toContainText('21,000');
   // Advanced routing settings are visible, not buried: fixed fee cap default.
   await page.getByLabel('Fee cap (sats)').fill('5000');
+  // Wait for the ROUTER's own view (graph bandwidth hints lag the live link
+  // for a brand-new channel — run10 fired the payment 0.5s after activation
+  // and lnd marked the no-route failure terminal). Read-only probe.
+  const sidecar = await makeSidecarLightningClient(await sidecarRpc(bootstrap.dataDir));
+  await waitForRoutable(sidecar, 21_000n, bootstrap.peerPubkey, 60_000);
   await page.getByRole('button', { name: /Pay 21,000 sats/ }).click();
 
   await expect(page.getByTestId('payment-outcome')).toContainText('succeeded', { timeout: 60_000 });
@@ -211,6 +227,7 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
 });
 
 test('lightning inbound: alice pays our invoice through the channel', async ({ page }) => {
+  test.slow(); // alice's router needs her side of the channel live too
   await openApp(page);
   await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
@@ -223,7 +240,14 @@ test('lightning inbound: alice pays our invoice through the channel', async ({ p
   // Alice pays it over the channel (router streaming API).
   const transport = await makeTransport(ALICE);
   const router = new RouterClient(transport);
-  const updates: SendPaymentUpdate[] = [];
+  // Alice's 21k balance comes from the outbound payment; wait for HER
+  // router's graph hints to catch up before she pays us (same run10 race).
+  const aliceClient = await makeLightningClient(ALICE);
+  const channels = await aliceClient.listChannels(ListChannelsRequest.create({})).response;
+  const ourPubkey = channels.channels[0]?.remotePubkey ?? '';
+  expect(ourPubkey).not.toBe('');
+  await waitForRoutable(aliceClient, 12_000n, ourPubkey, 60_000);
+  const updates: Payment[] = [];
   for await (const update of router
     .sendPaymentV2(
       // Raw literals break protobuf-ts serialization for unset bytes fields
@@ -233,7 +257,14 @@ test('lightning inbound: alice pays our invoice through the channel', async ({ p
     )
     .responses) {
     updates.push(update);
-    if (update.state !== Payment_PaymentStatus.IN_FLIGHT) break;
+    // Break only on terminal states — intermediate/unknown-state updates
+    // keep streaming until the payment settles.
+    if (
+      update.state === Payment_PaymentStatus.SUCCEEDED ||
+      update.state === Payment_PaymentStatus.FAILED
+    ) {
+      break;
+    }
   }
   expect(updates.length).toBeGreaterThan(0);
   expect(updates[updates.length - 1].state).toBe(Payment_PaymentStatus.SUCCEEDED);
