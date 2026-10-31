@@ -53,3 +53,17 @@ export * as tapdMint from './generated/mint';
 // Client classes keep their own namespaces (collision policy above).
 export * as tapdAssetsClient from './generated/taprootassets.client';
 export * as tapdMintClient from './generated/mint.client';
+
+/**
+ * Loop and Pool surfaces are namespaced, not star-exported: they redefine
+ * several LND message names (Utxo, HopHint, StopDaemonRequest, ...) and
+ * blanket re-export would create ambiguous exports. Consume as
+ * `Loop.SwapClientClient` / `Pool.TraderClient` and friends.
+ */
+export * as Loop from './generated/loop';
+export * as LoopClient from './generated/loop.client';
+export * as LoopCommon from './generated/common';
+export * as Pool from './generated/pool';
+export * as PoolClient from './generated/pool.client';
+export * as PoolAuctioneer from './generated/auctioneer';
+export * as PoolAuctioneerClient from './generated/auctioneer.client';
