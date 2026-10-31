@@ -60,10 +60,17 @@ fn keyring_set_password(service: String, account: String, password: String) -> R
 
 #[tauri::command]
 fn keyring_delete_password(service: String, account: String) -> Result<(), String> {
-    let entry = keyring_entry(&service, &account)?;
+    delete_keyring_password(&service, &account)
+}
+
+/// Core of `keyring_delete_password`, kept command-free so tests verify the
+/// production idempotency mapping directly.
+fn delete_keyring_password(service: &str, account: &str) -> Result<(), String> {
+    let entry = keyring_entry(service, account)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
-        // Idempotent delete, mirroring the TS KeyringStore contract.
+        // Idempotent delete, mirroring the TS KeyringStore contract: keyring
+        // v3 reports NoEntry for an absent credential (observed on macOS CI).
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(format!("keyring delete failed: {e}")),
     }
@@ -397,8 +404,9 @@ mod tests {
 
         entry.delete_credential().unwrap();
         assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
-        // Idempotent delete.
-        entry.delete_credential().unwrap();
+        // Idempotent delete — through the command's own error mapping, since
+        // keyring v3 reports NoEntry (not Ok) for an absent credential.
+        assert_eq!(delete_keyring_password(&service, account), Ok(()));
     }
 }
 
