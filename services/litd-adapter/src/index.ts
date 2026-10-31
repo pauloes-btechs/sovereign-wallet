@@ -81,7 +81,7 @@ export { bytesToHex, hexToBytes } from './bytes.js';
 
 // -- Taproot Assets (L1 core) ----------------------------------------------
 export { AssetManager, batchIsConfirmed, toRegistryEntry } from './assets/asset-manager.js';
-export type { AssetIssueSpec, AssetSendRequest } from './assets/asset-manager.js';
+export type { AssetBackupImportReport, AssetIssueSpec, AssetSendRequest } from './assets/asset-manager.js';
 export { createTapdClients, tapdConnectionOptions, waitForTapdServices } from './assets/tapd-clients.js';
 export type { TapdClients } from './assets/tapd-clients.js';
 export {

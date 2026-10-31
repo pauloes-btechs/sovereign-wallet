@@ -50,9 +50,13 @@ export * from './generated/router.client';
 export * as tapdCommon from './generated/tapcommon';
 export * as tapdAssets from './generated/taprootassets';
 export * as tapdMint from './generated/mint';
+// assetwalletrpc (tapd v0.8.6): wallet backup export/import — the recovery
+// surface behind the asset-proof restore drill.
+export * as tapdWallet from './generated/assetwallet';
 // Client classes keep their own namespaces (collision policy above).
 export * as tapdAssetsClient from './generated/taprootassets.client';
 export * as tapdMintClient from './generated/mint.client';
+export * as tapdWalletClient from './generated/assetwallet.client';
 
 /**
  * Loop and Pool surfaces are namespaced, not star-exported: they redefine

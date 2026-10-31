@@ -33,6 +33,10 @@ const protoFiles = [
   'tapcommon.proto',
   'taprootassets.proto',
   'mint.proto',
+  // assetwalletrpc.AssetWallet (imports tapcommon + taprootassets): wallet
+  // backup export/import — the recovery path behind the asset-proof restore
+  // drill (seed-derived encryption; seed alone never restores assets).
+  'assetwallet.proto',
   // Loop + Pool surfaces bundled in litd v0.17.8 (see protos/README.md).
   'loop.proto',
   'common.proto',

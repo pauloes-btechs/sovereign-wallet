@@ -12,7 +12,7 @@
  * default (`bake-super-macaroon=none`). Least privilege by default.
  */
 import type { GrpcTransport } from '@protobuf-ts/grpc-transport';
-import { tapdAssetsClient, tapdMintClient } from '@sovereign/litd-proto';
+import { tapdAssetsClient, tapdMintClient, tapdWalletClient } from '@sovereign/litd-proto';
 
 import { type LitdConnectionOptions, createLitdTransport } from '../client.js';
 import type { ResolvedTapdEndpoint } from '../config.js';
@@ -22,6 +22,8 @@ export interface TapdClients {
   readonly transport: GrpcTransport;
   readonly assets: tapdAssetsClient.TaprootAssetsClient;
   readonly mint: tapdMintClient.MintClient;
+  /** assetwalletrpc: wallet backup export/import (tapd v0.8.6). */
+  readonly wallet: tapdWalletClient.AssetWalletClient;
 }
 
 /**
@@ -55,6 +57,7 @@ export async function createTapdClients(options: LitdConnectionOptions): Promise
     transport,
     assets: new tapdAssetsClient.TaprootAssetsClient(transport),
     mint: new tapdMintClient.MintClient(transport),
+    wallet: new tapdWalletClient.AssetWalletClient(transport),
   };
 }
 
