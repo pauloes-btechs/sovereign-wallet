@@ -53,6 +53,25 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  fuzz:
+    name: Fuzz (destination, invoice, asset-id, listen-args parsers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # CI budget: 100k iterations per seed — 4x the local default. Seeds are
+      # fixed, so a failure is reproducible by re-running with the same seed
+      # and a higher FUZZ_ITERATIONS locally.
+      - run: pnpm test
+        env:
+          FUZZ_ITERATIONS: '100000'
+
   integration:
     name: Integration (regtest harness)
     runs-on: ubuntu-latest
@@ -274,6 +293,18 @@ jobs:
         run: node scripts/fetch-waved.mjs --triple=${{ matrix.triple }}
       - name: Fetch + hash-verify litd for this target
         run: node scripts/fetch-sidecars.mjs --triple=${{ matrix.triple }}
+      # generate_context! reads the frontend dist at compile time; the cargo
+      # test step does not build the UI, so stub it (the real bundle step
+      # below regenerates the actual dist via beforeBuildCommand).
+      - name: Stub frontend dist for tauri codegen
+        run: mkdir -p apps/desktop/dist && echo '<html></html>' > apps/desktop/dist/index.html
+        shell: bash
+      # SQLCipher-at-rest tests run on every matrix target; the keyring
+      # round-trip test activates on macOS (Keychain) and Windows
+      # (Credential Manager) via its own cfg gate.
+      - name: Rust tests (SQLCipher + per-platform keyring)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test
       - name: Build debug bundle (dev artifact, unsigned)
         run: pnpm --filter @sovereign/desktop tauri build --debug
       - name: Upload bundle

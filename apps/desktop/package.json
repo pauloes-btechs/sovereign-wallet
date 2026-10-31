@@ -17,6 +17,8 @@
   "dependencies": {
     "@sovereign/daemon-lifecycle": "workspace:*",
     "@sovereign/payments": "workspace:*",
+    "@sovereign/privacy": "workspace:*",
+    "@sovereign/secure-store": "workspace:*",
     "@sovereign/ui": "workspace:*",
     "@sovereign/wallet-core": "workspace:*",
     "@sovereign/wavelength-adapter": "workspace:*",

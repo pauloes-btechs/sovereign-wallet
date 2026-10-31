@@ -11,4 +11,6 @@ export * from './balances.js';
 export * from './history.js';
 export * from './keys.js';
 export * from './backup.js';
+export * from './bech32.js';
+export * from './destinations.js';
 export * from '@sovereign/payments';

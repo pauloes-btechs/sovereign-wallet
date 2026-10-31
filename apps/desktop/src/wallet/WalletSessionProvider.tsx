@@ -14,12 +14,14 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { WavelengthProviderError } from '@sovereign/wavelength-adapter';
 import type { WavelengthProvider } from '@sovereign/wavelength-adapter';
 import type { BalanceBuckets } from '@sovereign/wallet-core';
 import type { PaymentEngine } from '@sovereign/payments';
 import {
   connectGatewaySession,
+  isTauriRuntime,
   sessionPhaseFromInfo,
   WALLET_POLL_MS,
   type GatewayBootstrap,
@@ -70,7 +72,9 @@ export function WalletSessionProvider({ bootstrap, children }: WalletSessionProv
     if (!bootstrap) return;
     let cancelled = false;
     let active: WalletSession | null = null;
-    void connectGatewaySession(bootstrap)
+    void connectGatewaySession(bootstrap, {
+      tauriInvoke: isTauriRuntime() ? invoke : undefined,
+    })
       .then((wired) => {
         if (cancelled) {
           void wired.dispose();

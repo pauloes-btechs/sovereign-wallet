@@ -1,0 +1,32 @@
+{
+  "name": "@sovereign/secure-store",
+  "version": "0.1.0",
+  "description": "Encrypted-at-rest local storage: platform keyring stores (macOS Keychain / Windows Credential Manager / libsecret via Tauri), database key service, and a fail-closed encrypted database factory. A backend that cannot enforce encryption at rest is refused by default — plaintext requires an explicit, auditable opt-in.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "default": "./dist/browser.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
+  }
+}
