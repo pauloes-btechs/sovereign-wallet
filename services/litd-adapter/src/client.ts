@@ -7,7 +7,7 @@
  */
 import { CallCredentials, ChannelCredentials, Client, Metadata } from '@grpc/grpc-js';
 import { GrpcTransport } from '@protobuf-ts/grpc-transport';
-import { GenSeedRequest, GetInfoRequest, LightningClient, WalletUnlockerClient } from '@sovereign/litd-proto';
+import { GenSeedRequest, GetInfoRequest, LightningClient, RouterClient, WalletUnlockerClient } from '@sovereign/litd-proto';
 import { readFile } from 'node:fs/promises';
 
 import type { ResolvedLitdConfig } from './config.js';
@@ -72,6 +72,14 @@ export async function createLightningClient(options: LitdConnectionOptions): Pro
     throw new Error('Lightning client requires a macaroon: set macaroonPath or macaroonHex');
   }
   return new LightningClient(await createLitdTransport(options));
+}
+
+/** Router client for SendPaymentV2 payment streams (same macaroon rules). */
+export async function createRouterClient(options: LitdConnectionOptions): Promise<RouterClient> {
+  if (options.macaroonHex === undefined && options.macaroonPath === undefined) {
+    throw new Error('Router client requires a macaroon: set macaroonPath or macaroonHex');
+  }
+  return new RouterClient(await createLitdTransport(options));
 }
 
 /** Connection options for a pre-init wallet: no macaroon exists yet, so

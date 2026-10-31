@@ -43,3 +43,15 @@ export type {
   LitdLocalProviderOptions,
   LaunchFn,
 } from './provider.js';
+
+export {
+  BridgeRequestError,
+  LitdBridgeSession,
+  sessionJsonReplacer,
+  type LitdBridgeDeps,
+  type LightningOps,
+  type UnlockerOps,
+  type FaradayOps,
+} from './bridge/session.js';
+export { createLitdBridgeServer } from './bridge/server.js';
+export type { BridgeServerOptions } from './bridge/server.js';
