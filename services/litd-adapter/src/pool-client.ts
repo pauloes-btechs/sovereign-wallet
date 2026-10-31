@@ -54,7 +54,11 @@ export class LitdPoolPort {
         .response;
       return batchSnapshotsToMarketRaw(resp.batches);
     } catch (err) {
-      throw mapTransportError(err);
+      // A market read that cannot be served (auctioneer unreachable, poold's
+      // internal error against a dead operator) IS the unavailable-market
+      // state the engine renders — so unmatched gRPC codes fall back to
+      // 'unavailable' here rather than the generic 'unknown'.
+      throw mapTransportError(err, 'unavailable');
     }
   }
 

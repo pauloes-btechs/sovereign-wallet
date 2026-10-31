@@ -178,6 +178,15 @@ describe('mapTransportError', () => {
     // that holds the call open while retrying upstream — bounded failure,
     // classified unavailable (never an unbounded hang).
     expect(mapTransportError(mk(4, '4 DEADLINE_EXCEEDED: Deadline exceeded')).kind).toBe('unavailable');
+    // Unmatched codes keep the generic 'unknown' kind by default…
+    expect(mapTransportError(mk(2, 'internal server error')).kind).toBe('unknown');
+    // …but a call-site context can override the fallback: a failed market
+    // READ is the unavailable-market state, whatever the code shape poold
+    // surfaces (observed: code 2 "internal server error" against a dead
+    // auctioneer).
+    expect(mapTransportError(mk(2, 'internal server error'), 'unavailable').kind).toBe('unavailable');
+    // The fallback never overrides stronger evidence.
+    expect(mapTransportError(mk(16, 'unauthenticated'), 'unavailable').kind).toBe('unauthenticated');
     expect(mapTransportError(mk(3, 'invalid argument')).kind).toBe('out-of-terms');
     expect(mapTransportError(mk(8, 'resource exhausted')).kind).toBe('no-affordable-quote');
   });

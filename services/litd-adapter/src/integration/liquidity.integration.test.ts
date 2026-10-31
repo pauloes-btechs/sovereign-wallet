@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -56,10 +56,12 @@ async function poll<T>(fn: () => Promise<T>, isDone: (value: T) => boolean, what
 /** The loop/pool gRPC services register on litd's listener only after the
  * embedded LND finishes its Neutrino sync — the Lightning surface serves
  * earlier, so tests would otherwise race registration with "unknown
- * service" errors. Wait until both are registered: "unknown service"
- * (not yet registered) keeps polling; any other outcome — success, or a
- * registered-but-failing RPC against the pinned dead operator endpoints —
- * is positive evidence the service is up. */
+ * service" errors. litd's proxy also answers for registered-but-still-
+ * starting sub-servers with "not yet ready". Wait until both services
+ * actually SERVE: "unknown service" (unregistered) and "not yet ready"
+ * (starting) keep polling; any other outcome — success, or a registered-
+ * but-failing RPC against the pinned dead operator endpoints — is positive
+ * evidence the service is up. */
 async function waitForSubserverRegistration(timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastErr = '';
@@ -73,7 +75,7 @@ async function waitForSubserverRegistration(timeoutMs: number): Promise<void> {
       return true;
     } catch (err) {
       lastErr = err instanceof Error ? err.message : String(err);
-      return !/unknown service/i.test(lastErr);
+      return !/unknown service|not yet ready/i.test(lastErr);
     }
   };
   for (;;) {
@@ -103,7 +105,21 @@ beforeAll(async () => {
       // safety boundary). A dead loopback endpoint makes every
       // operator-dependent RPC fail fast and deterministically, which is
       // exactly the classified-unavailable behavior under test.
-      extraSubServerArgs: ['loop.server.host=127.0.0.1:1', 'pool.auctionserver=127.0.0.1:1'],
+      // The mode gates do NOT default to integrated — without them the
+      // bundled loopd/poold never start and every Loop/Pool RPC answers
+      // "unknown service" forever (observed against the pinned binary with
+      // a fully-synced embedded LND).
+      extraSubServerArgs: [
+        'loop-mode=integrated',
+        'pool-mode=integrated',
+        'loop.server.host=127.0.0.1:1',
+        'pool.auctionserver=127.0.0.1:1',
+      ],
+      // Sub-server RPCs reject LND's admin macaroon (litd's sub-server
+      // caveat check answers "signature mismatch after caveat
+      // verification" — observed). The baked super macaroon authenticates
+      // every sub-server through the shared root key.
+      superMacaroon: { bake: 'read-write' },
     },
   });
   conn = connectionOptionsFromConfig(launched.config);
@@ -124,9 +140,22 @@ beforeAll(async () => {
     .response;
   await waitForServices(conn, 'lightning', 60_000);
 
-  loopPort = await LitdLoopPort.create(conn, () => undefined);
-  poolPort = await LitdPoolPort.create(conn);
-  await waitForSubserverRegistration(300_000);
+  // litd bakes the super macaroon once the wallet is unlocked and the
+  // sub-servers start — wait for the file before building the ports.
+  const superMacaroonPath = launched.config.superMacaroonPath;
+  await poll(
+    async () => (superMacaroonPath !== undefined && existsSync(superMacaroonPath) ? superMacaroonPath : null),
+    (p) => p !== null,
+    'litd to bake the super macaroon',
+    60_000,
+  );
+
+  loopPort = await LitdLoopPort.create({ ...conn, macaroonPath: superMacaroonPath }, () => undefined);
+  poolPort = await LitdPoolPort.create({ ...conn, macaroonPath: superMacaroonPath });
+  // 240s: 48× the ≤5s registration observed with the mode gates on, and
+  // the beforeAll's phases stay inside this hook's 420s budget even when
+  // earlier phases each burn their full 60s caps.
+  await waitForSubserverRegistration(240_000);
 }, 420_000);
 
 afterAll(async () => {

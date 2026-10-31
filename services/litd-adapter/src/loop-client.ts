@@ -153,14 +153,14 @@ const FAILURE_MESSAGE_KINDS: readonly [RegExp, LiquidityProviderError['kind']][]
  * inspection refines the coarse gRPC code where loopd packs specifics
  * (terms, capacity) into a generic code.
  */
-export function mapTransportError(err: unknown): LiquidityProviderError {
+export function mapTransportError(err: unknown, fallbackKind: LiquidityProviderError['kind'] = 'unknown'): LiquidityProviderError {
   if (isLiquidityProviderError(err)) {
     return err;
   }
   const svcErr = err as Partial<ServiceError> | undefined;
   const code = svcErr?.code;
   const message = svcErr?.message ?? String(err);
-  let kind: LiquidityProviderError['kind'] = 'unknown';
+  let kind: LiquidityProviderError['kind'] = fallbackKind;
   if (code === grpcStatus.UNAUTHENTICATED || code === grpcStatus.PERMISSION_DENIED) {
     kind = 'unauthenticated';
   } else if (
