@@ -51,6 +51,12 @@ describe('wallet phase classification', () => {
   it('missing from the unlock canary wallet-not-initialized error', () => {
     expect(walletPhaseFromUnlockCanaryError('1 UNKNOWN: wallet not initialized')).toBe('missing');
     expect(walletPhaseFromUnlockCanaryError('unable to locate wallet')).toBe('missing');
+    // Verbatim litd v0.17.8 (LND v0.21.5-beta.rc1) refusal on a fresh data dir,
+    // observed in the modeb e2e run at de2384d. "wallet not found" must not
+    // fall through to undetermined — a fresh daemon must reach the setup screen.
+    expect(walletPhaseFromUnlockCanaryError('[/lnrpc.WalletUnlocker/UnlockWallet]: wallet not found')).toBe(
+      'missing',
+    );
   });
 
   it('locked from the unlock canary wrong-passphrase errors', () => {

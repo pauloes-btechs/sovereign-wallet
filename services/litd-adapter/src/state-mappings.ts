@@ -77,7 +77,7 @@ export function walletPhaseFromMacaroonCallError(message: string): PhaseProbeOut
 }
 
 const WALLET_LOCKED_PATTERN = /wallet locked/i;
-const WALLET_NOT_INITIALIZED_PATTERN = /wallet not initialized|no wallet found|unable to locate wallet/i;
+const WALLET_NOT_INITIALIZED_PATTERN = /wallet not initialized|no wallet found|wallet not found|unable to locate wallet/i;
 const ALREADY_UNLOCKED_PATTERN = /already unlocked|no longer available|unknown service.*unlocker/i;
 const WRONG_PASSPHRASE_PATTERN = /wrong|invalid|checksum|password|passphrase/i;
 
