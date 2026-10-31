@@ -1,0 +1,35 @@
+{
+  "name": "@sovereign/litd-proto",
+  "version": "0.1.0",
+  "description": "protobuf-ts clients generated from the LND protos pinned to litd v0.17.8 (LND v0.21.5-beta.rc1). Regenerate, never hand-edit, the generated output.",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "generate": "node ./scripts/generate.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@protobuf-ts/runtime": "^2.11.1",
+    "@protobuf-ts/runtime-rpc": "^2.11.1"
+  },
+  "devDependencies": {
+    "@protobuf-ts/plugin": "^2.11.1",
+    "@protobuf-ts/protoc": "^2.11.1",
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.5"
+  }
+}

@@ -1,0 +1,5 @@
+# Fetched sidecar binaries are build artifacts (download + verify via
+# scripts/fetch-sidecars.mjs), never committed. Integrity is guaranteed by the
+# pinned checksums in sidecars.lock.json, not by git history.
+*
+!.gitignore

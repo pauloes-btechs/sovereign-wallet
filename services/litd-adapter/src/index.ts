@@ -1,12 +1,45 @@
 /**
- * Mode B (litd) adapter — scaffold stub.
+ * @sovereign/litd-adapter — Mode B backend adapter.
  *
- * Scope locked for later tasks:
- * - litd v0.17.8 sidecar: LND + Loop + Pool + tapd + Faraday in one binary.
- * - Desktop RPC loopback-bound, least-privilege macaroons.
- * - gRPC via protobuf-ts with LND protos pinned per litd release
- *   (no grpc-web — lacks bidirectional streaming).
- * - Mobile Mode B is LNC-only; no LND-in-app, ever.
- * - Build litd from the pinned tag to resolve bundled Loop/Pool revisions.
+ * litd v0.17.8 sidecar (integrated LND v0.21.5-beta.rc1 + Loop + Pool + tapd
+ * + Faraday), loopback-bound RPC, least-privilege macaroons, protobuf-ts
+ * clients against the pinned LND protos. No grpc-web.
  */
-export {};
+export {
+  DEFAULT_RPC_PORT,
+  DEFAULT_UI_PORT,
+  assertLoopbackOnly,
+  buildLitdConfig,
+  generateUiPassword,
+} from './config.js';
+export type { LitdBackendOptions, LitdNetwork, LitdSidecarOptions, ResolvedLitdConfig } from './config.js';
+
+export { LND_PERMISSIONS, MACAROON_PROFILES, permissionListForProfiles } from './macaroons.js';
+export type { MacaroonPermissionSpec, MacaroonProfile } from './macaroons.js';
+
+export {
+  connectionOptionsFromConfig,
+  createLightningClient,
+  createLitdTransport,
+  createWalletUnlockerClient,
+  probeRpcReady,
+  readMacaroonHex,
+  waitForServices,
+} from './client.js';
+export type { LitdConnectionOptions } from './client.js';
+
+export { launchLitdSidecar } from './launcher.js';
+export type { LaunchedLitd, LaunchLitdOptions } from './launcher.js';
+
+export {
+  LITD_LOCAL_CAPABILITIES,
+  LITD_LOCAL_SEED_COMPATIBILITY,
+  LitdLocalProvider,
+  REMOTE_LND_REQUIREMENTS,
+} from './provider.js';
+export type {
+  LightningClientFactory,
+  LightningStreamClient,
+  LitdLocalProviderOptions,
+  LaunchFn,
+} from './provider.js';

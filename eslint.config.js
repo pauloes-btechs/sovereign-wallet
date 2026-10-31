@@ -10,10 +10,21 @@ export default tseslint.config(
       '**/coverage/**',
       '**/src-tauri/**',
       '**/node_modules/**',
+      // protobuf-ts generated output — regenerated from pinned .proto files.
+      'packages/litd-proto/src/generated/**',
     ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    // Node maintenance scripts (fetch-sidecars, proto generation) run on plain Node.
+    files: ['**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+  },
   {
     rules: {
       '@typescript-eslint/no-unused-vars': [

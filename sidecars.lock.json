@@ -1,0 +1,16 @@
+{
+  "$comment": "Pinned sidecar binaries. SHA256 values are copied verbatim from the signed release manifest (manifest-v0.17.8.txt, published alongside manifest-v0.17.8.txt.sig and .ots) of lightninglabs/lightning-terminal v0.17.8. Keys are `${process.platform}-${process.arch}`. Re-pin via: fetch the release manifest for the new tag and update the hashes — never add an unverified hash.",
+  "litd": {
+    "repo": "lightninglabs/lightning-terminal",
+    "tag": "v0.17.8",
+    "assetPrefix": "lightning-terminal",
+    "bundledUpstream": "LND v0.21.5-beta.rc1, tapd v0.8.6, Loop, Pool, Faraday",
+    "sha256": {
+      "linux-x64": "c89ec72679c7b7ab045cd6b1dee023840e3813f91779ae8a99eb9a3837244762",
+      "linux-arm64": "1ef841e107885e9223560156b754305305f2a77af97a7bb9867c2fffb5c6e63e",
+      "darwin-x64": "66037a12c107669ac7b6a835c18f2d60dedb59ca0cd44fb68785c39cccbc3d5e",
+      "darwin-arm64": "615adf7a45dc810bba9ce0d10d2b36650c86d2e7ceef5ae59f645e4c3da08465",
+      "win32-x64": "1fb7e2ba72af1a0dfccc66ed64ebe53562506e56636c78b197c0845ba119eec6"
+    }
+  }
+}

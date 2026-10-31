@@ -2,20 +2,33 @@
   "name": "@sovereign/harness-regtest",
   "version": "0.1.0",
   "private": true,
-  "description": "Regtest integration harness. Ark money-flow tests run the Mode A adapter against a simulated Wavelength client that implements the pinned SDK contract; live-daemon wiring is added when upstream container images are verified.",
+  "description": "Regtest integration harness: Docker bitcoind + LND + litd for Mode B flows, plus the simulated Ark money-flow suite for Mode A. Regtest/signet only — never mainnet.",
   "license": "MIT",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./simulated-client": {
       "types": "./src/simulated-client.ts",
       "default": "./src/simulated-client.ts"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.7",
+    "@protobuf-ts/grpc-transport": "^2.11.1",
+    "@sovereign/litd-proto": "workspace:*",
     "@sovereign/payments": "workspace:*",
     "@sovereign/wallet-core": "workspace:*",
     "@sovereign/wavelength-adapter": "workspace:*"

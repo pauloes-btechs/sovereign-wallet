@@ -53,6 +53,82 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  integration:
+    name: Integration (regtest harness)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Checksum-verified litd sidecar for the integration suite.
+      - run: pnpm sidecar:fetch
+      # btcd (pinned v0.26.2) is the BIP157 filter source for the Neutrino
+      # sidecar test — bitcoind cannot serve compact filters. Built here and
+      # spawned host-side by the harness CLI (see harness/regtest/README.md).
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: go install github.com/btcsuite/btcd@v0.26.2
+      - name: Boot the regtest harness
+        run: |
+          # Pre-create bind-mount host dirs: docker creates them as root,
+          # which locks out both the runner user and the container's
+          # non-root bitcoin user. bitcoind's dir gets 0777 so any
+          # container uid can write it; the runner owns the parent.
+          mkdir -p harness/regtest/data/bitcoind harness/regtest/data/lnd-alice \
+            harness/regtest/data/lnd-bob harness/regtest/data/litd-lnd \
+            harness/regtest/data/litd-lit harness/regtest/data/btcd \
+            harness/regtest/data/btcd-log
+          chmod 0777 harness/regtest/data/bitcoind
+          docker compose -f harness/regtest/docker-compose.yml up -d --wait
+          # The runner needs write access for the host-side btcd helper and
+          # read access for node TLS certs + macaroons (mode 0600 in the
+          # containers). bitcoind's datadir is excluded: it belongs to the
+          # container's non-root user and is never read from the host.
+          for d in lnd-alice lnd-bob litd-lit; do
+            sudo chown -R "$(id -u):$(id -g)" "harness/regtest/data/$d"
+          done
+          # litd's terminal healthcheck does not cover its embedded LND,
+          # whose tls.cert can land well after `compose --wait` returns
+          # (bootstrap's own wait window then expires: ENOENT tls.cert).
+          # Wait up to 180s for the cert before handing litd-lnd to the
+          # runner user; on timeout, fail loudly so the compose-logs step
+          # captures the embedded-LND state.
+          for i in $(seq 1 90); do
+            [ -f harness/regtest/data/litd-lnd/tls.cert ] && break
+            sleep 2
+          done
+          [ -f harness/regtest/data/litd-lnd/tls.cert ] || {
+            echo "::error::litd embedded-LND tls.cert did not appear within 180s; see compose logs above"
+            exit 1
+          }
+          sudo chown -R "$(id -u):$(id -g)" harness/regtest/data/litd-lnd
+      - name: Harness container logs (on failure)
+        if: failure()
+        run: docker compose -f harness/regtest/docker-compose.yml logs --tail=200
+      - name: Bootstrap seed chain + node wallets (spawns the btcd filter server)
+        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm harness:bootstrap
+      - name: Hand container-created files to the runner user
+        if: success()
+        run: |
+          # Wallet init inside the containers just wrote macaroons (0600,
+          # root-owned) into the bind mounts; the runner-user integration
+          # tests read them.
+          for d in lnd-alice lnd-bob litd-lnd litd-lit; do
+            sudo chown -R "$(id -u):$(id -g)" "harness/regtest/data/$d"
+          done
+      - name: Run integration suite
+        run: pnpm test:integration
+      - name: Teardown
+        if: always()
+        run: docker compose -f harness/regtest/docker-compose.yml down -v || true
+
   dependency-audit:
     name: Dependency audit
     runs-on: ubuntu-latest
@@ -115,6 +191,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Fetch + hash-verify waved for this target
         run: node scripts/fetch-waved.mjs --triple=${{ matrix.triple }}
+      - name: Fetch + hash-verify litd for this target
+        run: node scripts/fetch-sidecars.mjs --triple=${{ matrix.triple }}
       - name: Build debug bundle (dev artifact, unsigned)
         run: pnpm --filter @sovereign/desktop tauri build --debug
       - name: Upload bundle

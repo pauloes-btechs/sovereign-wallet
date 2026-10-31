@@ -262,17 +262,51 @@ function sat(value: unknown): number {
 }
 
 /**
- * Normalizes a daemon enum that may arrive as a proto name (`ENTRY_KIND_SEND`)
- * or already as the SDK's lowercase string. Proto `*_UNSPECIFIED` maps to its
- * SDK `unspecified`-style value where one exists.
+ * Normalizes a daemon enum onto the SDK's string-union values. The wire may
+ * carry proto names ('ENTRY_FAILURE_CODE_TIMED_OUT') or the daemon's plain
+ * labels; the SDK unions are the bare lowercase values ('timed_out'), so the
+ * enum-type prefix is stripped mechanically after lowercasing. Plain labels
+ * pass through unchanged, and both shapes therefore land on the same value.
  */
+const ENTRY_ENUM_PREFIX = /^entry_(?:kind|status|phase|request_type|failure_code)_(?=[a-z])/;
+
 function normalizeEnum(value: unknown): string {
   if (typeof value !== 'string') return String(value ?? '');
-  if (!value.includes('_')) return value;
-  const lower = value.toLowerCase();
-  // ENTRY_PHASE_UNSPECIFIED → 'unspecified'; wallet-state names are handled
-  // separately since their SDK values are not mechanical lowerings.
-  return lower.startsWith('unspecified') ? 'unspecified' : lower;
+  return value.toLowerCase().replace(ENTRY_ENUM_PREFIX, '');
+}
+
+/**
+ * Normalizes the raw wire progress object onto the SDK's EntryProgress
+ * (all fields required; an empty field means "not applicable / not yet
+ * known"). Int64 fields arrive as JSON strings on the wire, matching the
+ * balance quirk sat() handles.
+ */
+function normalizeProgress(raw: unknown): Entry['progress'] {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return undefined;
+  const p = wireToCamel<Record<string, unknown>>(raw);
+  return {
+    phase: normalizeEnum(p.phase),
+    phaseLabel: String(p.phaseLabel ?? ''),
+    paymentHash: String(p.paymentHash ?? ''),
+    txid: String(p.txid ?? ''),
+    confirmationHeight: sat(p.confirmationHeight),
+    // The wire spells the field vtxo_outpoint; the SDK union is vTXOOutpoint.
+    vTXOOutpoint: String(p.vTXOOutpoint ?? p.vtxoOutpoint ?? ''),
+    preimage: String(p.preimage ?? ''),
+  } as Entry['progress'];
+}
+
+/** Normalizes the raw wire request oneof view onto the SDK's EntryRequest. */
+function normalizeRequest(raw: unknown): Entry['request'] {
+  if (raw === null || raw === undefined || typeof raw !== 'object') return undefined;
+  const r = wireToCamel<Record<string, unknown>>(raw);
+  return {
+    type: normalizeEnum(r.type),
+    lightningInvoice: String(r.lightningInvoice ?? ''),
+    paymentHash: String(r.paymentHash ?? ''),
+    onchainAddress: String(r.onchainAddress ?? ''),
+    arkAddress: String(r.arkAddress ?? ''),
+  } as Entry['request'];
 }
 
 /** Normalizes a raw daemon Entry onto the SDK shape (verified structure, enums tolerant). */
@@ -290,8 +324,8 @@ function normalizeEntry(raw: Record<string, unknown>): Entry {
     note: String(entry.note ?? ''),
     failureReason: String(entry.failureReason ?? ''),
     cursor: sat(entry.cursor),
-    progress: entry.progress as Entry['progress'],
-    request: entry.request as Entry['request'],
+    progress: normalizeProgress(entry.progress),
+    request: normalizeRequest(entry.request),
     failureCode: normalizeEnum(entry.failureCode) as Entry['failureCode'],
   } as Entry;
 }

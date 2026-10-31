@@ -1,64 +1,71 @@
-# Regtest harness — Docker compose stub.
-# Full wiring (bitcoind + 2xLND with pre-mined regtest coins) lands with the
-# Mode B integration-test task. Autonomous financial testing is regtest/signet
-# ONLY — never mainnet (spec-locked).
+# Regtest harness — Docker compose.
+#
+# bitcoind is the chain of record: harness mining goes through its RPC and the
+# full-node LNDs + litd use it as their backend. All host-published ports are
+# loopback-bound; credentials below are local-only throwaways (never real secrets).
+#
+# Why there is no BIP157 filter server in compose: the "Neutrino regtest sync"
+# test needs a peer that serves compact filters. bitcoind does not implement
+# BIP157 serving, and a bitcoind-backed LND handles no filter messages (verified
+# against lnd v0.21.5-beta.rc1 sources — filter handling lives only in the
+# neutrino chain service). A pinned btcd is therefore built in CI and run as a
+# HOST-side helper that follows bitcoind's chain over P2P and serves filters on
+# 127.0.0.1:18555. See README.md and scripts/fetch-sidecars.mjs era docs.
 services:
   bitcoind:
     image: bitcoin/bitcoin:27.0
-    command: [
-      "-regtest",
-      "-fallbackfee=0.0002",
-      "-mintxfee=0.0001",
-      "-txindex",
-      "-rpcbind=0.0.0.0",
-      "-rpcallowip=0.0.0.0/0",
-      "-rpcuser=regtest",
-      "-rpcpassword=regtest" # local-only harness credential, never a real secret
-    ]
+    command:
+      - -regtest
+      - -printtoconsole
+      - -txindex
+      - -fallbackfee=0.0002
+      - -mintxfee=0.0001
+      - -rpcbind=0.0.0.0
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=regtest
+      - -rpcpassword=regtest
+      - -zmqpubrawblock=tcp://0.0.0.0:28332
+      - -zmqpubrawtx=tcp://0.0.0.0:28333
     ports:
-      - "18443:18443"
+      - "127.0.0.1:18443:18443" # RPC — harness bootstrap + tests
+      - "127.0.0.1:18444:18444" # P2P — host-side btcd filter server follows this chain
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest", "-rpcuser=regtest", "-rpcpassword=regtest", "getblockchaininfo"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     volumes:
-      - bitcoind-data:/home/bitcoin/.bitcoin
+      - ./data/bitcoind:/home/bitcoin/.bitcoin
 
   lnd-alice:
-    image: lightninglabs/lnd:0.21.0-beta
-    command: [
-      "--noseedbackup",
-      "--norest",
-      "--regtest",
-      "--bitcoin.active",
-      "--bitcoin.node=bitcoind",
-      "--bitcoind.rpchost=bitcoind",
-      "--bitcoind.rpcuser=regtest",
-      "--bitcoind.rpcpass=regtest",
-      "--bitcoind.zmqpubrawblock=tcp://bitcoind:28332",
-      "--bitcoind.zmqpubrawtx=tcp://bitcoind:28333"
-    ]
-    depends_on:
-      - bitcoind
+    image: lightninglabs/lnd:v0.21.5-beta.rc1
+    command: ["--lnddir=/root/.lnd", "--configfile=/lnd.conf"]
     ports:
-      - "9735:9735"
-      - "10009:10009"
+      - "127.0.0.1:10009:10009" # RPC
+      - "127.0.0.1:19735:9735"  # P2P — peer for the sidecar; remote-LND test target
+    volumes:
+      - ./lnd-alice/lnd.conf:/lnd.conf:ro
+      - ./data/lnd-alice:/root/.lnd
 
   lnd-bob:
-    image: lightninglabs/lnd:0.21.0-beta
-    command: [
-      "--noseedbackup",
-      "--norest",
-      "--regtest",
-      "--bitcoin.active",
-      "--bitcoin.node=bitcoind",
-      "--bitcoind.rpchost=bitcoind",
-      "--bitcoind.rpcuser=regtest",
-      "--bitcoind.rpcpass=regtest",
-      "--bitcoind.zmqpubrawblock=tcp://bitcoind:28332",
-      "--bitcoind.zmqpubrawtx=tcp://bitcoind:28333"
-    ]
-    depends_on:
-      - bitcoind
+    image: lightninglabs/lnd:v0.21.5-beta.rc1
+    command: ["--lnddir=/root/.lnd", "--configfile=/lnd.conf"]
     ports:
-      - "9736:9736"
-      - "10010:10009"
+      - "127.0.0.1:10010:10009" # RPC
+    volumes:
+      - ./lnd-bob/lnd.conf:/lnd.conf:ro
+      - ./data/lnd-bob:/root/.lnd
 
-volumes:
-  bitcoind-data:
+  # litd runs its integrated LND against bitcoind (full-node mode) — the
+  # non-default backend option for Mode B. RPC access goes to the raw
+  # embedded-LND port (litd.rpclisten proxy is loopback-only inside the
+  # container and not needed by the harness).
+  litd:
+    image: lightninglabs/lightning-terminal:v0.17.8
+    command: ["--configfile=/litd.conf"]
+    ports:
+      - "127.0.0.1:10011:19090" # embedded LND RPC
+    volumes:
+      - ./litd/litd.conf:/litd.conf:ro
+      - ./data/litd-lnd:/root/.lnd
+      - ./data/litd-lit:/root/.lit
