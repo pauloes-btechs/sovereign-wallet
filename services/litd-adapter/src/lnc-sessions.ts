@@ -93,12 +93,29 @@ export function assertTenWordPhrase(phrase: string): void {
 }
 
 export class LncSessionManager {
-  private readonly client: Promise<SessionsClient>;
+  private connection: LitdConnectionOptions;
+  private clientPromise: Promise<SessionsClient> | undefined;
 
   constructor(connection: LitdConnectionOptions) {
-    // Transport creation is async (reads the TLS cert + macaroon from disk);
-    // every call awaits it — cheap for an admin surface.
-    this.client = createLitdTransport(connection).then((t) => new SessionsClient(t));
+    this.connection = connection;
+  }
+
+  /**
+   * Transport creation is async (reads the TLS cert + macaroon from disk).
+   * litd bakes the super macaroon shortly after boot — a transport created
+   * before that fails with ENOENT, so a failed creation must NOT be cached:
+   * the next call retries instead of replaying the rejection forever.
+   */
+  private client(): Promise<SessionsClient> {
+    if (this.clientPromise === undefined) {
+      this.clientPromise = createLitdTransport(this.connection)
+        .then((t) => new SessionsClient(t))
+        .catch((err: unknown) => {
+          this.clientPromise = undefined;
+          throw err;
+        });
+    }
+    return this.clientPromise;
   }
 
   async createSession(options: CreateLncSessionOptions): Promise<LncSessionHandle> {
@@ -107,7 +124,7 @@ export class LncSessionManager {
       throw new Error("sessionType 'custom' requires customPermissions");
     }
 
-    const response = await (await this.client)
+    const response = await (await this.client())
       .addSession({
         label: options.label,
         sessionType: litSessionType(options.sessionType),
@@ -138,7 +155,7 @@ export class LncSessionManager {
   }
 
   async revokeSession(localPublicKeyHex: string): Promise<void> {
-    await (await this.client)
+    await (await this.client())
       .revokeSession({
         localPublicKey: hexToBytes(localPublicKeyHex),
       } as RevokeSessionRequest)
@@ -146,7 +163,7 @@ export class LncSessionManager {
   }
 
   async listSessions(): Promise<readonly LncSessionHandle[]> {
-    const response = await (await this.client).listSessions({} as ListSessionsRequest).response;
+    const response = await (await this.client()).listSessions({} as ListSessionsRequest).response;
     return (response.sessions ?? []).map((session) => ({
       localPublicKeyHex: bytesToHex(session.localPublicKey),
       pairingPhrase: session.pairingSecretMnemonic,
