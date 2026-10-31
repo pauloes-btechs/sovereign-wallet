@@ -135,8 +135,8 @@ beforeAll(async () => {
   await mineBlocks(6);
   await poll(
     async () => (await lightning!.walletBalance(WalletBalanceRequest.create({})).response).confirmedBalance,
-    (confirmed) => confirmed >= 1_000_000_000n,
-    'confirmed wallet balance >= 1 BTC',
+    (confirmed) => confirmed >= 200_000_000n,
+    'confirmed wallet balance >= 2 BTC (the funded amount, 200_000_000 sats)',
     120_000,
   );
 
