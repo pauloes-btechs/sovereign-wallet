@@ -143,6 +143,8 @@ const FAILURE_MESSAGE_KINDS: readonly [RegExp, LiquidityProviderError['kind']][]
   [/too (small|large)|outside|minimum|maximum|terms/i, 'out-of-terms'],
   [/no affordable|cannot (afford|serve)/i, 'no-affordable-quote'],
   [/expired|permission|macaroon|auth/i, 'unauthenticated'],
+  // Lowest priority: auth/code evidence wins over reachability guesses.
+  [/dial tcp|connection refused|no such host|auctioneer/i, 'unavailable'],
 ];
 
 /**
@@ -171,6 +173,14 @@ export function mapTransportError(err: unknown): LiquidityProviderError {
     kind = 'out-of-terms';
   } else if (code === grpcStatus.RESOURCE_EXHAUSTED) {
     kind = 'no-affordable-quote';
+  }
+  // litd's gRPC proxy answers calls to sub-servers that have not registered
+  // yet (registration follows the embedded LND's full chain sync) with
+  // "unknown service <rpc.service>" — a startup lifecycle state, not a
+  // defect. The live error's status code is not reliably UNIMPLEMENTED, so
+  // the message is authoritative here.
+  if (kind === 'unknown' && /unknown service/i.test(message)) {
+    kind = 'unavailable';
   }
   for (const [pattern, refined] of FAILURE_MESSAGE_KINDS) {
     if (pattern.test(message)) {

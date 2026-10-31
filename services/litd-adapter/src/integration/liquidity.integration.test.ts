@@ -53,6 +53,41 @@ async function poll<T>(fn: () => Promise<T>, isDone: (value: T) => boolean, what
   }
 }
 
+/** The loop/pool gRPC services register on litd's listener only after the
+ * embedded LND finishes its Neutrino sync — the Lightning surface serves
+ * earlier, so tests would otherwise race registration with "unknown
+ * service" errors. Wait until both are registered: "unknown service"
+ * (not yet registered) keeps polling; any other outcome — success, or a
+ * registered-but-failing RPC against the pinned dead operator endpoints —
+ * is positive evidence the service is up. */
+async function waitForSubserverRegistration(timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr = '';
+  const probe = async (name: 'loop' | 'pool'): Promise<boolean> => {
+    try {
+      if (name === 'loop') {
+        await loopPort!.listSwaps();
+      } else {
+        await poolPort!.marketRaw();
+      }
+      return true;
+    } catch (err) {
+      lastErr = err instanceof Error ? err.message : String(err);
+      return !/unknown service/i.test(lastErr);
+    }
+  };
+  for (;;) {
+    const [loopUp, poolUp] = [await probe('loop'), await probe('pool')];
+    if (loopUp && poolUp) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`loop/pool sub-servers did not register within ${timeoutMs}ms: ${lastErr}`);
+    }
+    await sleep(1000);
+  }
+}
+
 beforeAll(async () => {
   await bootstrapHarness();
 
@@ -63,6 +98,12 @@ beforeAll(async () => {
       network: 'regtest',
       dataDir,
       backend: { kind: 'neutrino', peers: [`127.0.0.1:${BTCD_FILTER_PORT}`] },
+      // Without these, loopd/poold default to the real Lightning Labs
+      // mainnet operators — autonomous CI must never contact them (spec
+      // safety boundary). A dead loopback endpoint makes every
+      // operator-dependent RPC fail fast and deterministically, which is
+      // exactly the classified-unavailable behavior under test.
+      extraSubServerArgs: ['loop.server.host=127.0.0.1:1', 'pool.auctionserver=127.0.0.1:1'],
     },
   });
   conn = connectionOptionsFromConfig(launched.config);
@@ -85,7 +126,8 @@ beforeAll(async () => {
 
   loopPort = await LitdLoopPort.create(conn, () => undefined);
   poolPort = await LitdPoolPort.create(conn);
-}, 240_000);
+  await waitForSubserverRegistration(300_000);
+}, 420_000);
 
 afterAll(async () => {
   loopPort?.close();

@@ -227,6 +227,18 @@ describe('assertLoopbackOnly', () => {
       buildLitdConfig({ ...NEUTRINO_REGTEST, extraLndArgs: ['bitcoin.node=neutrino'] }),
     ).toThrow(/lnd\./);
   });
+
+  it('appends sub-server lines with loop./pool. prefixes and rejects others', () => {
+    const pinned = buildLitdConfig({
+      ...NEUTRINO_REGTEST,
+      extraSubServerArgs: ['loop.server.host=127.0.0.1:1', 'pool.auctionserver=127.0.0.1:1'],
+    });
+    expect(pinned.confLines).toContain('loop.server.host=127.0.0.1:1');
+    expect(pinned.confLines).toContain('pool.auctionserver=127.0.0.1:1');
+    expect(() =>
+      buildLitdConfig({ ...NEUTRINO_REGTEST, extraSubServerArgs: ['lnd.rpclisten=127.0.0.1:1'] }),
+    ).toThrow(/prefixed with "loop\." or "pool\."/);
+  });
 });
 
 describe('pickFreeLoopbackPort', () => {

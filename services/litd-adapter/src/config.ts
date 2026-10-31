@@ -64,6 +64,12 @@ export interface LitdSidecarOptions {
   readonly superMacaroon?: { readonly bake: 'read-write' | 'read-only' };
   /** Extra LND flags, already prefixed with `lnd.`, appended to lit.conf. */
   readonly extraLndArgs?: readonly string[];
+  /** Extra sub-server conf lines, already prefixed `loop.` or `pool.`,
+   * appended to lit.conf. Regtest/signet suites pin the Loop swap server
+   * and Pool auctioneer to a dead loopback endpoint so the daemon never
+   * contacts the real mainnet operators (spec: autonomous runs stay on
+   * regtest/signet with offline operators). */
+  readonly extraSubServerArgs?: readonly string[];
 }
 
 export interface ResolvedLitdConfig {
@@ -269,6 +275,13 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
   for (const extra of options.extraLndArgs ?? []) {
     if (!extra.startsWith('lnd.')) {
       throw new Error(`extraLndArgs entries must be prefixed with "lnd." (got: ${extra})`);
+    }
+    publicLines.push(extra);
+  }
+
+  for (const extra of options.extraSubServerArgs ?? []) {
+    if (!extra.startsWith('loop.') && !extra.startsWith('pool.')) {
+      throw new Error(`extraSubServerArgs entries must be prefixed with "loop." or "pool." (got: ${extra})`);
     }
     publicLines.push(extra);
   }

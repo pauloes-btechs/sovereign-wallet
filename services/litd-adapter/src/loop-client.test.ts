@@ -163,11 +163,17 @@ describe('mapTransportError', () => {
   });
 
   it('classifies grpc codes: unauthenticated, unavailable, out-of-terms, exhausted', () => {
-    const mk = (code: number, message: string) => Object.assign(new Error(message), { code });
+    const mk = (code: number | undefined, message: string) => Object.assign(new Error(message), { code });
     expect(mapTransportError(mk(16, 'unauthenticated')).kind).toBe('unauthenticated');
     expect(mapTransportError(mk(7, 'permission denied')).kind).toBe('unauthenticated');
     expect(mapTransportError(mk(14, 'connection refused')).kind).toBe('unavailable');
     expect(mapTransportError(mk(12, 'unknown service SwapClient')).kind).toBe('unavailable');
+    // litd answers calls to not-yet-registered sub-servers with
+    // "unknown service" — observed live WITHOUT a usable grpc code.
+    expect(mapTransportError(mk(undefined, 'unknown service looprpc.SwapClient')).kind).toBe('unavailable');
+    // Dial refusals against a dead operator endpoint can carry a generic
+    // code; the message is the classification evidence.
+    expect(mapTransportError(mk(2, 'dial tcp 127.0.0.1:1: connect: connection refused')).kind).toBe('unavailable');
     expect(mapTransportError(mk(3, 'invalid argument')).kind).toBe('out-of-terms');
     expect(mapTransportError(mk(8, 'resource exhausted')).kind).toBe('no-affordable-quote');
   });
