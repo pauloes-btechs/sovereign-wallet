@@ -282,16 +282,18 @@ test('lightning inbound: alice pays our invoice through the channel', async ({ p
     .responses) {
     updates.push(update);
     // Break only on terminal states — intermediate/unknown-state updates
-    // keep streaming until the payment settles.
+    // keep streaming until the payment settles. Field is `status` in this
+    // generated pin (run13: `.state` is undefined on every streamed Payment;
+    // enum UNKNOWN=0, IN_FLIGHT=1, SUCCEEDED=2, FAILED=3).
     if (
-      update.state === Payment_PaymentStatus.SUCCEEDED ||
-      update.state === Payment_PaymentStatus.FAILED
+      update.status === Payment_PaymentStatus.SUCCEEDED ||
+      update.status === Payment_PaymentStatus.FAILED
     ) {
       break;
     }
   }
   expect(updates.length).toBeGreaterThan(0);
-  expect(updates[updates.length - 1].state).toBe(Payment_PaymentStatus.SUCCEEDED);
+  expect(updates[updates.length - 1].status).toBe(Payment_PaymentStatus.SUCCEEDED);
 });
 
 test('diagnostics: node health renders live data; faraday section honest either way', async ({ page }) => {
