@@ -189,7 +189,9 @@ jobs:
       # SOVEREIGN_BTCD_BIN is inherited by the daemon harness, which starts
       # the filter server the sidecar's Neutrino sync depends on.
       - name: Run Mode B e2e
-        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm --filter @sovereign/desktop test:e2e:modeb
+        # `run` (not the bare form): a missing script must FAIL the job —
+        # pnpm's bare --filter form exits 0 when no package has the script.
+        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm --filter @sovereign/desktop run test:e2e:modeb
       - name: Visual evidence captures
         if: always()
         uses: actions/upload-artifact@v4

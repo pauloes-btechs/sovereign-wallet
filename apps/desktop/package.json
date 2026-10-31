@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "e2e": "playwright test",
-    "e2e:modeb": "playwright test -c playwright.modeb.config.ts"
+    "test:e2e:modeb": "playwright test -c playwright.modeb.config.ts"
   },
   "dependencies": {
     "@sovereign/daemon-lifecycle": "workspace:*",
