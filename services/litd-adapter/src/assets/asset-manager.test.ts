@@ -48,7 +48,7 @@ describe('listBalances — group_by selection', () => {
     const { clients, balancesRequests } = fakeClients({ exportProof: 0, newAddr: 0 });
     await new AssetManager(clients).listBalances();
     expect(balancesRequests).toHaveLength(1);
-    expect(balancesRequests[0].groupBy).toEqual({ oneofKind: 'assetId', assetId: true });
+    expect(balancesRequests[0]?.groupBy).toEqual({ oneofKind: 'assetId', assetId: true });
   });
 });
 
