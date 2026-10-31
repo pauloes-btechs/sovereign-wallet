@@ -10,6 +10,23 @@ the GitHub API on 2026-10-30:
   subscriptions). Self-contained; no imports.
 - `walletunlocker.proto` — the `lnrpc.WalletUnlocker` service (GenSeed,
   InitWallet, UnlockWallet). Imports `lightning.proto`.
+- `router.proto` — the `routerrpc.Router` service (SendPaymentV2 payment
+  lifecycle, SendToRouteV2, EstimateRouteFee, Query/Get/SetMissionControlConfig,
+  QueryProbability, BuildRoute). Vendored from
+  [`lightningnetwork/lnd` at tag `v0.21.5-beta.rc1`](https://github.com/lightningnetwork/lnd/tree/v0.21.5-beta.rc1/lnrpc/routerrpc)
+  — the LND version bundled in litd v0.17.8 (verified via GitHub API,
+  2026-10-31). Imports `lightning.proto`.
+- `faraday.proto` — the `frdrpc.FaradayServer` service (RevenueReport,
+  ChannelInsights, CloseReport, NodeAudit, ExchangeRate, forwarding-ability
+  and close-recommendation analytics). Vendored from
+  [`lightninglabs/faraday` at commit `b547baea0f95`](https://github.com/lightninglabs/faraday/tree/b547baea0f95/frdrpc)
+  (the `frdrpc` module at v1.0.2 — the exact revision litd v0.17.8 pins in
+  go.mod, verified via GitHub API, 2026-10-31). Self-contained; no imports.
+
+The router and faraday services are served by the litd sidecar: routerrpc on
+the embedded LND's wallet-facing gRPC listener, frdrpc through litd's proxy
+mux. The Faraday surface backs the Mode B diagnostics pane; revenue numbers
+come from the node's own forwarded-HTLC history.
 
 > Note: the spec's "pinned `rpc.proto`" is this surface. Modern LND names the
 > main service proto `lightning.proto`; `rpc.proto` no longer exists at this

@@ -6,3 +6,7 @@ export * from './generated/lightning';
 export * from './generated/lightning.client';
 export * from './generated/walletunlocker';
 export * from './generated/walletunlocker.client';
+export * from './generated/router';
+export * from './generated/router.client';
+export * from './generated/faraday';
+export * from './generated/faraday.client';

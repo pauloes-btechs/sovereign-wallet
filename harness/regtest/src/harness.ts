@@ -15,6 +15,7 @@ import {
   GetInfoRequest,
   LightningClient,
   InitWalletRequest,
+  QueryRoutesRequest,
   UnlockWalletRequest,
   WalletUnlockerClient,
 } from '@sovereign/litd-proto';
@@ -264,6 +265,104 @@ export async function makeTransport(n: HarnessNode): Promise<GrpcTransport> {
 
 export async function makeLightningClient(n: HarnessNode): Promise<LightningClient> {
   return new LightningClient(await makeTransport(n));
+}
+
+// ---------------------------------------------------------------------------
+// Bridge-managed litd sidecar RPC (Mode B e2e)
+// ---------------------------------------------------------------------------
+
+/** RPC coordinates for the bridge-managed litd sidecar, from its data dir. */
+export interface SidecarRpc {
+  readonly rpcHost: string;
+  readonly rpcPort: number;
+  /** The sidecar's data dir — tls.cert at its root, lnd state under lnd/. */
+  readonly dataDir: string;
+}
+
+/**
+ * Derives the sidecar's RPC coordinates from its lit.conf. The embedded
+ * LND's loopback gRPC port is whatever the adapter launcher picked, so the
+ * harness reads it back out of the config file instead of guessing.
+ */
+export async function sidecarRpc(dataDir: string): Promise<SidecarRpc> {
+  const conf = await readFile(path.join(dataDir, 'lit.conf'), 'utf8');
+  const line = conf.split('\n').find((l) => l.trim().startsWith('lnd.rpclisten='));
+  if (line === undefined) {
+    throw new Error(`lit.conf at ${dataDir} has no lnd.rpclisten line — cannot probe the sidecar router`);
+  }
+  const port = Number(line.split('=')[1]?.split(':').pop());
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`unparseable lnd.rpclisten in lit.conf: ${line}`);
+  }
+  return { rpcHost: '127.0.0.1', rpcPort: port, dataDir };
+}
+
+/**
+ * Pure path helpers for the bridge-managed sidecar's on-disk layout, so the
+ * unit suite can pin the locations (the TLS one is load-bearing — litd's
+ * PROXY cert at <dataDir>/tls.cert does not cover the embedded LND's
+ * lnd.rpclisten port; that listener presents <lnddir>/tls.cert — run 11:
+ * "self-signed certificate" when dialed with the proxy cert).
+ */
+export function sidecarTlsCertPath(dataDir: string): string {
+  // LND defaults its TLS to <lnddir>/tls.cert — the root cert the gRPC
+  // client pins (matches the adapter's rpcTlsCertPath).
+  return path.join(dataDir, 'lnd', 'tls.cert');
+}
+
+export function sidecarAdminMacaroonPath(dataDir: string): string {
+  return path.join(dataDir, 'lnd', 'data', 'chain', 'bitcoin', 'regtest', 'admin.macaroon');
+}
+
+async function sidecarChannelCredentials(dataDir: string): Promise<ChannelCredentials> {
+  const cert = await readFile(sidecarTlsCertPath(dataDir));
+  const macaroon = await readFile(sidecarAdminMacaroonPath(dataDir));
+  return ChannelCredentials.createSsl(cert).compose(macaroonCallCredentials(macaroon.toString('hex')));
+}
+
+/** A LightningClient dialed at the bridge-managed litd sidecar itself. */
+export async function makeSidecarLightningClient(rpc: SidecarRpc): Promise<LightningClient> {
+  const transport = new GrpcTransport({
+    host: `${rpc.rpcHost}:${rpc.rpcPort}`,
+    channelCredentials: await sidecarChannelCredentials(rpc.dataDir),
+  });
+  return new LightningClient(transport);
+}
+
+/**
+ * Waits until the ROUTER's own view says a payment of amountSat to
+ * targetPubkeyHex is routable, via read-only QueryRoutes polling.
+ *
+ * Why: lnd's route-finding reads the channel graph's cached bandwidth
+ * hints, which lag the live switch link for a brand-new channel (run10:
+ * the link reported bandwidth=14842000000 mSAT at activation, while the
+ * router still saw "local balance: 0 mSAT" 0.5s later and lnd marks
+ * no-route failures terminal). Paying before the hint refresh fails the
+ * payment permanently. This is a probe, never a payment retry.
+ */
+export async function waitForRoutable(
+  client: LightningClient,
+  amountSat: bigint,
+  targetPubkeyHex: string,
+  timeoutMs: number,
+): Promise<void> {
+  const deadlineMs = Date.now() + timeoutMs;
+  let lastDetail = 'not attempted';
+  for (;;) {
+    try {
+      const res = await client
+        .queryRoutes(QueryRoutesRequest.create({ pubKey: targetPubkeyHex, amt: amountSat }))
+        .response;
+      if (res.routes.length > 0) return;
+      lastDetail = `0 routes for ${amountSat} sat`;
+    } catch (err) {
+      lastDetail = err instanceof Error ? err.message : String(err);
+    }
+    if (Date.now() > deadlineMs) {
+      throw new Error(`payment target not routable within ${timeoutMs}ms: ${lastDetail}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
 }
 
 export async function makeUnlockerClient(n: HarnessNode): Promise<WalletUnlockerClient> {

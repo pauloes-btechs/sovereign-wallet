@@ -19,6 +19,7 @@ import type { WavedSidecarConfig } from './sidecar/waved.js';
 import { WalletSessionProvider } from './wallet/WalletSessionProvider.js';
 import { WalletApp } from './wallet/WalletApp.js';
 import { devGatewayBootstrap, type GatewayBootstrap } from './wallet/session.js';
+import { ModeBApp } from './modeb/ModeBApp.js';
 
 /** True only inside the Tauri WebView (vite dev in a plain browser has no
  *  sidecar runtime — show that state honestly instead of failing to spawn). */
@@ -106,9 +107,31 @@ function useGatewayBootstrap(sidecar: WavedSidecarConfig | null, sidecarPhase: W
 }
 
 export function App() {
+  // Mode B (litd advanced node) is a separate experience behind its own
+  // bridge process. Packaged-shell mode switching is Tauri-shell work; in
+  // dev/e2e the mode is chosen by URL, and both modes are never mounted
+  // together — distinct seeds, balances, and identities.
+  const isModeB = new URLSearchParams(window.location.search).get('mode') === 'b';
+
   const config = useWavedSidecarConfig();
   const { phase, error } = useWavedSidecar(config);
   const bootstrap = useGatewayBootstrap(config, phase);
+
+  if (isModeB) {
+    return (
+      <main
+        style={{
+          background: '#0d0d10',
+          color: '#e8e8ea',
+          minHeight: '100vh',
+          fontFamily: 'system-ui',
+        }}
+      >
+        <h1 style={{ textAlign: 'center', paddingTop: 16, margin: 0 }}>Sovereign Wallet — Node mode</h1>
+        <ModeBApp />
+      </main>
+    );
+  }
 
   const daemonStatus = isTauri()
     ? PHASE_COPY[phase]
