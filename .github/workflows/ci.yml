@@ -351,7 +351,9 @@ jobs:
             triple: x86_64-apple-darwin
           # Best-effort tier per spec: built if cheap, never a release
           # blocker — a failed Linux lane is reported but cannot fail CI.
-          - os: ubuntu-latest
+          # Pinned to 24.04: ubuntu-latest resolves to 26.04, where the
+          # appindicator/GTK dev package set is uninstallable (unmet deps).
+          - os: ubuntu-24.04
             triple: x86_64-unknown-linux-gnu
             bestEffort: true
     continue-on-error: ${{ matrix.bestEffort == true }}
