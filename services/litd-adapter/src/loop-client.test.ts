@@ -174,6 +174,10 @@ describe('mapTransportError', () => {
     // Dial refusals against a dead operator endpoint can carry a generic
     // code; the message is the classification evidence.
     expect(mapTransportError(mk(2, 'dial tcp 127.0.0.1:1: connect: connection refused')).kind).toBe('unavailable');
+    // The per-call RPC deadline (rpc-timeout.ts) fires against an operator
+    // that holds the call open while retrying upstream — bounded failure,
+    // classified unavailable (never an unbounded hang).
+    expect(mapTransportError(mk(4, '4 DEADLINE_EXCEEDED: Deadline exceeded')).kind).toBe('unavailable');
     expect(mapTransportError(mk(3, 'invalid argument')).kind).toBe('out-of-terms');
     expect(mapTransportError(mk(8, 'resource exhausted')).kind).toBe('no-affordable-quote');
   });

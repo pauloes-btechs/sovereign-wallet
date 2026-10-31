@@ -14,6 +14,7 @@ import type { GrpcTransport } from '@protobuf-ts/grpc-transport';
 import type { LitdConnectionOptions } from './client.js';
 import { createLitdTransport } from './client.js';
 import { mapTransportError } from './loop-client.js';
+import { RPC_UNARY_TIMEOUT_MS } from './rpc-timeout.js';
 
 /**
  * Pure batch snapshots → market raw data: how many batches actually matched
@@ -49,7 +50,7 @@ export class LitdPoolPort {
   async marketRaw(): Promise<PoolMarketRaw> {
     try {
       const resp = await this.client
-        .batchSnapshots(PoolAuctioneer.BatchSnapshotsRequest.create({}))
+        .batchSnapshots(PoolAuctioneer.BatchSnapshotsRequest.create({}), { timeoutMs: RPC_UNARY_TIMEOUT_MS })
         .response;
       return batchSnapshotsToMarketRaw(resp.batches);
     } catch (err) {

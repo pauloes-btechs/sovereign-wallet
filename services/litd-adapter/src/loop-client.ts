@@ -15,6 +15,7 @@ import type { GrpcTransport } from '@protobuf-ts/grpc-transport';
 
 import type { LitdConnectionOptions } from './client.js';
 import { createLitdTransport } from './client.js';
+import { RPC_UNARY_TIMEOUT_MS } from './rpc-timeout.js';
 
 /** Seconds→ms with a defensive unit guard (see swapTimestampToMs). */
 export function swapTimestampToMs(seconds: bigint): number {
@@ -214,7 +215,9 @@ export class LitdLoopPort {
   async loopOutQuote(amountSat: number, confTarget = 6): Promise<LoopQuote> {
     try {
       const resp = await this.client
-        .loopOutQuote(Loop.QuoteRequest.create({ amt: BigInt(amountSat), confTarget }))
+        .loopOutQuote(Loop.QuoteRequest.create({ amt: BigInt(amountSat), confTarget }), {
+          timeoutMs: RPC_UNARY_TIMEOUT_MS,
+        })
         .response;
       return mapOutQuoteToLoopQuote(resp, amountSat);
     } catch (err) {
@@ -224,7 +227,11 @@ export class LitdLoopPort {
 
   async loopInQuote(amountSat: number, confTarget = 6): Promise<LoopQuote> {
     try {
-      const resp = await this.client.getLoopInQuote(Loop.QuoteRequest.create({ amt: BigInt(amountSat), confTarget })).response;
+      const resp = await this.client
+        .getLoopInQuote(Loop.QuoteRequest.create({ amt: BigInt(amountSat), confTarget }), {
+          timeoutMs: RPC_UNARY_TIMEOUT_MS,
+        })
+        .response;
       return mapInQuoteToLoopQuote(resp, amountSat);
     } catch (err) {
       throw mapTransportError(err);
@@ -243,6 +250,10 @@ export class LitdLoopPort {
             sweepConfTarget: req.sweepConfTarget ?? 6,
             initiator: 'sovereign-wallet',
           }),
+          // Bounded even though it's a dispatch: a deadline here means the
+          // outcome is UNKNOWN (the swap may exist server-side) — the engine
+          // journals the intent and reconciles via listSwaps, never re-dispatches.
+          { timeoutMs: RPC_UNARY_TIMEOUT_MS },
         )
         .response;
       return { swapId: resp.id };
@@ -261,6 +272,7 @@ export class LitdLoopPort {
             maxMinerFee: BigInt(req.maxMinerFeeSat),
             lastHop: req.lastHopPubkeyHex !== undefined ? Buffer.from(req.lastHopPubkeyHex, 'hex') : new Uint8Array(0),
           }),
+          { timeoutMs: RPC_UNARY_TIMEOUT_MS },
         )
         .response;
       return { swapId: resp.id };
@@ -271,7 +283,9 @@ export class LitdLoopPort {
 
   async getAutoLoopParams(): Promise<AutoLoopParams | null> {
     try {
-      const params = await this.client.getLiquidityParams(Loop.GetLiquidityParamsRequest.create({})).response;
+      const params = await this.client
+        .getLiquidityParams(Loop.GetLiquidityParamsRequest.create({}), { timeoutMs: RPC_UNARY_TIMEOUT_MS })
+        .response;
       return mapLiquidityParameters(params);
     } catch (err) {
       throw mapTransportError(err);
@@ -283,8 +297,15 @@ export class LitdLoopPort {
       // Read-modify-write: SetLiquidityParams replaces the whole parameter
       // set, so the engine's knobs land on top of the daemon's current
       // config (channel rules and amounts preserved).
-      const current = await this.client.getLiquidityParams(Loop.GetLiquidityParamsRequest.create({})).response;
-      await this.client.setLiquidityParams(Loop.SetLiquidityParamsRequest.create({ parameters: autoLoopParamsOntoLiquidityParameters(current, params) })).response;
+      const current = await this.client
+        .getLiquidityParams(Loop.GetLiquidityParamsRequest.create({}), { timeoutMs: RPC_UNARY_TIMEOUT_MS })
+        .response;
+      await this.client
+        .setLiquidityParams(
+          Loop.SetLiquidityParamsRequest.create({ parameters: autoLoopParamsOntoLiquidityParameters(current, params) }),
+          { timeoutMs: RPC_UNARY_TIMEOUT_MS },
+        )
+        .response;
     } catch (err) {
       throw mapTransportError(err);
     }
@@ -292,7 +313,9 @@ export class LitdLoopPort {
 
   async listSwaps(): Promise<SwapUpdate[]> {
     try {
-      const resp = await this.client.listSwaps(Loop.ListSwapsRequest.create({})).response;
+      const resp = await this.client
+        .listSwaps(Loop.ListSwapsRequest.create({}), { timeoutMs: RPC_UNARY_TIMEOUT_MS })
+        .response;
       return resp.swaps.map(mapSwapStatusToSwapUpdate);
     } catch (err) {
       throw mapTransportError(err);
