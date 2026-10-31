@@ -35,7 +35,7 @@ function fakeClients(calls: { exportProof: number; newAddr: number }): TapdClien
 }
 
 describe('batchIsConfirmed', () => {
-  it('maps only BATCH_STATE_CONFIRMED', () => {
+  it('accepts CONFIRMED and the terminal FINALIZED state', () => {
     expect(
       batchIsConfirmed(
         tapdMint.MintingBatch.create({ state: tapdMint.BatchState.CONFIRMED }),
@@ -43,9 +43,22 @@ describe('batchIsConfirmed', () => {
     ).toBe(true);
     expect(
       batchIsConfirmed(
-        tapdMint.MintingBatch.create({ state: tapdMint.BatchState.FROZEN }),
+        tapdMint.MintingBatch.create({ state: tapdMint.BatchState.FINALIZED }),
       ),
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it('rejects in-flight and cancelled states', () => {
+    for (const state of [
+      tapdMint.BatchState.PENDING,
+      tapdMint.BatchState.FROZEN,
+      tapdMint.BatchState.COMMITTED,
+      tapdMint.BatchState.BROADCAST,
+      tapdMint.BatchState.SEEDLING_CANCELLED,
+      tapdMint.BatchState.SPROUT_CANCELLED,
+    ]) {
+      expect(batchIsConfirmed(tapdMint.MintingBatch.create({ state }))).toBe(false);
+    }
   });
 });
 

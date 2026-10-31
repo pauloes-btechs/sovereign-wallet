@@ -176,7 +176,8 @@ describe('integrated tapd asset surface (L1 core)', () => {
     });
     expect(batch).toBeDefined();
     // FinalizeBatch auto-funds — the anchor tx hits the mempool, then the
-    // harness mines it into a block, and the batch flips to CONFIRMED.
+    // harness mines it into a block, and the batch runs through CONFIRMED
+    // to its FINALIZED terminal state (issuance applied).
     await waitForTxInMempool(batch!.batchTxid);
     await mineBlocks(6);
     await manager!.waitForBatchConfirmation(180_000);

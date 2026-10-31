@@ -44,9 +44,18 @@ export interface AssetSendRequest {
   readonly label?: string;
 }
 
-/** A mint batch that has landed on-chain and been confirmed. */
+/**
+ * A batch is done when tapd marks it FINALIZED (the mint tx confirmed AND
+ * the issuance applied) — the terminal success state in tapd v0.8.6.
+ * CONFIRMED is the on-chain-confirmed intermediate before sprout; accepting
+ * it too is safe (FINALIZED implies the tx confirmed), and the poll can
+ * legitimately observe either between tapd's state transitions.
+ */
 export function batchIsConfirmed(batch: tapdMint.MintingBatch): boolean {
-  return batch.state === tapdMint.BatchState.CONFIRMED;
+  return (
+    batch.state === tapdMint.BatchState.CONFIRMED ||
+    batch.state === tapdMint.BatchState.FINALIZED
+  );
 }
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -150,7 +159,9 @@ export class AssetManager {
       }
       if (Date.now() > deadline) {
         throw new Error(
-          `mint batches not confirmed within ${timeoutMs}ms — states: ${relevant.map((b) => `${b.state}`).join(', ')}`,
+          `mint batches not confirmed within ${timeoutMs}ms — states: ${relevant
+            .map((b) => tapdMint.BatchState[b.state] ?? `unknown(${b.state})`)
+            .join(', ')}`,
         );
       }
       await sleep(400);
