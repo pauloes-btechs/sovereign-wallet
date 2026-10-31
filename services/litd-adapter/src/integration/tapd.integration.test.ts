@@ -141,9 +141,13 @@ beforeAll(async () => {
   );
 
   // The tapd surface answers through litd's proxy with tapd's OWN macaroon.
+  // tapd bakes that macaroon only after init+unlock and serves after its DB
+  // initializes — wait on the canary FIRST (ENOENT on the macaroon file is
+  // 'starting' evidence, and the canary resolves on the first successful
+  // GetInfo) so client creation never reads a file that does not exist yet.
   const tapdOptions = tapdConnectionOptions(launched.config.tapd!);
-  manager = new AssetManager(await createTapdClients(tapdOptions));
   await waitForTapdServices(tapdOptions, 120_000);
+  manager = new AssetManager(await createTapdClients(tapdOptions));
 }, 480_000);
 
 afterAll(async () => {
