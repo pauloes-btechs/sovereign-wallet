@@ -26,6 +26,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "mainBinaryName": "Sovereign Wallet",
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",
