@@ -297,11 +297,26 @@ export async function sidecarRpc(dataDir: string): Promise<SidecarRpc> {
   return { rpcHost: '127.0.0.1', rpcPort: port, dataDir };
 }
 
+/**
+ * Pure path helpers for the bridge-managed sidecar's on-disk layout, so the
+ * unit suite can pin the locations (the TLS one is load-bearing — litd's
+ * PROXY cert at <dataDir>/tls.cert does not cover the embedded LND's
+ * lnd.rpclisten port; that listener presents <lnddir>/tls.cert — run 11:
+ * "self-signed certificate" when dialed with the proxy cert).
+ */
+export function sidecarTlsCertPath(dataDir: string): string {
+  // LND defaults its TLS to <lnddir>/tls.cert — the root cert the gRPC
+  // client pins (matches the adapter's rpcTlsCertPath).
+  return path.join(dataDir, 'lnd', 'tls.cert');
+}
+
+export function sidecarAdminMacaroonPath(dataDir: string): string {
+  return path.join(dataDir, 'lnd', 'data', 'chain', 'bitcoin', 'regtest', 'admin.macaroon');
+}
+
 async function sidecarChannelCredentials(dataDir: string): Promise<ChannelCredentials> {
-  const cert = await readFile(path.join(dataDir, 'tls.cert'));
-  const macaroon = await readFile(
-    path.join(dataDir, 'lnd', 'data', 'chain', 'bitcoin', 'regtest', 'admin.macaroon'),
-  );
+  const cert = await readFile(sidecarTlsCertPath(dataDir));
+  const macaroon = await readFile(sidecarAdminMacaroonPath(dataDir));
   return ChannelCredentials.createSsl(cert).compose(macaroonCallCredentials(macaroon.toString('hex')));
 }
 
