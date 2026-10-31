@@ -14,6 +14,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { AddressType } from '@sovereign/litd-proto';
+
 import type {
   LightningClient,
   RouterClient,
@@ -656,6 +658,17 @@ export function faradayOpsFromClient(client: FaradayServerClient): FaradayOps {
   };
 }
 
+/** Map the domain address type onto lnd's watched AddressType values. */
+export function addressTypeToProto(type: 'p2wkh' | 'np2wkh'): AddressType {
+  // WITNESS_PUBKEY_HASH (0) / NESTED_PUBKEY_HASH (1) are the live-watched
+  // variants. The UNUSED_* values (2/3) derive an address lnd's wallet does
+  // not watch for new blocks, so deposits to them are never discovered —
+  // the modeb e2e saw block notifications fire with zero utxos registered
+  // and SendCoins fail with "insufficient funds". The passing integration
+  // test pins the watched type.
+  return type === 'p2wkh' ? AddressType.WITNESS_PUBKEY_HASH : AddressType.NESTED_PUBKEY_HASH;
+}
+
 /** Bridge generated gRPC clients into the session's operation surface. */
 export function lightningOpsFromClient(clients: { readonly lightning: LightningClient; readonly router: RouterClient }): LightningOps {
   const lightning = clients.lightning;
@@ -667,7 +680,7 @@ export function lightningOpsFromClient(clients: { readonly lightning: LightningC
     }),
     channelBalance: async () => ({ response: (await lightning.channelBalance({})).response }),
     newAddress: async (type) => ({
-      address: (await lightning.newAddress({ type: type === 'p2wkh' ? 2 : 3, account: '' })).response.address,
+      address: (await lightning.newAddress({ type: addressTypeToProto(type), account: '' })).response.address,
     }),
     sendCoins: async (request) => ({ txid: (await lightning.sendCoins(request)).response.txid }),
     estimateFee: async (targetConf) => {

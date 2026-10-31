@@ -71,18 +71,17 @@ async function pollTotalBalance(
   predicate: (sats: bigint) => boolean,
   timeoutMs = 120_000,
 ): Promise<void> {
+  // expect.poll chains Playwright matchers only — poll a boolean and toBe(true).
+  // (`.satisfies` is a Jest API; chaining it here threw a TypeError in CI.)
   await expect
-    .poll(
-      async () => {
-        await gotoTab(page, 'On-chain');
-        await gotoTab(page, 'Overview');
-        const text = await page.getByTestId('balance-total').textContent();
-        const digits = (text ?? '').replace(/[^\d]/g, '');
-        return digits === '' ? '0' : digits;
-      },
-      { timeout: timeoutMs, interval: 5_000 },
-    )
-    .satisfies((digits: string) => predicate(BigInt(digits)));
+    .poll(async () => {
+      await gotoTab(page, 'On-chain');
+      await gotoTab(page, 'Overview');
+      const text = await page.getByTestId('balance-total').textContent();
+      const digits = (text ?? '').replace(/[^\d]/g, '');
+      return digits !== '' && predicate(BigInt(digits));
+    }, { timeout: timeoutMs, interval: 5_000 })
+    .toBe(true);
 }
 
 test('create → ready: aezeed wallet creation over the real sidecar', async ({ page }) => {

@@ -25,7 +25,31 @@ vi.mock('../client.js', () => ({
   })),
 }));
 
-import { createRealBridgeDeps } from './session.js';
+import { createRealBridgeDeps, lightningOpsFromClient } from './session.js';
+import { AddressType } from '@sovereign/litd-proto';
+
+describe('lightningOpsFromClient newAddress', () => {
+  // The modeb e2e found deposits to UNUSED_* addresses never discovered:
+  // block notifications fired (NTFN/GRDN) but no utxo was registered and
+  // SendCoins failed with "insufficient funds". Pin the watched variants.
+  it('maps p2wkh/np2wkh to the live-watched AddressType variants', async () => {
+    const types: number[] = [];
+    const ops = lightningOpsFromClient({
+      lightning: {
+        newAddress: async (req: { type: number }) => {
+          types.push(req.type);
+          return { response: { address: 'bcrt1qtest' } };
+        },
+      } as never,
+      router: {} as never,
+    });
+    await ops.newAddress('p2wkh');
+    await ops.newAddress('np2wkh');
+    expect(types).toEqual([AddressType.WITNESS_PUBKEY_HASH, AddressType.NESTED_PUBKEY_HASH]);
+    expect(types).not.toContain(2); // UNUSED_WITNESS_PUBKEY_HASH
+    expect(types).not.toContain(3); // UNUSED_NESTED_PUBKEY_HASH
+  });
+});
 
 describe('createRealBridgeDeps unlocker', () => {
   it('aezeed passphrase round-trips: default initWallet matches genSeed', async () => {
