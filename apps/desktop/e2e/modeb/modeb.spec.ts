@@ -161,6 +161,24 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
   await openApp(page);
   await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
+  // Run 12 pinned: the send test's mineBlocks(1) lands while lnd's Neutrino
+  // view is still ~12s behind bitcoind (CI verbatim: funding coin selection
+  // at 02:28:08.454 → "not enough witness outputs to create funding
+  // transaction, need 0.15000000 BTC only have 0 BTC available", then at
+  // 02:28:08.499 "Processed 1 block … height 112" / "Marking unconfirmed
+  // transaction … mined in block 112" — the change output confirmed one
+  // second AFTER the funding attempt). Gate the open on confirmed balance
+  // covering the funding amount so Neutrino's catch-up can't race the
+  // coin selection.
+  await gotoTab(page, 'Overview');
+  await expect
+    .poll(async () => {
+      const text = await page.getByTestId('balance-confirmed').textContent();
+      const digits = (text ?? '').replace(/[^\d]/g, '');
+      return digits !== '' && BigInt(digits) >= 15_000_000n;
+    }, { timeout: 120_000, interval: 5_000 })
+    .toBe(true);
+
   await gotoTab(page, 'Channels');
   await page.getByLabel('Peer node pubkey (66 hex)').fill(bootstrap.peerPubkey);
   await page.getByLabel(/Peer host/).fill(bootstrap.peerHost);
