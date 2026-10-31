@@ -26,6 +26,7 @@ import {
   GetInfoRequest,
   InitWalletRequest,
   RestoreChanBackupRequest,
+  UnlockWalletRequest,
   type ChannelBackup,
 } from '@sovereign/litd-proto';
 import {
@@ -175,7 +176,29 @@ describe('recovery drill 1 — LND aezeed + SCB restore, funds return on-chain',
           // over what is needed to claim the funds (lnd's data-loss
           // protocol). Bring the peer back and reconnect; the commitment
           // broadcast that follows IS the recovery completing.
+          // Restarting alice boots her EXISTING encrypted wallet: lnd
+          // binds no listeners until it is unlocked (no unlock-password
+          // file in the harness config), so unlock her through the same
+          // WalletUnlocker flow the bootstrap used — a running-but-locked
+          // peer refuses connections (connection refused on 9735).
           await composeService('start', ALICE);
+          await poll(
+            async () => {
+              const unlocker = await execUnlockerClient(ALICE);
+              return (
+                await unlocker
+                  .unlockWallet(
+                    UnlockWalletRequest.create({ walletPassword: INIT_PASSWORD }),
+                  )
+                  .response
+              );
+            },
+            () => true,
+            'restarted alice to accept its wallet unlock',
+            60_000,
+          );
+          const aliceClient = await execLightningClient(ALICE);
+          await waitNodeReady(aliceClient, 'restarted alice (unlocked)', 120_000);
           await poll(
             async () =>
               bob
