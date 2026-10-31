@@ -1,6 +1,13 @@
 /**
- * Re-exports the protobuf-ts clients generated from the LND protos pinned to
- * litd v0.17.8 (see protos/README.md). Never hand-edit src/generated.
+ * Re-exports the protobuf-ts clients generated from the protos pinned to
+ * litd v0.17.8 (see protos/README.md): LND v0.21.5-beta.rc1 + the tapd
+ * v0.8.6 tap surface. Never hand-edit src/generated.
+ *
+ * LND protos are flat-re-exported (the historical surface). The tapd protos
+ * collide with LNRpc names on purpose-shared messages (GetInfoRequest,
+ * OutPoint) and are therefore exported under namespaces — always use them
+ * via `tapdAssets.*` / `tapdMint.*` / `tapdCommon.*` instead of importing
+ * their types flat.
  */
 export * from './generated/lightning';
 export * from './generated/lightning.client';
@@ -40,3 +47,9 @@ export {
 } from './generated/router';
 export { RouterClient } from './generated/router.client';
 export * from './generated/router.client';
+export * as tapdCommon from './generated/tapcommon';
+export * as tapdAssets from './generated/taprootassets';
+export * as tapdMint from './generated/mint';
+// Client classes keep their own namespaces (collision policy above).
+export * as tapdAssetsClient from './generated/taprootassets.client';
+export * as tapdMintClient from './generated/mint.client';
