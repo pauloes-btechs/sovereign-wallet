@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   AddressType,
   GenSeedRequest,
+  GetInfoRequest,
   InitWalletRequest,
   NewAddressRequest,
   WalletBalanceRequest,
@@ -24,6 +25,7 @@ import {
   BTCD_FILTER_PORT,
   bootstrapHarness,
   bitcoinSendTo,
+  getBlockchainInfo,
   HARNESS_WALLET_PASSWORD,
   mineBlocks,
   waitForTxInMempool,
@@ -43,6 +45,7 @@ import {
   restoreAssetProofs,
   tapdConnectionOptions,
   toRegistryEntry,
+  waitForServices,
   waitForTapdServices,
   type LaunchedLitd,
   type LitdConnectionOptions,
@@ -107,11 +110,24 @@ beforeAll(async () => {
       }),
     )
     .response;
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  // After InitWallet, the Lightning sub-server registers asynchronously —
+  // the same startup window the launcher gate covers pre-init. Wait for it
+  // to actually serve before handing the client to the tests.
+  await waitForServices(conn, 'lightning', 60_000);
 
   // The mint batch anchor tx spends from the embedded LND wallet — fund it
-  // from the harness bitcoind wallet first.
+  // from the harness bitcoind wallet first. Fund only once the fresh
+  // Neutrino client has reached the chain tip: a balance poll that races
+  // the sync expires before the funding tx is ever scanned (the proven
+  // sync-gate pattern from the sidecar suite).
   lightning = await createLightningClient(conn);
+  const bitcoinBlocks = (await getBlockchainInfo()).blocks;
+  await poll(
+    () => lightning!.getInfo(GetInfoRequest.create({})).response,
+    (i) => i.syncedToChain && i.blockHeight >= bitcoinBlocks - 2,
+    `Neutrino sync (target height ~${bitcoinBlocks})`,
+    180_000,
+  );
   const address = (
     await lightning.newAddress(NewAddressRequest.create({ type: AddressType.WITNESS_PUBKEY_HASH }))
   ).response.address;
@@ -128,7 +144,7 @@ beforeAll(async () => {
   const tapdOptions = tapdConnectionOptions(launched.config.tapd!);
   manager = new AssetManager(await createTapdClients(tapdOptions));
   await waitForTapdServices(tapdOptions, 120_000);
-}, 300_000);
+}, 480_000);
 
 afterAll(async () => {
   manager?.close();
