@@ -33,7 +33,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import WebSocket from 'ws';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 // LNC's wasm transport expects a WHATWG WebSocket; Node provides one only
 // via the `ws` polyfill. Set before any pairing starts.
@@ -43,6 +43,7 @@ import {
   GenSeedRequest,
   GetInfoRequest,
   InitWalletRequest,
+  ListChannelsRequest,
   NewAddressRequest,
   AddressType,
   WalletBalanceRequest,
@@ -92,6 +93,11 @@ let litdClient: LightningClient | undefined;
 let sessions: LncSessionManager | undefined;
 let wasmServer: Server | undefined;
 let wasmUrl = '';
+/** Set when any test fails — drives the forced worker exit in afterAll. */
+let sawFailure = false;
+afterEach(({ task }) => {
+  if (task.result?.state === 'fail') sawFailure = true;
+});
 /** Live wasm sessions — disconnected in afterAll so vitest can exit. */
 const liveManagers: Array<{ disconnect(): void }> = [];
 
@@ -247,11 +253,27 @@ afterAll(async () => {
     }
   }
   console.log('[e2e-marker]', new Date().toISOString(), 'managers disconnected, stopping litd');
-  await launched?.stop();
-  await new Promise<void>((resolve) => {
-    wasmServer?.closeAllConnections?.();
-    wasmServer?.close(() => resolve());
-  });
+  // litd's stop promise can hang after a fully green run (observed: teardown
+  // stalled between "stopping litd" and the forced exit) — bound every
+  // teardown step so the forced exit below always fires.
+  await Promise.race([Promise.resolve(launched?.stop()), new Promise((r) => setTimeout(r, 15_000))]);
+  console.log('[e2e-marker]', new Date().toISOString(), 'litd stopped, closing wasm server');
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      wasmServer?.closeAllConnections?.();
+      wasmServer?.close(() => resolve());
+      setTimeout(resolve, 5_000);
+    }),
+    new Promise((r) => setTimeout(r, 10_000)),
+  ]);
+  // lnc-web 0.3.6-alpha's internal mailbox retry scheduler survives
+  // disconnect() and keeps spinning after litd stops, so the vitest worker
+  // never exits on its own (observed on every run: worker pegs a CPU core
+  // until an external timeout kills it). Force-exit ~2.5s after teardown
+  // with the correct code — verbose reporter lines are already flushed, so
+  // per-test results are on the record even without the final summary.
+  console.log('[e2e-marker]', new Date().toISOString(), `teardown complete, forcing exit (${sawFailure ? 'failures recorded' : 'all green'})`);
+  setTimeout(() => process.exit(sawFailure ? 1 : 0), 2_500);
 });
 
 describe('LNC pairing to the user\u2019s own litd', () => {
@@ -298,6 +320,22 @@ describe('LNC pairing to the user\u2019s own litd', () => {
   });
 
   it('pays an invoice created through the LNC session (money flow)', async () => {
+    try {
+      await moneyFlowBody();
+    } catch (err) {
+      // The verbose reporter defers failed-test details to the summary,
+      // which the lnc-web teardown wedge can prevent from printing — log
+      // the real error so every run leaves the cause on the record.
+      console.log(
+        '[e2e-marker]',
+        new Date().toISOString(),
+        `money flow FAILED: ${err instanceof Error ? err.stack : String(err)}`,
+      );
+      throw err;
+    }
+  }, 240_000);
+
+  async function moneyFlowBody(): Promise<void> {
     const handle = await sessions!.createSession({
       label: 'lnc-e2e-pay',
       sessionType: 'custom',
@@ -317,6 +355,13 @@ describe('LNC pairing to the user\u2019s own litd', () => {
       valueMsat: 500_000,
       memo: 'lnc-e2e payment',
     });
+    // Amount on the record: the BOLT11 hrp distinguishes 500u (500k msat)
+    // from 5m (500k sat) — the lnc-web JSON bridge may remap valueMsat.
+    console.log(
+      '[e2e-marker]',
+      new Date().toISOString(),
+      `invoice bolt11 head: ${invoice.paymentRequest.slice(0, 16)}`,
+    );
 
     // Pay from the harness LND (alice) via routerrpc.SendPaymentV2 (the
     // only payment RPC on LND v0.21.5 — server-streaming Payment updates):
@@ -361,36 +406,69 @@ describe('LNC pairing to the user\u2019s own litd', () => {
     await alice.openChannelSync(
       OpenChannelRequest.create({
         nodePubkey: new Uint8Array(Buffer.from(litdInfo.identityPubkey, 'hex')),
-        localFundingAmount: BigInt(1_000_000),
+        // 2M sat with 500k pushed leaves alice ~1.5M sat locally — a wide
+        // margin over the 500k-msat invoice, so a commit-fee deduction or a
+        // msat/sat interpretation mismatch in the LNC bridge cannot starve
+        // the router (observed: INSUFFICIENT_BALANCE with a 500k local
+        // share and a 496,530-unit active channel).
+        localFundingAmount: BigInt(2_000_000),
         pushSat: BigInt(500_000),
       }),
     ).response;
     await mineBlocks(6);
-    await pollUntil('channel active', async () => {
-      const channels = await litdClient!.listChannels({} as never).response;
-      if ((channels.channels ?? []).length === 0) throw new Error('no channels yet');
+    // Existence is not routability: a confirmed-but-inactive channel shows
+    // up in listChannels with active=false and the payment fails with
+    // INSUFFICIENT_BALANCE before any HTLC is attempted. Wait for ACTIVE
+    // with spendable local balance (localBalance is msat).
+    await pollUntil('channel active with spendable balance', async () => {
+      const channels = await litdClient!.listChannels(ListChannelsRequest.create({})).response;
+      const routable = (channels.channels ?? []).some(
+        (c) => c.active && c.localBalance > 0n,
+      );
+      if (!routable) throw new Error('no active channel with local balance yet');
       return channels;
     }, 60_000);
 
-    const paymentStream = aliceRouter.sendPaymentV2(
-      SendPaymentRequest.create({
-        paymentRequest: invoice.paymentRequest,
-        timeoutSeconds: 60,
-        noInflightUpdates: true,
-      }),
-    );
-    let payment: { status: Payment_PaymentStatus } | undefined;
-    for await (const update of paymentStream.responses) {
-      payment = update;
-      if (
-        update.status === Payment_PaymentStatus.SUCCEEDED ||
-        update.status === Payment_PaymentStatus.FAILED
-      ) {
-        break;
+    // Give alice's switch a beat to register the new channel's HTLC link
+    // (link start and router pathfinding can race); the retry loop below is
+    // the backstop if the first dispatch still loses the race.
+    await new Promise((r) => setTimeout(r, 1_000));
+
+    // The channel's HTLC link can register with the switch a beat after the
+    // router starts pathfinding — alice's log showed "failed to get bandwidth
+    // for channel ... channel link not found" 250 ms after link start, making
+    // the first dispatch fail instantly with INSUFFICIENT_BALANCE and zero
+    // HTLC attempts. Retry the dispatch until the link/graph converges.
+    let payment: { status: Payment_PaymentStatus; failureReason?: unknown; htlcs?: Array<{ failure?: unknown }> } | undefined;
+    for (let attempt = 1; attempt <= 15; attempt++) {
+      const paymentStream = aliceRouter.sendPaymentV2(
+        SendPaymentRequest.create({
+          paymentRequest: invoice.paymentRequest,
+          timeoutSeconds: 30,
+          noInflightUpdates: true,
+        }),
+      );
+      for await (const update of paymentStream.responses) {
+        payment = update;
+        if (
+          update.status === Payment_PaymentStatus.SUCCEEDED ||
+          update.status === Payment_PaymentStatus.FAILED
+        ) {
+          if (update.status === Payment_PaymentStatus.FAILED) {
+            console.log(
+              '[e2e-marker]',
+              new Date().toISOString(),
+              `payment attempt ${attempt} FAILED: reason=${update.failureReason} htlcFailures=${JSON.stringify(update.htlcs ?? []).slice(0, 600)}`,
+            );
+          }
+          break;
+        }
       }
+      if (payment?.status === Payment_PaymentStatus.SUCCEEDED) break;
+      await new Promise((r) => setTimeout(r, 2_000));
     }
     expect(payment?.status).toBe(Payment_PaymentStatus.SUCCEEDED);
-  }, 240_000);
+  }
 
   it('revoking a session kills the live connection', async () => {
     const handle = await sessions!.createSession({
