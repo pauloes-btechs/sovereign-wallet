@@ -129,6 +129,78 @@ jobs:
         if: always()
         run: docker compose -f harness/regtest/docker-compose.yml down -v || true
 
+  modeb-e2e:
+    name: Mode B desktop e2e (real litd sidecar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Checksum-verified litd sidecar binary the bridge launches (Neutrino).
+      - run: pnpm sidecar:fetch
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: go install github.com/btcsuite/btcd@v0.26.2
+      # Same regtest boot as the integration job — the e2e daemon harness
+      # reuses it (its own bootstrap starts the btcd filter server again,
+      # which is idempotent against the already-running bitcoind).
+      - name: Boot the regtest harness
+        run: |
+          mkdir -p harness/regtest/data/bitcoind harness/regtest/data/lnd-alice \
+            harness/regtest/data/lnd-bob harness/regtest/data/litd-lnd \
+            harness/regtest/data/litd-lit harness/regtest/data/btcd \
+            harness/regtest/data/btcd-log
+          chmod 0777 harness/regtest/data/bitcoind
+          docker compose -f harness/regtest/docker-compose.yml up -d --wait
+          for d in lnd-alice lnd-bob litd-lnd litd-lit; do
+            sudo chown -R "$(id -u):$(id -g)" "harness/regtest/data/$d"
+          done
+          for i in $(seq 1 90); do
+            [ -f harness/regtest/data/litd-lnd/tls.cert ] && break
+            sleep 2
+          done
+          [ -f harness/regtest/data/litd-lnd/tls.cert ] || {
+            echo "::error::litd embedded-LND tls.cert did not appear within 180s"
+            exit 1
+          }
+          sudo chown -R "$(id -u):$(id -g)" harness/regtest/data/litd-lnd
+      - name: Harness container logs (on failure)
+        if: failure()
+        run: docker compose -f harness/regtest/docker-compose.yml logs --tail=200
+      - name: Seed chain + node wallets (spawns the btcd filter server)
+        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm harness:bootstrap
+      - name: Hand container-created files to the runner user
+        if: success()
+        run: |
+          for d in lnd-alice lnd-bob litd-lnd litd-lit; do
+            sudo chown -R "$(id -u):$(id -g)" "harness/regtest/data/$d"
+          done
+      - name: Install Playwright Chromium
+        run: pnpm --filter @sovereign/desktop exec playwright install --with-deps chromium
+      # Playwright's webServer boots the e2e daemon harness (bridge process
+      # + fresh Neutrino litd sidecar + vite with the /modeb proxy).
+      # SOVEREIGN_BTCD_BIN is inherited by the daemon harness, which starts
+      # the filter server the sidecar's Neutrino sync depends on.
+      - name: Run Mode B e2e
+        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm --filter @sovereign/desktop test:e2e:modeb
+      - name: Playwright trace on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modeb-e2e-traces
+          path: apps/desktop/test-results/
+          retention-days: 7
+      - name: Teardown
+        if: always()
+        run: docker compose -f harness/regtest/docker-compose.yml down -v || true
+
   dependency-audit:
     name: Dependency audit
     runs-on: ubuntu-latest
