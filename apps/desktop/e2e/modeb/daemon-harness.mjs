@@ -23,7 +23,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const e2eDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(e2eDir, '../../..');
+// modeb → e2e → desktop → apps → repo root. Four ups — three lands in apps/.
+const repoRoot = path.resolve(e2eDir, '../../../..');
 
 // Keep in sync with bootstrap-path.ts (plain-node script cannot import it).
 const MODEB_BOOTSTRAP_FILE =
