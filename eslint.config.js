@@ -10,6 +10,12 @@ export default tseslint.config(
       '**/coverage/**',
       '**/src-tauri/**',
       '**/node_modules/**',
+      // React Native native scaffolds + metro/babel config: owned by the RN
+      // template, not linted (CommonJS config files, generated gradle/xcode).
+      'apps/mobile/android/**',
+      'apps/mobile/ios/**',
+      'apps/mobile/metro.config.js',
+      'apps/mobile/babel.config.js',
       // protobuf-ts generated output — regenerated from pinned .proto files.
       'packages/litd-proto/src/generated/**',
     ],
