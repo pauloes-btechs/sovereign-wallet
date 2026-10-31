@@ -1,4 +1,4 @@
-import type { WalletProvider } from './provider.js';
+import type { ProviderId, WalletProvider } from './provider.js';
 import type { ProviderDeclaration } from './capabilities.js';
 
 /**
@@ -68,5 +68,63 @@ export function assertSeedCompatibilityDisjoint(
         }
       }
     }
+  }
+}
+
+/** A backend wallet identity as observed from a live node (e.g. an LND
+ * identity pubkey — the node key is derived from the seed, so two nodes
+ * initialized from one aezeed are indistinguishable on the network). */
+export interface WalletIdentityRef {
+  readonly providerId: ProviderId;
+  /** The wallet instance being registered — stable across restarts. */
+  readonly instanceId: string;
+  /** Backend-derived identity (LND identity pubkey, Ark identity key). */
+  readonly identityPubKey: string;
+}
+
+/**
+ * Thrown when a second wallet instance presents an identity that is already
+ * registered to a DIFFERENT instance — i.e. two live wallets derived from
+ * the same seed. Both hold the same node key, channels, and SCB state;
+ * running them concurrently risks double-issued commitments and conflicting
+ * channel-backup restores. The wallet refuses the second registration
+ * outright instead of letting the operator discover the collision on-chain.
+ */
+export class DuplicateWalletIdentityError extends Error {
+  constructor(
+    readonly identityPubKey: string,
+    readonly existingInstanceId: string,
+    readonly candidateInstanceId: string,
+  ) {
+    super(
+      `Refusing wallet registration: identity '${identityPubKey.slice(0, 12)}…' is already ` +
+        `registered to instance '${existingInstanceId}' and is claimed by '${candidateInstanceId}'. ` +
+        'Two live wallets from the same seed cannot both operate safely — restore ONE wallet ' +
+        'per seed and wipe or archive the other.',
+    );
+    this.name = 'DuplicateWalletIdentityError';
+  }
+}
+
+/**
+ * The single guard every wallet-registration path routes through. A
+ * re-registration by the SAME instance (a restart) is legitimate; any other
+ * claim on a registered identity is refused. An empty identity key cannot be
+ * verified at all and fails closed.
+ */
+export function assertWalletIdentityUnique(
+  registered: readonly WalletIdentityRef[],
+  candidate: WalletIdentityRef,
+): void {
+  if (candidate.identityPubKey === '') {
+    throw new Error('Wallet registration requires a backend-derived identity key — refusing an empty one.');
+  }
+  const existing = registered.find((r) => r.identityPubKey === candidate.identityPubKey);
+  if (existing !== undefined && existing.instanceId !== candidate.instanceId) {
+    throw new DuplicateWalletIdentityError(
+      candidate.identityPubKey,
+      existing.instanceId,
+      candidate.instanceId,
+    );
   }
 }
