@@ -125,10 +125,27 @@ interface Booted {
   stop: () => Promise<void>;
 }
 
-/** Hex-encode the admin macaroon the daemon mints at startup. */
+/** Hex-encode the admin macaroon the daemon mints at startup. Waits for the
+ * file: the livez endpoint can report live before the macaroon is minted and
+ * written (observed on loaded CI runners — boot is "live" but the macaroon
+ * read raced it and failed with ENOENT), so reading on 'live' alone is racy. */
 async function adminMacaroonHex(dataDir: string): Promise<string> {
-  const mac = await readFile(path.join(dataDir, 'data', 'regtest', 'admin.macaroon'));
-  return Buffer.from(mac).toString('hex');
+  const macPath = path.join(dataDir, 'data', 'regtest', 'admin.macaroon');
+  const deadlineMs = 15_000;
+  const deadline = Date.now() + deadlineMs;
+  for (;;) {
+    try {
+      const mac = await readFile(macPath);
+      return Buffer.from(mac).toString('hex');
+    } catch (err) {
+      if (Date.now() > deadline) {
+        throw new Error(
+          `admin macaroon not minted at ${macPath} within ${deadlineMs}ms: ${(err as Error).message}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
 }
 
 const disposables: Array<() => Promise<void>> = [];
