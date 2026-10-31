@@ -55,3 +55,13 @@ export {
 } from './bridge/session.js';
 export { createLitdBridgeServer } from './bridge/server.js';
 export type { BridgeServerOptions } from './bridge/server.js';
+
+export {
+  LncSessionManager,
+  assertFutureExpiry,
+  assertTenWordPhrase,
+  litSessionType,
+} from './lnc-sessions.js';
+export type { CreateLncSessionOptions, LncSessionHandle, LncSessionType } from './lnc-sessions.js';
+
+export { bytesToHex, hexToBytes } from './bytes.js';
