@@ -18,6 +18,7 @@
  */
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { connect } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,8 +53,34 @@ if (!existsSync(HARNESS_CLI)) {
 }
 
 process.stderr.write('modeb-harness: booting regtest harness (btcd + seed + node wallets)\n');
+// btcd is started once per job: the CI seed step (and any local bootstrap)
+// leaves a detached filter server listening on 18555. A second CLI run with
+// SOVEREIGN_BTCD_BIN set spawns a duplicate btcd that dies on the busy port
+// and fails the bootstrap — so probe first and only hand the CLI the binary
+// when no server is listening. Without the env var the CLI assumes a running
+// filter server, which is exactly the reuse case.
+function filterServerReachable(port, timeoutMs = 2_000) {
+  return new Promise((resolve) => {
+    const socket = connect(port, '127.0.0.1');
+    const done = (ok) => {
+      socket.destroy();
+      resolve(ok);
+    };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => done(true));
+    socket.once('timeout', () => done(false));
+    socket.once('error', () => done(false));
+  });
+}
+// Keep in sync with harness.ts BTCD_FILTER_PORT (plain .mjs cannot import it).
+const BTCD_FILTER_PORT = 18555;
+const cliEnv = { ...process.env };
+if (await filterServerReachable(BTCD_FILTER_PORT)) {
+  delete cliEnv.SOVEREIGN_BTCD_BIN;
+  process.stderr.write('modeb-harness: filter server already listening — reusing it\n');
+}
 try {
-  execFileSync(process.execPath, [HARNESS_CLI], { stdio: 'inherit', timeout: 300_000 });
+  execFileSync(process.execPath, [HARNESS_CLI], { stdio: 'inherit', timeout: 300_000, env: cliEnv });
 } catch (err) {
   fail(`harness bootstrap failed: ${err}`);
 }
