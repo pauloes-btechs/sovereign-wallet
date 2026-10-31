@@ -227,6 +227,27 @@ describe('assertLoopbackOnly', () => {
       buildLitdConfig({ ...NEUTRINO_REGTEST, extraLndArgs: ['bitcoin.node=neutrino'] }),
     ).toThrow(/lnd\./);
   });
+
+  it('appends sub-server lines with loop./pool. prefixes and rejects others', () => {
+    const pinned = buildLitdConfig({
+      ...NEUTRINO_REGTEST,
+      extraSubServerArgs: ['loop.server.host=127.0.0.1:1', 'pool.auctionserver=127.0.0.1:1'],
+    });
+    expect(pinned.confLines).toContain('loop.server.host=127.0.0.1:1');
+    expect(pinned.confLines).toContain('pool.auctionserver=127.0.0.1:1');
+    // litd's sub-server mode gates (they do NOT default to integrated —
+    // without them the bundled daemons never start and every Loop/Pool
+    // RPC answers "unknown service" forever).
+    const modes = buildLitdConfig({
+      ...NEUTRINO_REGTEST,
+      extraSubServerArgs: ['loop-mode=integrated', 'pool-mode=integrated'],
+    });
+    expect(modes.confLines).toContain('loop-mode=integrated');
+    expect(modes.confLines).toContain('pool-mode=integrated');
+    expect(() =>
+      buildLitdConfig({ ...NEUTRINO_REGTEST, extraSubServerArgs: ['lnd.rpclisten=127.0.0.1:1'] }),
+    ).toThrow(/prefixed with "loop\.", "pool\.", "loop-mode=", or "pool-mode="/);
+  });
 });
 
 describe('pickFreeLoopbackPort', () => {

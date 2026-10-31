@@ -33,6 +33,11 @@ const protoFiles = [
   'tapcommon.proto',
   'taprootassets.proto',
   'mint.proto',
+  // Loop + Pool surfaces bundled in litd v0.17.8 (see protos/README.md).
+  'loop.proto',
+  'common.proto',
+  'pool.proto',
+  'auctioneer.proto',
 ];
 const res = spawnSync(
   process.execPath,

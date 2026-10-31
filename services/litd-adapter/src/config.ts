@@ -64,6 +64,17 @@ export interface LitdSidecarOptions {
   readonly superMacaroon?: { readonly bake: 'read-write' | 'read-only' };
   /** Extra LND flags, already prefixed with `lnd.`, appended to lit.conf. */
   readonly extraLndArgs?: readonly string[];
+  /** Extra sub-server conf lines, already prefixed `loop.` or `pool.`, plus
+   * litd's sub-server mode gates (`loop-mode=`, `pool-mode=`), appended to
+   * lit.conf. The mode gates do NOT default to `integrated` — without an
+   * explicit `loop-mode=integrated`/`pool-mode=integrated` the bundled
+   * loopd/poold never start, so the wallet-facing gRPC mux answers every
+   * Loop/Pool RPC with "unknown service" (verified against the pinned
+   * v0.17.8 binary: synced chain, no registration, forever). Regtest/signet
+   * suites pin the Loop swap server and Pool auctioneer to a dead loopback
+   * endpoint so the daemon never contacts the real mainnet operators
+   * (spec: autonomous runs stay on regtest/signet with offline operators). */
+  readonly extraSubServerArgs?: readonly string[];
 }
 
 export interface ResolvedLitdConfig {
@@ -269,6 +280,16 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
   for (const extra of options.extraLndArgs ?? []) {
     if (!extra.startsWith('lnd.')) {
       throw new Error(`extraLndArgs entries must be prefixed with "lnd." (got: ${extra})`);
+    }
+    publicLines.push(extra);
+  }
+
+  for (const extra of options.extraSubServerArgs ?? []) {
+    const modeGate = /^loop-mode=|^pool-mode=/.test(extra);
+    if (!modeGate && !extra.startsWith('loop.') && !extra.startsWith('pool.')) {
+      throw new Error(
+        `extraSubServerArgs entries must be prefixed with "loop.", "pool.", "loop-mode=", or "pool-mode=" (got: ${extra})`,
+      );
     }
     publicLines.push(extra);
   }

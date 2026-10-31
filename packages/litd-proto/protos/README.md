@@ -37,6 +37,23 @@ the GitHub API on 2026-10-30:
   `@sovereign/litd-proto` under the `tapdCommon` / `tapdAssets` / `tapdMint`
   namespaces — their messages collide with LNRpc names (GetInfoRequest,
   OutPoint), so never flat-re-export them.
+- `loop.proto` — the `looprpc.SwapClient` service (LoopOut/LoopIn quotes and
+  execution, terms, swap status/monitoring, LiquidityParams get/set for
+  AutoLoop). Vendored from
+  [`lightninglabs/loop` at commit `333ed1efccdd375a17fb2df4ace0fb13ac97ce2a`](https://github.com/lightninglabs/loop/tree/333ed1efccdd375a17fb2df4ace0fb13ac97ce2a/looprpc)
+  (the exact revision litd v0.17.8 pins in go.mod, verified via GitHub API,
+  2026-10-31). Imports `common.proto` and `lightning.proto` (paths rewritten
+  from `swapserverrpc/` and `lnrpc/` to the flat vendored layout).
+- `common.proto` — `looprpc` shared messages (HopHint, RouteHint, FeeReport,
+  terms helpers) from the same Loop commit. Self-contained; no imports.
+- `pool.proto` — the `poolrpc.Trader` service (accounts, orders, leases,
+  market info/BatchSnapshot — the market-availability surface). Vendored from
+  [`lightninglabs/pool` at commit `262af739b741d54fb74a787888bec83123082164`](https://github.com/lightninglabs/pool/tree/262af739b741d54fb74a787888bec83123082164/auctioneerrpc)
+  (the exact revision litd v0.17.8 pins in go.mod, verified via GitHub API,
+  2026-10-31). Imports `auctioneer.proto` (path rewritten from
+  `auctioneerrpc/` to the flat vendored layout).
+- `auctioneer.proto` — `poolrpc` auctioneer/messages (account state,
+  match/batch types) from the same Pool commit. No third-party imports.
 
 The router and faraday services are served by the litd sidecar: routerrpc on
 the embedded LND's wallet-facing gRPC listener, frdrpc through litd's proxy
@@ -56,6 +73,12 @@ the shared LND root key) presented over litd's TLS. The wallet-facing
 surface for assets is therefore: litd `httpslisten` + litd TLS cert +
 tapd admin.macaroon (verified against litd v0.17.8 and tapd v0.8.6
 sources, 2026-10-31).
+The Loop (`looprpc`) and Pool (`poolrpc`) services are also served through
+litd's unified gRPC proxy on the `httpslisten` endpoint — litd runs the Loop
+and Pool sub-servers in-process, so no extra daemon is managed. In integrated
+mode these sub-servers register only after the embedded LND has fully synced
+to its chain backend; clients must tolerate "unavailable" responses until
+then.
 
 > Note: the spec's "pinned `rpc.proto`" is this surface. Modern LND names the
 > main service proto `lightning.proto`; `rpc.proto` no longer exists at this

@@ -34,6 +34,7 @@
     "@grpc/grpc-js": "^1.14.7",
     "@protobuf-ts/grpc-transport": "^2.11.1",
     "@sovereign/litd-proto": "workspace:*",
+    "@sovereign/liquidity": "workspace:*",
     "@sovereign/wallet-core": "workspace:*"
   }
 }
