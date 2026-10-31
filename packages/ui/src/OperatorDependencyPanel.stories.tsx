@@ -18,7 +18,7 @@ export const WavelengthDependencies: Story = {
   },
 };
 
-/** Mode B base declaration — fully self-hosted, nothing to disclose. */
-export const SelfHosted: Story = {
+/** Mode B base declaration — one disclosed dependency: the proof courier for external asset transfers. */
+export const LitdLocalDependencies: Story = {
   args: { dependencies: LITD_LOCAL_DECLARATION.capabilities.operatorDependencies },
 };

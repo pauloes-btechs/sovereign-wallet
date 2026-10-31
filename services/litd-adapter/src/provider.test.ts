@@ -3,6 +3,7 @@ import type { ChildProcess } from 'node:child_process';
 
 import { GetInfoResponse, Transaction } from '@sovereign/litd-proto';
 import { describeLightningMechanism } from '@sovereign/wallet-core';
+import { PROOF_COURIER_DISCLOSURE } from '@sovereign/wallet-core';
 
 import { buildLitdConfig } from './config.js';
 import type { LaunchedLitd, LaunchLitdOptions } from './launcher.js';
@@ -108,11 +109,19 @@ describe('LitdLocalProvider', () => {
       lightningMechanism: 'channels',
       onchainSend: true,
       onchainReceive: true,
-      assets: 'none',
+      assets: 'layer1',
       unilateralExit: 'instant',
       recoveryModel: 'aezeed+scb',
-      operatorDependencies: [],
     });
+    // The ONLY external dependency: external asset transfers deliver proofs
+    // through a proof courier; BTC/Lightning and self-transfers do not.
+    expect(LITD_LOCAL_CAPABILITIES.operatorDependencies).toEqual([
+      {
+        kind: 'proof-courier',
+        requiredFor: ['send', 'receive'],
+        disclosure: PROOF_COURIER_DISCLOSURE,
+      },
+    ]);
     // The UI labels the mechanism via the shared helper — cross-check.
     expect(describeLightningMechanism(LITD_LOCAL_CAPABILITIES.lightningMechanism)).toBe(
       'Lightning via payment channels',

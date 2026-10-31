@@ -27,6 +27,12 @@ const protoFiles = [
   'router.proto',
   'faraday.proto',
   'lit-sessions.proto',
+  // tapd v0.8.6 (bundled in litd v0.17.8): tapcommon is the shared-types
+  // import of taprootassets; mint.proto is the mintrpc.Mint service (imports
+  // taprootassets.proto — upstream paths are same-dir, flat layout resolves).
+  'tapcommon.proto',
+  'taprootassets.proto',
+  'mint.proto',
 ];
 const res = spawnSync(
   process.execPath,

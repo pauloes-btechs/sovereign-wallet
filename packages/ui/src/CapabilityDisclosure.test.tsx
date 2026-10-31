@@ -3,7 +3,11 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { LITD_LOCAL_DECLARATION, WAVELENGTH_DECLARATION } from '@sovereign/wallet-core';
+import {
+  LITD_LOCAL_DECLARATION,
+  PROOF_COURIER_DISCLOSURE,
+  WAVELENGTH_DECLARATION,
+} from '@sovereign/wallet-core';
 
 import { CapabilityDisclosure } from './CapabilityDisclosure.js';
 
@@ -51,6 +55,18 @@ describe('CapabilityDisclosure — Mode B (litd declaration)', () => {
     expect(screen.getByTestId('lightning-mechanism')).toHaveTextContent(
       'Supported — Lightning via payment channels',
     );
-    expect(screen.getByTestId('no-dependencies')).toHaveTextContent(/fully self-hosted/);
+  });
+
+  it("discloses the proof courier as the mode's only external dependency", () => {
+    render(
+      <CapabilityDisclosure
+        capabilities={LITD_LOCAL_DECLARATION.capabilities}
+        seedCompatibility={[...LITD_LOCAL_DECLARATION.seedCompatibility]}
+      />,
+    );
+    // The proof-courier disclosure is the honest dependency set for
+    // litd-local now that Taproot asset transfers are layer-1 core scope.
+    expect(screen.getAllByTestId('operator-dependency')).toHaveLength(1);
+    expect(screen.getByText(PROOF_COURIER_DISCLOSURE)).toBeInTheDocument();
   });
 });

@@ -23,6 +23,15 @@ function deepFreeze<T>(value: T): T {
 }
 
 /**
+ * The proof-courier disclosure — the ONLY external service in the Mode B
+ * asset surface (external asset transfers deliver payment proofs through
+ * it). Shared verbatim by the domain declaration and the adapter's provider
+ * declaration so the two can never drift.
+ */
+export const PROOF_COURIER_DISCLOSURE =
+  'Sending Taproot assets to another wallet delivers the payment proof through a proof-courier service; receiving assets from other wallets uses it too. Transfers within this wallet, and everything without Taproot assets, do not depend on it.';
+
+/**
  * Mode A — Wavelength. Lightning works via atomic swaps with a swap server
  * (never channels); balances are Ark VTXOs with an expiry clock; escaping a
  * dead operator is a fee-funded unilateral exit (async, hours-to-days).
@@ -74,7 +83,13 @@ export const LITD_LOCAL_DECLARATION: Readonly<ProviderDeclaration> = deepFreeze(
     assets: 'layer1',
     unilateralExit: 'instant',
     recoveryModel: 'aezeed+scb',
-    operatorDependencies: [],
+    operatorDependencies: [
+      {
+        kind: 'proof-courier',
+        requiredFor: ['send', 'receive'],
+        disclosure: PROOF_COURIER_DISCLOSURE,
+      },
+    ],
   },
   seedCompatibility: ['aezeed+scb'],
 });

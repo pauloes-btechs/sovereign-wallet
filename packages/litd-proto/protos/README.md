@@ -22,6 +22,21 @@ the GitHub API on 2026-10-30:
   [`lightninglabs/faraday` at commit `b547baea0f95`](https://github.com/lightninglabs/faraday/tree/b547baea0f95/frdrpc)
   (the `frdrpc` module at v1.0.2 — the exact revision litd v0.17.8 pins in
   go.mod, verified via GitHub API, 2026-10-31). Self-contained; no imports.
+- `tapcommon.proto`, `taprootassets.proto`, `mint.proto` — the tapd v0.8.6
+  surface: `taprpc.TaprootAssets` (ListAssets, ListBalances, ListTransfers,
+  NewAddr/DecodeAddr/AddrReceives, SendAsset, VerifyProof/DecodeProof/
+  ExportProof/UnpackProofFile, FetchAssetMeta) and `mintrpc.Mint`
+  (MintAsset, FundBatch, SealBatch, FinalizeBatch, CancelBatch, ListBatches).
+  Vendored unmodified from
+  [`lightninglabs/taproot-assets` at tag `v0.8.6`](https://github.com/lightninglabs/taproot-assets/tree/v0.8.6/taprpc)
+  (`taprpc/tapcommon.proto`, `taprpc/taprootassets.proto`,
+  `taprpc/mintrpc/mint.proto` — the tapd revision litd v0.17.8 pins in
+  go.mod, verified via GitHub API, 2026-10-31). Flat layout: upstream
+  imports are same-dir (`import "tapcommon.proto"`), so all three sit at
+  the vendored root. Generated clients are exported from
+  `@sovereign/litd-proto` under the `tapdCommon` / `tapdAssets` / `tapdMint`
+  namespaces — their messages collide with LNRpc names (GetInfoRequest,
+  OutPoint), so never flat-re-export them.
 
 The router and faraday services are served by the litd sidecar: routerrpc on
 the embedded LND's wallet-facing gRPC listener, frdrpc through litd's proxy
@@ -32,6 +47,15 @@ come from the node's own forwarded-HTLC history.
   [`lightninglabs/lightning-terminal` at tag `v0.17.8`](https://github.com/lightninglabs/lightning-terminal/blob/v0.17.8/litrpc/lit-sessions.proto)
   (`litrpc/lit-sessions.proto`). Self-contained; no imports. Used by the
   LNC mobile mode to create/revoke macaroon-scoped LNC sessions.
+
+tapd differs: in integrated mode the tapd sub-server registers its gRPC
+services on litd's own TLS mux (`httpslisten`, default 127.0.0.1:8443) —
+NOT on the embedded LND's raw listener. Calls authenticate with tapd's own
+admin macaroon (`taproot-assets.macaroonpath`, tapd permissions, rooted at
+the shared LND root key) presented over litd's TLS. The wallet-facing
+surface for assets is therefore: litd `httpslisten` + litd TLS cert +
+tapd admin.macaroon (verified against litd v0.17.8 and tapd v0.8.6
+sources, 2026-10-31).
 
 > Note: the spec's "pinned `rpc.proto`" is this surface. Modern LND names the
 > main service proto `lightning.proto`; `rpc.proto` no longer exists at this

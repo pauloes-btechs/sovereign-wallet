@@ -3,9 +3,7 @@
  * with backend.kind='remote-lnd', over the user's own remote LND node.
  *
  * The capability declaration is static and test-golden: it states what THIS
- * code can guarantee today, not what litd could ever do. Taproot assets
- * declare 'none' until the tapd integration task lands; the declaration flips
- * there, with its own golden test update.
+ * code can guarantee today, not what litd could ever do.
  */
 import { GetTransactionsRequest, LightningClient } from '@sovereign/litd-proto';
 import type {
@@ -14,6 +12,7 @@ import type {
   Transaction,
 } from '@sovereign/litd-proto';
 import type { StartOptions, WalletCapabilities, WalletEvent, WalletProvider } from '@sovereign/wallet-core';
+import { PROOF_COURIER_DISCLOSURE } from '@sovereign/wallet-core';
 
 import { connectionOptionsFromConfig, createLitdTransport } from './client.js';
 import { launchLitdSidecar } from './launcher.js';
@@ -35,23 +34,39 @@ export const REMOTE_LND_REQUIREMENTS = {
  * Capabilities of the litd-local provider as implemented by this adapter.
  * - unilateralExit 'instant': force-close initiates immediately; settlement
  *   of funds then follows on-chain timelocks.
- * - operatorDependencies []: nothing in this provider's reachable surface
- *   depends on a third-party operator. When Pool leases ship (feature-
- *   detected, later task), the declaration gains a pool-market entry.
- * - assets 'none': tapd is bundled in litd but asset transfer is not wired
- *   into this adapter yet; the L1-assets task flips this to 'layer1'.
+ * - operatorDependencies: the ONLY external service in the asset surface is
+ *   the proof courier — external asset transfers deliver payment proofs
+ *   through it (self-transfers and plain BTC/Lightning do not use it). When
+ *   Pool leases ship (feature-detected, later task), the declaration gains
+ *   a pool-market entry.
+ * - assets 'layer1': the bundled tapd sub-server serves L1 issuance,
+ *   transfers, balances, history, and proofs (AssetManager). Asset-channel
+ *   transfers stay UNDECLARED — they are experimental (tapd v0.8.x lockstep
+ *   + RFQ oracle, seed-only recovery impossible) behind the experimental
+ *   gate, off by default; the declaration upgrades to 'layer1+channels'
+ *   only when that gate ships its UI (assetSupportForConfig).
  */
-export const LITD_LOCAL_CAPABILITIES: Readonly<WalletCapabilities> = Object.freeze({
+// Annotated BEFORE freezing so the literal is contextually typed (enum
+// members narrow instead of widening to string).
+const litdLocalCapabilities: WalletCapabilities = {
   lightningSend: true,
   lightningReceive: true,
   lightningMechanism: 'channels',
   onchainSend: true,
   onchainReceive: true,
-  assets: 'none',
+  assets: 'layer1',
   unilateralExit: 'instant',
   recoveryModel: 'aezeed+scb',
-  operatorDependencies: [],
-});
+  operatorDependencies: [
+    {
+      kind: 'proof-courier',
+      requiredFor: ['send', 'receive'],
+      // Shared with the domain declaration — one disclosure, verbatim.
+      disclosure: PROOF_COURIER_DISCLOSURE,
+    },
+  ],
+};
+export const LITD_LOCAL_CAPABILITIES: Readonly<WalletCapabilities> = Object.freeze(litdLocalCapabilities);
 
 export const LITD_LOCAL_SEED_COMPATIBILITY: readonly string[] = Object.freeze(['aezeed']);
 

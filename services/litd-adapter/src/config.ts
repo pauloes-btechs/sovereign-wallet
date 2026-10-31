@@ -82,6 +82,26 @@ export interface ResolvedLitdConfig {
   readonly superMacaroonPath?: string;
   readonly rpcHost: '127.0.0.1';
   readonly rpcPort: number;
+  /**
+   * tapd asset surface (integrated mode only): litd's bundled Taproot
+   * Assets sub-server serves its gRPC through litd's proxy mux
+   * (`httpslisten`) with litd's TLS, authenticated by tapd's OWN admin
+   * macaroon (tapd permissions, rooted at the shared LND root key).
+   * Undefined in remote mode — a remote litd would need its own tapd
+   * configured upstream (not this sidecar's job).
+   */
+  readonly tapd?: ResolvedTapdEndpoint;
+}
+
+/** The tapd asset RPC endpoint exposed by an integrated litd. */
+export interface ResolvedTapdEndpoint {
+  readonly rpcHost: '127.0.0.1';
+  /** The litd proxy port (the `httpslisten` UI port). */
+  readonly rpcPort: number;
+  /** litd's own TLS cert — the proxy presents it, not the embedded LND's. */
+  readonly tlsCertPath: string;
+  /** tapd's admin macaroon, pinned under the lit dir. */
+  readonly macaroonPath: string;
 }
 
 export const DEFAULT_RPC_PORT = 10_009;
@@ -147,6 +167,8 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
   // serves on — mode-dependent, resolved below.
   let rpcTlsCertPath: string;
   let servingRpcPort: number;
+  // The tapd asset surface — resolved in integrated mode only.
+  let tapdEndpoint: ResolvedTapdEndpoint | undefined;
 
   // litd's own network must match the backend's: in remote mode lndclient's
   // compatibility check compares litd's configured network against the remote
@@ -192,6 +214,22 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
     // client pins.
     rpcTlsCertPath = `${lndDir}/tls.cert`;
     servingRpcPort = rpcPort;
+
+    // The integrated tapd sub-server: pin its data dir under the lit dir
+    // (upstream defaults to ~/.tapd — OUTSIDE the lit dir, so asset state
+    // would be lost on restore/relocate) and its macaroon path with it.
+    // tapd inherits the network from litd (litd sets
+    // TaprootAssets.ChainConf.Network itself); no network key is emitted.
+    const tapdDir = `${litDir}/tapd`;
+    const tapdMacaroonPath = `${tapdDir}/${NETWORK_FLAG[options.network]}/admin.macaroon`;
+    publicLines.push(`taproot-assets.tapddir=${tapdDir}`);
+    publicLines.push(`taproot-assets.macaroonpath=${tapdMacaroonPath}`);
+    tapdEndpoint = {
+      rpcHost: '127.0.0.1',
+      rpcPort: uiPort,
+      tlsCertPath, // litd's own proxy cert, NOT the embedded LND's
+      macaroonPath: tapdMacaroonPath,
+    };
 
     if (options.backend.kind === 'neutrino') {
       publicLines.push('lnd.bitcoin.active=true');
@@ -245,6 +283,7 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
     rpcHost: '127.0.0.1',
     rpcPort: servingRpcPort,
     superMacaroonPath,
+    tapd: tapdEndpoint,
   };
 }
 
