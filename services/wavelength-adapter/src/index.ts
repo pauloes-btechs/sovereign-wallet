@@ -71,6 +71,7 @@ export {
   mapEntryToRecord,
   isInboundSettled,
   describeEntryFailure,
+  isTxid,
 } from './entry-mapping.js';
 
 // Version pins (the golden test asserts package.json matches these).

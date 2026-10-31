@@ -245,6 +245,20 @@ describe('response normalization', () => {
               created_at: '2026-10-30T00:00:00Z',
               updated_at: '2026-10-30T00:01:00Z',
               cursor: '42',
+              failure_code: 'ENTRY_FAILURE_CODE_TIMED_OUT',
+              progress: {
+                phase: 'ENTRY_PHASE_CONFIRMED',
+                phase_label: 'confirmed',
+                payment_hash: 'ab'.repeat(32),
+                txid: 'cd'.repeat(32),
+                confirmation_height: '8',
+                vtxo_outpoint: 'aa:1',
+                preimage: '',
+              },
+              request: {
+                type: 'ENTRY_REQUEST_TYPE_ONCHAIN',
+                onchain_address: 'bcrt1qexample',
+              },
             },
           ],
           total: 1,
@@ -256,7 +270,18 @@ describe('response normalization', () => {
     const result = await client.list({ view: 'activity' });
     const entry = result.activity?.entries[0];
     expect(result.view).toBe('activity');
-    expect(entry?.kind).toBe('entry_kind_send'); // lowercased proto name; tolerant, test-golden
+    // Proto-name enums normalize to the SDK's bare lowercase union values —
+    // these are the exact strings the SDK declares for EntryKind/EntryStatus/
+    // EntryFailureCode/EntryPhase/EntryRequestType.
+    expect(entry?.kind).toBe('send');
+    expect(entry?.status).toBe('pending');
+    expect(entry?.failureCode).toBe('timed_out');
+    expect(entry?.progress?.phase).toBe('confirmed');
+    expect(entry?.progress?.phaseLabel).toBe('confirmed');
+    expect(entry?.progress?.confirmationHeight).toBe(8);
+    expect(entry?.progress?.vTXOOutpoint).toBe('aa:1');
+    expect(entry?.request?.type).toBe('onchain');
+    expect(entry?.request?.onchainAddress).toBe('bcrt1qexample');
     expect(entry?.amountSat).toBe(1200);
     expect(entry?.feeSat).toBe(3);
     expect(entry?.cursor).toBe(42);
