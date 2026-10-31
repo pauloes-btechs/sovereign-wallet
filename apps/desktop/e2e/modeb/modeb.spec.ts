@@ -217,10 +217,16 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
   await openApp(page);
   await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
-  // Alice requests 21,000 sats; our wallet pays her over the fresh channel.
+  // Alice requests 2,000,000 sats; our wallet pays her over the fresh channel.
+  // Run 12 pinned: with Alice's invoice at 21,000 sats the INBOUND test could
+  // never route — lnd's default commitment reserve is 1% of channel capacity
+  // (150,000 sats on the 15M channel), so Alice's spendable was 21,000 −
+  // 150,000 = 0 and her router deterministically refused our 12,000-sat
+  // invoice ("insufficient local balance" for the full 60s probe). 2M sats
+  // leaves her ~1.85M spendable after the reserve.
   const alice = await makeLightningClient(ALICE);
   const invoice = await alice
-    .addInvoice(Invoice.create({ memo: 'e2e outbound', value: 21_000n }))
+    .addInvoice(Invoice.create({ memo: 'e2e outbound', value: 2_000_000n }))
     .then((call) => call.response);
   // Harness nodes are regtest — invoices start lnbcrt (run7 received a valid lnbcrt invoice).
   expect(invoice.paymentRequest).toMatch(/^lnbcrt/);
@@ -229,15 +235,15 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
   await page.getByLabel('Invoice (BOLT-11)').fill(invoice.paymentRequest);
   await page.getByRole('button', { name: 'Decode and review' }).click();
 
-  await expect(page.getByTestId('payment-review')).toContainText('21,000');
+  await expect(page.getByTestId('payment-review')).toContainText('2,000,000');
   // Advanced routing settings are visible, not buried: fixed fee cap default.
   await page.getByLabel('Fee cap (sats)').fill('5000');
   // Wait for the ROUTER's own view (graph bandwidth hints lag the live link
   // for a brand-new channel — run10 fired the payment 0.5s after activation
   // and lnd marked the no-route failure terminal). Read-only probe.
   const sidecar = await makeSidecarLightningClient(await sidecarRpc(bootstrap.dataDir));
-  await waitForRoutable(sidecar, 21_000n, bootstrap.peerPubkey, 60_000);
-  await page.getByRole('button', { name: /Pay 21,000 sats/ }).click();
+  await waitForRoutable(sidecar, 2_000_000n, bootstrap.peerPubkey, 60_000);
+  await page.getByRole('button', { name: /Pay 2,000,000 sats/ }).click();
 
   await expect(page.getByTestId('payment-outcome')).toContainText('succeeded', { timeout: 60_000 });
   await expect(page.getByTestId('pay-error')).toHaveCount(0);
