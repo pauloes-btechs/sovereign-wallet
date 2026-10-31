@@ -11,6 +11,20 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+rusqlite = { version = "0.39", features = ["bundled-sqlcipher-vendored-openssl"] }
+
+# Platform keyrings: macOS Keychain, Windows Credential Manager, Secret
+# Service. Per-target feature selection so no platform compiles another's
+# backend (keyring v3 documents these exact feature identifiers).
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", default-features = false, features = ["linux-native"] }
 
 [profile.release]
 strip = true

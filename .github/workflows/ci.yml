@@ -274,6 +274,18 @@ jobs:
         run: node scripts/fetch-waved.mjs --triple=${{ matrix.triple }}
       - name: Fetch + hash-verify litd for this target
         run: node scripts/fetch-sidecars.mjs --triple=${{ matrix.triple }}
+      # generate_context! reads the frontend dist at compile time; the cargo
+      # test step does not build the UI, so stub it (the real bundle step
+      # below regenerates the actual dist via beforeBuildCommand).
+      - name: Stub frontend dist for tauri codegen
+        run: mkdir -p apps/desktop/dist && echo '<html></html>' > apps/desktop/dist/index.html
+        shell: bash
+      # SQLCipher-at-rest tests run on every matrix target; the keyring
+      # round-trip test activates on macOS (Keychain) and Windows
+      # (Credential Manager) via its own cfg gate.
+      - name: Rust tests (SQLCipher + per-platform keyring)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test
       - name: Build debug bundle (dev artifact, unsigned)
         run: pnpm --filter @sovereign/desktop tauri build --debug
       - name: Upload bundle
