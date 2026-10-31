@@ -15,8 +15,12 @@ import type { TapdClients } from './tapd-clients.js';
 
 /** Test double over the generated clients: records calls; full RPC surface
  * is exercised by the regtest integration suite, not here. */
-function fakeClients(calls: { exportProof: number; newAddr: number }): TapdClients {
-  return {
+function fakeClients(calls: { exportProof: number; newAddr: number }): {
+  clients: TapdClients;
+  balancesRequests: tapdAssets.ListBalancesRequest[];
+} {
+  const balancesRequests: tapdAssets.ListBalancesRequest[] = [];
+  const clients = {
     transport: { close: () => undefined } as unknown as GrpcTransport,
     assets: {
       exportProof: async () => {
@@ -27,12 +31,26 @@ function fakeClients(calls: { exportProof: number; newAddr: number }): TapdClien
         calls.newAddr += 1;
         return { response: tapdAssets.Addr.create({ encoded: 'taprt1fake' }) };
       },
+      listBalances: async (req: tapdAssets.ListBalancesRequest) => {
+        balancesRequests.push(tapdAssets.ListBalancesRequest.clone(req));
+        return { response: tapdAssets.ListBalancesResponse.create({}) };
+      },
     } as unknown as TapdClients['assets'],
     mint: {
       listBatches: async () => ({ response: tapdMint.ListBatchResponse.create({}) }),
     } as unknown as TapdClients['mint'],
-  };
+  } as unknown as TapdClients;
+  return { clients, balancesRequests };
 }
+
+describe('listBalances — group_by selection', () => {
+  it('selects the asset-id grouping; tapd rejects an unset group_by', async () => {
+    const { clients, balancesRequests } = fakeClients({ exportProof: 0, newAddr: 0 });
+    await new AssetManager(clients).listBalances();
+    expect(balancesRequests).toHaveLength(1);
+    expect(balancesRequests[0].groupBy).toEqual({ oneofKind: 'assetId', assetId: true });
+  });
+});
 
 describe('batchIsConfirmed', () => {
   it('accepts CONFIRMED and the terminal FINALIZED state', () => {
@@ -100,7 +118,8 @@ describe('toRegistryEntry', () => {
 
 describe('AssetManager — validate before any tapd call', () => {
   const calls = { exportProof: 0, newAddr: 0 };
-  const manager = new AssetManager(fakeClients(calls));
+  const { clients } = fakeClients(calls);
+  const manager = new AssetManager(clients);
 
   it('rejects a malformed asset id without calling the proof RPC', async () => {
     await expect(

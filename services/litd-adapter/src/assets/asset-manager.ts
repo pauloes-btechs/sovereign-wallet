@@ -106,7 +106,16 @@ export class AssetManager {
   }
 
   async listBalances(): Promise<tapdAssets.ListBalancesResponse> {
-    return this.clients.assets.listBalances(tapdAssets.ListBalancesRequest.create({})).response;
+    // tapd v0.8.6 requires the caller to select the group_by oneof — an unset
+    // oneof is rejected server-side with "invalid group_by". Group by asset
+    // id, which is the view balances UIs and consumers key off.
+    return this.clients.assets
+      .listBalances(
+        tapdAssets.ListBalancesRequest.create({
+          groupBy: { oneofKind: 'assetId', assetId: true },
+        }),
+      )
+      .response;
   }
 
   async listTransfers(): Promise<tapdAssets.ListTransfersResponse> {
