@@ -150,13 +150,22 @@ describe('recovery drill 1 — LND aezeed + SCB restore, funds return on-chain',
 
           // Restore the channel from the SCB — the pinned protos restore via
           // the dedicated RestoreChannelBackups RPC (channel/backup pairs).
-          const restoreRes = (
-            await bob.restoreChannelBackups(
-              RestoreChanBackupRequest.create({
-                backup: { oneofKind: 'chanBackups', chanBackups: { chanBackups: [bobBackup!] } },
-              }),
-            )
-          ).response;
+          // Polled: lnd answers whitelisted RPCs (GetInfo) before its RPC
+          // server finishes starting, so an immediate restore can hit
+          // "server is still in the process of starting" — retry until ready.
+          const restoreRes = await poll(
+            async () =>
+              (
+                await bob.restoreChannelBackups(
+                  RestoreChanBackupRequest.create({
+                    backup: { oneofKind: 'chanBackups', chanBackups: { chanBackups: [bobBackup!] } },
+                  }),
+                )
+              ).response,
+            (res) => res.numRestored === 1,
+            'the SCB restore to complete (numRestored = 1)',
+            120_000,
+          );
           expect(restoreRes.numRestored).toBe(1);
           d.step('restored the channel from the SCB file — lnd reports numRestored = 1');
 
