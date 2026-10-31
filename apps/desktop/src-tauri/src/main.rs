@@ -163,14 +163,21 @@ fn db_keys(conn: &Connection, prefix: &str) -> Result<Vec<String>, String> {
 
 /// Monotonic handle registry — closed handles are never reused, so a stale
 /// WebView reference can never reach a different database.
-struct DbRegistry {
+///
+/// Tauri managed state must be `Send + Sync`. rusqlite's `Connection` is
+/// `Send` but not `Sync` (interior-mutable statement cache / inner handle),
+/// so the registry guards the whole inner map behind a `Mutex` — one
+/// command call at a time, which matches WebView command traffic.
+struct DbRegistryInner {
     next_handle: u64,
     connections: HashMap<u64, Connection>,
 }
 
+struct DbRegistry(Mutex<DbRegistryInner>);
+
 impl Default for DbRegistry {
     fn default() -> Self {
-        Self { next_handle: 1, connections: HashMap::new() }
+        Self(Mutex::new(DbRegistryInner { next_handle: 1, connections: HashMap::new() }))
     }
 }
 
