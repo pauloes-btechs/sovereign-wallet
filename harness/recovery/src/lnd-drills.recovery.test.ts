@@ -3,8 +3,11 @@
  *
  * Drill 1 (aezeed + SCB restore): a funded node with an active channel is
  * WIPED, then rebuilt from nothing but its seed and its static channel
- * backup; the restored channel is force-closed with the peer down and the
- * funds must return on-chain (through the CSV delay) to the fresh wallet.
+ * backup. With the peer down, lnd accepts the backup but cannot close the
+ * channel alone: SCB recovery is the data-loss-protocol handshake — the
+ * restored wallet reconnects and the PEER force-closes, handing over the
+ * state needed to claim the funds. The funds must return on-chain (through
+ * the CSV delay) to the fresh wallet.
  *
  * Drill 5 (two nodes, one seed): two live nodes initialized from the SAME
  * seed produce identical identity keys, and wallet-core's registration
@@ -17,15 +20,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  CloseChannelRequest,
+  ConnectPeerRequest,
   ExportChannelBackupRequest,
   GenSeedRequest,
   GetInfoRequest,
   InitWalletRequest,
-  ListChannelsRequest,
   RestoreChanBackupRequest,
   type ChannelBackup,
-  type ChannelPoint,
 } from '@sovereign/litd-proto';
 import {
   ALICE,
@@ -68,7 +69,6 @@ const CHANNEL_SAT = 1_000_000;
 /** Drill state carried between the sequential steps of one drill. */
 let bobSeed: string[] = [];
 let bobBackup: ChannelBackup | undefined;
-let bobChannelPoint: ChannelPoint | undefined;
 
 async function initWalletFromSeed(
   unlocker: Awaited<ReturnType<typeof execUnlockerClient>>,
@@ -98,10 +98,10 @@ afterAll(() => {
 });
 
 describe('recovery drill 1 — LND aezeed + SCB restore, funds return on-chain', () => {
-  it('wipes a funded node and recovers every sat through seed + SCB + force-close', async () => {
+  it('wipes a funded node and recovers every sat through seed + SCB + data-loss recovery', async () => {
     await runDrill(
       'drill-1-lnd-aezeed-scb-restore',
-      'LND aezeed + SCB restore — wipe, restore, force-close with peer down, funds on-chain',
+      'LND aezeed + SCB restore — wipe, restore from seed + SCB, peer-driven recovery, funds on-chain',
       ENV,
       async (d) => {
         // ——— phase A: build the victim state on a FRESH node ———
@@ -120,12 +120,12 @@ describe('recovery drill 1 — LND aezeed + SCB restore, funds return on-chain',
         d.step('funded bob with 2 BTC from the harness bitcoind wallet');
 
         const alicePubkey = (await getNodeInfo(ALICE)).identityPubkey;
-        bobChannelPoint = await openChannelActive(bob, alicePubkey, 'lnd-alice:9735', CHANNEL_SAT);
+        const channelPoint = await openChannelActive(bob, alicePubkey, 'lnd-alice:9735', CHANNEL_SAT);
         d.step(`opened a ${CHANNEL_SAT}-sat channel bob→alice and waited for it to go active`);
 
         // ——— the backup: the artifact a dead node leaves behind ———
         const backup = (
-          await bob.exportChannelBackup(ExportChannelBackupRequest.create({ chanPoint: bobChannelPoint }))
+          await bob.exportChannelBackup(ExportChannelBackupRequest.create({ chanPoint: channelPoint }))
         ).response;
         expect(backup.chanBackup?.length ?? 0).toBeGreaterThan(0);
         bobBackup = backup;
@@ -169,38 +169,31 @@ describe('recovery drill 1 — LND aezeed + SCB restore, funds return on-chain',
           expect(restoreRes.numRestored).toBe(1);
           d.step('restored the channel from the SCB file — lnd reports numRestored = 1');
 
-          const restoredChannels = await poll(
-            async () => (await bob.listChannels(ListChannelsRequest.create({}))).response.channels,
-            (channels) => channels.length >= 1,
-            'the SCB-restored channel to appear',
-            120_000,
+          // SCB recovery cannot broadcast anything with the peer offline:
+          // the restored wallet must reestablish the channel, and the PEER
+          // — holding the newer state — drives the force-close and hands
+          // over what is needed to claim the funds (lnd's data-loss
+          // protocol). Bring the peer back and reconnect; the commitment
+          // broadcast that follows IS the recovery completing.
+          await composeService('start', ALICE);
+          await poll(
+            async () =>
+              bob
+                .connectPeer(
+                  ConnectPeerRequest.create({
+                    addr: { pubkey: alicePubkey, host: 'lnd-alice:9735' },
+                  }),
+                )
+                .response,
+            () => true,
+            'restored bob to reconnect to alice',
+            60_000,
           );
-          expect(restoredChannels.length).toBeGreaterThanOrEqual(1);
-          d.step(`SCB restore rebuilt the channel record (${restoredChannels.length} channel present after restore)`);
+          d.step('brought the peer back and reconnected — the data-loss protocol takes over the recovery');
 
-          // Force-close with the peer down: lnd broadcasts the latest
-          // commitment it holds — the funds become purely on-chain, no
-          // peer, no server. The close stream is consumed to its end (it
-          // can error when lnd stops streaming after broadcast — recorded,
-          // not swallowed).
-          const closeUpdates: string[] = [];
-          const call = bob.closeChannel(
-            CloseChannelRequest.create({ channelPoint: bobChannelPoint, force: true }),
-          );
-          void (async () => {
-            try {
-              for await (const update of call.responses) {
-                closeUpdates.push(update.update.oneofKind ?? 'none');
-              }
-            } catch (err) {
-              closeUpdates.push(`stream ended: ${err instanceof Error ? err.message : String(err)}`);
-            }
-          })();
-          d.step('force-closed the restored channel (peer down) — awaiting the commitment broadcast');
-
-          await waitForCloseBroadcast(120_000);
+          await waitForCloseBroadcast(180_000);
           await mineBlocks(1);
-          d.step(`commitment tx observed in the mempool and mined (close stream updates: ${closeUpdates.length})`);
+          d.step("the peer's force-close commitment hit the mempool and was mined");
         } finally {
           await composeService('start', ALICE);
         }
