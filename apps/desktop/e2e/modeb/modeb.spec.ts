@@ -154,7 +154,7 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
   await gotoTab(page, 'Channels');
   await page.getByLabel('Peer node pubkey (66 hex)').fill(bootstrap.peerPubkey);
   await page.getByLabel(/Peer host/).fill(bootstrap.peerHost);
-  await page.getByLabel('Funding amount (sats, min 20,000)').fill('20000000'); // 0.2 BTC — wallet holds ~0.4 BTC at this point; 1 BTC funding can never confirm
+  await page.getByLabel('Funding amount (sats, min 20,000)').fill('15000000'); // 0.15 BTC — under LND's 16,777,215-sat max channel size (run9: 0.2 BTC > cap → "funding amount is too large")
   await page.getByLabel('Fee rate (sat/vbyte)').fill('2');
   await page.getByRole('button', { name: 'Open channel' }).click();
 
