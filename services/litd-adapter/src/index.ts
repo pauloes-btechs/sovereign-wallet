@@ -65,3 +65,32 @@ export {
 export type { CreateLncSessionOptions, LncSessionHandle, LncSessionType } from './lnc-sessions.js';
 
 export { bytesToHex, hexToBytes } from './bytes.js';
+
+// -- Taproot Assets (L1 core) ----------------------------------------------
+export { AssetManager, batchIsConfirmed, toRegistryEntry } from './assets/asset-manager.js';
+export type { AssetIssueSpec, AssetSendRequest } from './assets/asset-manager.js';
+export { createTapdClients, tapdConnectionOptions, waitForTapdServices } from './assets/tapd-clients.js';
+export type { TapdClients } from './assets/tapd-clients.js';
+export {
+  AssetChannelsDisabledError,
+  DEFAULT_ASSET_CHANNELS_CONFIG,
+  assertAssetChannelsEnabled,
+  assetSupportForConfig,
+  resolveAssetChannelGate,
+} from './assets/experimental.js';
+export type { AssetChannelGate, AssetChannelGateReason, AssetChannelsConfig, ProofBackupPlan } from './assets/experimental.js';
+export {
+  JsonFileProofBackupStore,
+  backupAssetProofs,
+  backupSourcesFromAssets,
+  restoreAssetProofs,
+  restoreAssetProofsStrict,
+} from './assets/proofs.js';
+export type {
+  AssetProofBackupStore,
+  AssetProofRecord,
+  BackupOutcome,
+  BackupSourceAsset,
+  ProofClient,
+  RestoreOutcome,
+} from './assets/proofs.js';

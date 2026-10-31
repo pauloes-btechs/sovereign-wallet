@@ -92,6 +92,53 @@ describe('buildLitdConfig — integrated neutrino (desktop default)', () => {
   });
 });
 
+describe('buildLitdConfig — integrated tapd asset surface', () => {
+  const config = buildLitdConfig(NEUTRINO_REGTEST);
+
+  it('pins tapd data under the lit dir and the macaroon with it', () => {
+    // tapd's upstream default (~/.tapd) sits OUTSIDE the lit dir — asset
+    // state would silently fall out of the wallet's data set.
+    expect(config.confLines).toContain('taproot-assets.tapddir=/home/user/.sovereign/litd-test/tapd');
+    expect(config.confLines).toContain(
+      'taproot-assets.macaroonpath=/home/user/.sovereign/litd-test/tapd/regtest/admin.macaroon',
+    );
+  });
+
+  it('exposes the tapd surface through litd\'s proxy with litd TLS and the tapd macaroon', () => {
+    expect(config.tapd).toBeDefined();
+    expect(config.tapd).toEqual({
+      rpcHost: '127.0.0.1',
+      rpcPort: DEFAULT_UI_PORT, // the httpslisten proxy port, not lnd.rpclisten
+      tlsCertPath: '/home/user/.sovereign/litd-test/tls.cert', // litd's own cert
+      macaroonPath: '/home/user/.sovereign/litd-test/tapd/regtest/admin.macaroon',
+    });
+  });
+
+  it('bakes no super macaroon and emits no asset-channel flags', () => {
+    // Least privilege: the LND admin macaroon must NOT gain tapd
+    // permissions, and no full-permission super macaroon is requested.
+    expect(config.confLines.some((l) => l.startsWith('bake-super-macaroon'))).toBe(false);
+    // The experimental asset-channels flag is a WALLET-level gate — no litd
+    // flag enables it and none is emitted.
+    expect(config.confLines.some((l) => l.includes('channel'))).toBe(false);
+  });
+
+  it('resolves no tapd surface in remote mode (a remote litd owns its own tapd)', () => {
+    const remote = buildLitdConfig({
+      network: 'regtest',
+      dataDir: '/home/user/.sovereign/litd-remote',
+      backend: {
+        kind: 'remote-lnd',
+        rpcServer: '127.0.0.1:10009',
+        macaroonPath: '/remote/admin.macaroon',
+        tlsCertPath: '/remote/tls.cert',
+      },
+    });
+    expect(remote.tapd).toBeUndefined();
+    expect(remote.confLines.some((l) => l.startsWith('taproot-assets.'))).toBe(false);
+  });
+});
+
 describe('buildLitdConfig — integrated bitcoind (user full node)', () => {
   const config = buildLitdConfig({
     network: 'regtest',
