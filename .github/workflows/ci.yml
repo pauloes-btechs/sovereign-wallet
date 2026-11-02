@@ -54,7 +54,7 @@ jobs:
       - run: pnpm test
 
   web-preview:
-    name: Vercel services build (wallet-demo + storybook)
+    name: Vercel services build (wallet-demo + desktop + storybook)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,6 +72,10 @@ jobs:
       # path it is served under.
       - run: pnpm --filter '@sovereign/ui^...' build && pnpm --filter @sovereign/ui exec storybook build -o storybook-static/storybook
       - run: test -f packages/ui/storybook-static/storybook/index.html
+      # Desktop service (vercel.json "desktop"): the Tauri UI as a static page
+      # under /desktop/ (no daemon on the web; it shows the runtime-required state).
+      - run: pnpm --filter '@sovereign/desktop^...' build && cd apps/desktop && pnpm exec tsc --noEmit && pnpm exec vite build --base=/desktop/ --outDir dist/desktop --emptyOutDir
+      - run: test -f apps/desktop/dist/desktop/index.html
 
   fuzz:
     name: Fuzz (destination, invoice, asset-id, listen-args parsers)
