@@ -8,6 +8,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/build/**',
       '**/coverage/**',
+      '**/storybook-static/**',
       '**/src-tauri/**',
       '**/node_modules/**',
       // React Native native scaffolds + metro/babel config: owned by the RN

@@ -54,7 +54,7 @@ jobs:
       - run: pnpm test
 
   web-preview:
-    name: Web preview build (Vercel target)
+    name: Vercel services build (wallet-demo + storybook)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +68,10 @@ jobs:
       # means the hosted demo would fail to deploy.
       - run: pnpm web:build
       - run: test -f apps/mobile/dist/index.html
+      # Storybook service (vercel.json "storybook"), built at the /storybook/
+      # path it is served under.
+      - run: pnpm --filter '@sovereign/ui^...' build && pnpm --filter @sovereign/ui exec storybook build -o storybook-static/storybook
+      - run: test -f packages/ui/storybook-static/storybook/index.html
 
   fuzz:
     name: Fuzz (destination, invoice, asset-id, listen-args parsers)

@@ -121,7 +121,8 @@ describe('egress: in-process refusal of telemetry and account endpoints', () => 
 
 describe('egress: runtime source scan — no hardcoded remote endpoints', () => {
   const SRC_DIRS = ['apps', 'packages', 'services'].map((d) => path.join(REPO_ROOT, d));
-  const SKIP = new Set(['node_modules', 'dist', 'generated', '.storybook', 'coverage']);
+  // storybook-static: compiled Storybook build output (third-party bundles), not runtime source.
+  const SKIP = new Set(['node_modules', 'dist', 'generated', '.storybook', 'storybook-static', 'coverage']);
   const EXT = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
   function isTestFile(file: string): boolean {

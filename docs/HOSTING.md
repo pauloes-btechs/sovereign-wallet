@@ -10,7 +10,8 @@ signed installers, and CI to build them.
 
 | Surface | What it is | Where it runs | Cost | Secrets |
 | --- | --- | --- | --- | --- |
-| **Web demo** | Mode A mobile app over react-native-web, simulated Wavelength client, regtest | **Vercel** (Hobby) | Free | None |
+| **Web demo** | Mode A mobile app over react-native-web, simulated Wavelength client, regtest | **Vercel** service `wallet-demo`, public at `/` | Free | None |
+| **Component catalog** | `packages/ui` Storybook (Mode A presentational components) | **Vercel** service `storybook`, public at `/storybook/` | Free | None |
 | **Desktop app** | Tauri 2 shell + `waved`/`litd` sidecars | User's machine; installers on **GitHub Releases** | Free | Signing certs (later) |
 | **Android** | React Native 0.88 | Device; APK on GitHub Releases or Firebase App Distribution → Play Store later | Free → $25 one-time (Play) | Release keystore (later) |
 | **iOS** | React Native 0.88 | Simulator now; TestFlight → App Store later | $99/yr (Apple Developer) | Apple signing identity (later) |
@@ -36,18 +37,42 @@ extension injection, storage) and is out of scope.
 
 ### Configuration (already in the repo)
 
-`vercel.json` at the repo root:
+`vercel.json` uses [Vercel Services](https://vercel.com/docs/services):
+one project, one domain, two independently built static frontends.
 
-- `installCommand`: `pnpm install --frozen-lockfile` (Vercel reads the pnpm
-  version from `packageManager`)
-- `buildCommand`: `pnpm web:build`, which builds the workspace packages the
-  mobile app depends on, then runs `vite build --config vite.preview.config.ts`
-- `outputDirectory`: `apps/mobile/dist`
-- Security headers on every response: a strict CSP (`default-src 'none'`,
-  `connect-src 'self'`, `frame-ancestors 'none'`), `no-referrer`, `nosniff`,
-  a locked-down `Permissions-Policy`, COOP, and `noindex`. The full
-  onboarding → backup → verify → home flow was verified under this exact CSP
-  with zero console errors.
+| Service | Root | Public path | Build |
+| --- | --- | --- | --- |
+| `wallet-demo` | `apps/mobile` | `/` (catch-all, last rewrite) | workspace deps, then `vite build --config vite.preview.config.ts` → `dist` |
+| `storybook` | `packages/ui` | `/storybook/` (`/storybook` redirects) | workspace deps, then `storybook build -o storybook-static/storybook` → `storybook-static` |
+
+- A service receives the **original** request path, so Storybook is built
+  into a `storybook/` subfolder of its output. `/storybook/index.html` then
+  maps to a real file. Its assets are relative, so no base-path config is
+  needed.
+- **Headers are per service.** `wallet-demo` gets a strict CSP
+  (`default-src 'none'`, `script-src 'self'`, `connect-src 'self'`,
+  `frame-ancestors 'none'`) plus `no-referrer`, `nosniff`, a locked-down
+  `Permissions-Policy`, COOP and `noindex`. The full onboarding → backup →
+  verify → home flow was verified under this exact CSP with zero console
+  errors. Storybook's HTML relies on inline scripts and an iframe preview, so
+  its CSP allows `'unsafe-inline'` scripts and same-origin framing. That's
+  acceptable for a component catalog with no data or keys.
+- **No bindings.** Neither service calls another. Both are static, with no
+  server-side functions. The desktop app's network calls go only to its own
+  loopback sidecars (`127.0.0.1`) on the user's machine. That's the
+  noncustodial design, so it's not something to route through Vercel.
+- **Not deployed:** `apps/desktop` (its UI is useless without local
+  `waved`/`litd` daemons, and is shipped inside the Tauri binary) and
+  `apps/desktop/src-tauri` (a native desktop binary, not a web server).
+
+Verified with Vercel CLI 65.9: `vercel build` succeeds for both services, and
+the emitted route table is `/storybook` → 307, `/storybook/(.*)` →
+`storybook`, `/(.*)` → `wallet-demo`.
+
+Local: `vercel dev -L` runs both services, but in dev mode Storybook's own
+dev server answers at its root, not `/storybook/`. Use
+`pnpm --filter @sovereign/ui storybook` (http://localhost:6006) for
+Storybook work, and `pnpm web:dev` for the wallet demo.
 
 ### Environment variables
 
@@ -62,18 +87,20 @@ env var that a Vite build can read.
 
 1. Sign in at vercel.com with GitHub → **Add New… → Project** → import
    `pauloes-btechs/sovereign-wallet`.
-2. Leave **Root Directory** as the repo root (`vercel.json` drives the rest).
-   Framework preset: *Other*.
+2. Leave **Root Directory** as the repo root. The `services` block in
+   `vercel.json` defines each service's build, so leave the project-level
+   build settings empty.
 3. Deploy. Every push to `main` then updates production, and every PR gets a
    preview URL that Vercel comments on the PR.
 
-The CI job **Web preview build (Vercel target)** runs the same build command,
-so a red check means the deploy would fail too.
+The CI job **Vercel services build (wallet-demo + storybook)** runs both
+services' builds, so a red check means the deploy would fail too.
 
 ### Alternatives (also free)
 
-- **Cloudflare Pages**: same build command and output dir; headers go in
-  `apps/mobile/public/_headers`. Unlimited bandwidth on the free tier.
+- **Cloudflare Pages**: one Pages project per frontend (same build commands
+  and output dirs); headers go in a `_headers` file. Unlimited bandwidth on
+  the free tier.
 - **GitHub Pages**: works for a static demo via an Actions workflow, but
   custom response headers (CSP) are not supported, so it's a weaker fit.
 

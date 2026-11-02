@@ -56,6 +56,8 @@ pnpm build && pnpm lint && pnpm typecheck && pnpm test   # all should be green
 | --- | --- | --- |
 | Web demo (Mode A, simulated, regtest) | `pnpm web:dev` | http://localhost:5174 |
 | Web demo, production build | `pnpm web:build` then `pnpm --filter @sovereign/mobile exec vite preview --config vite.preview.config.ts` | http://localhost:4173 |
+| Component catalog (Storybook) | `pnpm --filter @sovereign/ui storybook` | http://localhost:6006 |
+| Both Vercel services together | `npx vercel dev -L` (Storybook answers at its own root in dev; see HOSTING) | http://localhost:3000 |
 | Desktop app (real sidecars) | `pnpm sidecar:fetch && node scripts/fetch-waved.mjs` (hash-verified litd + waved), then `pnpm --filter @sovereign/desktop tauri dev` | Native window |
 | Desktop UI only, in a browser | `pnpm --filter @sovereign/desktop dev` | http://localhost:5173 (shows "Desktop runtime required" without a daemon) |
 | Desktop Mode B in a browser | same, then open `/?mode=b` | Node-mode UI |
