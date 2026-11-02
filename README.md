@@ -50,7 +50,7 @@ Requires Node ≥20 and pnpm (version pinned via `packageManager`).
 projects wired to the `SovereignWallet` AppRegistry entry in `index.js`:
 
 ```sh
-pnpm --filter @sovereign/mobile start            # Metro (JS for dev builds)
+pnpm --filter @sovereign/mobile exec react-native start   # Metro (JS for dev builds)
 cd apps/mobile/android && ./gradlew assembleDebug  # debug APK (no signing)
 cd apps/mobile/ios && pod install && open SovereignWallet.xcworkspace
 ```
@@ -60,8 +60,21 @@ CI builds both (Android debug APK; unsigned iOS simulator app) and desktop
 installers for Windows/macOS with install smoke tests — see
 [docs/RELEASE.md](docs/RELEASE.md).
 
+### Web demo
+
+```sh
+pnpm web:dev      # http://localhost:5174, Mode A over react-native-web, simulated client, regtest
+pnpm web:build    # static build → apps/mobile/dist (what Vercel deploys)
+```
+
+The hosted demo runs the real Mode A screens and engine against an in-memory
+simulated Wavelength client. No real bitcoin, no network calls. See
+[docs/HOSTING.md](docs/HOSTING.md).
+
 ## Documentation
 
+- [Hosting & distribution](docs/HOSTING.md): where each surface runs, cost, secrets
+- [Local dev on macOS](docs/LOCAL_DEV_MAC.md): toolchain, external-SSD caveats, change → ship loop
 - [Architecture](docs/ARCHITECTURE.md) — two engines, one contract, process model
 - [Upstream integrations](docs/UPSTREAM_INTEGRATIONS.md) — full dependency inventory with pins and licenses
 - [Wallet recovery](docs/WALLET_RECOVERY.md) — what restores from what, per mode

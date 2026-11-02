@@ -206,9 +206,14 @@ export function MobileWarningBand({
   tone?: 'info' | 'warning' | 'danger';
 }): ReactNode {
   const color = tone === 'warning' ? palette.yellow : tone === 'danger' ? palette.red : palette.blue;
+  // React Native throws on raw strings outside <Text> ("Text strings must be
+  // rendered within a <Text> component"), so plain-text bands are wrapped
+  // here; composed children (Text + buttons) pass through untouched.
+  const isPlainText = (c: ReactNode): boolean => typeof c === 'string' || typeof c === 'number';
+  const plain = isPlainText(children) || (Array.isArray(children) && children.every(isPlainText));
   return (
     <View style={[styles.band, { borderLeftColor: color }]} accessibilityRole="alert">
-      {children}
+      {plain ? <Text style={styles.bandText}>{children}</Text> : children}
     </View>
   );
 }
@@ -344,6 +349,7 @@ export const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 4,
   },
+  bandText: { color: palette.text, fontSize: 14, lineHeight: 20 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',

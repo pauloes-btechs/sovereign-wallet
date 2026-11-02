@@ -3,10 +3,31 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Sovereign Wallet — Mode A mobile preview</title>
+    <meta name="robots" content="noindex" />
+    <meta name="description" content="Sovereign Wallet — Mode A (Wavelength/Ark) web preview on regtest with a simulated client. No real bitcoin." />
+    <title>Sovereign Wallet — Mode A preview (regtest)</title>
+    <style>
+      html, body { margin: 0; background: #0b0f14; }
+      body {
+        display: flex; flex-direction: column; align-items: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .demo-bar {
+        width: 100%; box-sizing: border-box; padding: 8px 16px;
+        background: #1a1408; border-bottom: 1px solid #3a2a0c;
+        color: #f5b840; font-size: 12px; line-height: 1.4; text-align: center;
+      }
+      .demo-bar a { color: #f7931a; }
+      #root { width: 100%; max-width: 390px; min-height: 100vh; }
+    </style>
   </head>
-  <body style="margin: 0; background: #0b0f14; display: flex; justify-content: center;">
-    <div id="root" style="width: 100%; max-width: 390px; min-height: 100vh;"></div>
+  <body>
+    <div class="demo-bar" role="note">
+      Demo build · regtest · simulated Wavelength client — no real bitcoin, no network calls.
+      <a href="https://github.com/pauloes-btechs/sovereign-wallet" rel="noopener noreferrer">Source</a>
+    </div>
+    <div id="root"></div>
     <script type="module" src="/src/preview.tsx"></script>
   </body>
 </html>

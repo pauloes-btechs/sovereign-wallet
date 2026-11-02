@@ -53,6 +53,22 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  web-preview:
+    name: Web preview build (Vercel target)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Same command Vercel runs (vercel.json buildCommand) — a red job here
+      # means the hosted demo would fail to deploy.
+      - run: pnpm web:build
+      - run: test -f apps/mobile/dist/index.html
+
   fuzz:
     name: Fuzz (destination, invoice, asset-id, listen-args parsers)
     runs-on: ubuntu-latest
