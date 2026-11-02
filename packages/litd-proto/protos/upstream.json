@@ -1,0 +1,27 @@
+{
+  "$comment": "Where each vendored .proto comes from upstream. `module` is the Go module whose version litd pins in its go.mod (the ref is resolved per litd release by scripts/upstream-watch); `path` is the file inside that repo. Vendored copies are byte-identical to upstream apart from import lines, which are flattened to this directory. Verified for litd v0.17.8 on 2026-11-02 (all 13 match). Used by scripts/upstream-watch/check.mjs.",
+  "litd": { "repo": "lightninglabs/lightning-terminal", "module": "github.com/lightninglabs/lightning-terminal" },
+  "modules": {
+    "github.com/lightningnetwork/lnd": { "repo": "lightningnetwork/lnd" },
+    "github.com/lightninglabs/faraday": { "repo": "lightninglabs/faraday" },
+    "github.com/lightninglabs/loop": { "repo": "lightninglabs/loop" },
+    "github.com/lightninglabs/pool": { "repo": "lightninglabs/pool" },
+    "github.com/lightninglabs/taproot-assets": { "repo": "lightninglabs/taproot-assets" },
+    "github.com/lightninglabs/lightning-terminal": { "repo": "lightninglabs/lightning-terminal" }
+  },
+  "files": {
+    "lightning.proto": { "module": "github.com/lightningnetwork/lnd", "path": "lnrpc/lightning.proto" },
+    "walletunlocker.proto": { "module": "github.com/lightningnetwork/lnd", "path": "lnrpc/walletunlocker.proto" },
+    "router.proto": { "module": "github.com/lightningnetwork/lnd", "path": "lnrpc/routerrpc/router.proto" },
+    "faraday.proto": { "module": "github.com/lightninglabs/faraday", "path": "frdrpc/faraday.proto" },
+    "lit-sessions.proto": { "module": "github.com/lightninglabs/lightning-terminal", "path": "litrpc/lit-sessions.proto" },
+    "tapcommon.proto": { "module": "github.com/lightninglabs/taproot-assets", "path": "taprpc/tapcommon.proto" },
+    "taprootassets.proto": { "module": "github.com/lightninglabs/taproot-assets", "path": "taprpc/taprootassets.proto" },
+    "mint.proto": { "module": "github.com/lightninglabs/taproot-assets", "path": "taprpc/mintrpc/mint.proto" },
+    "assetwallet.proto": { "module": "github.com/lightninglabs/taproot-assets", "path": "taprpc/assetwalletrpc/assetwallet.proto" },
+    "loop.proto": { "module": "github.com/lightninglabs/loop", "path": "looprpc/client.proto" },
+    "common.proto": { "module": "github.com/lightninglabs/loop", "path": "swapserverrpc/common.proto" },
+    "pool.proto": { "module": "github.com/lightninglabs/pool", "path": "poolrpc/trader.proto" },
+    "auctioneer.proto": { "module": "github.com/lightninglabs/pool", "path": "auctioneerrpc/auctioneer.proto" }
+  }
+}

@@ -11,7 +11,7 @@ signed installers, and CI to build them.
 | Surface | What it is | Where it runs | Cost | Secrets |
 | --- | --- | --- | --- | --- |
 | **Web demo** | Mode A mobile app over react-native-web, simulated Wavelength client, regtest | **Vercel** service `wallet-demo`, public at `/` | Free | None |
-| **Desktop UI (web)** | `apps/desktop` React UI as a static page; no daemon on the web, so it shows the runtime-required / no-bridge states | **Vercel** service `desktop`, public at `/desktop/` (`?mode=b` for node mode) | Free | None |
+| **Desktop demo (web)** | `apps/desktop` node-mode UI replaying real litd responses recorded on regtest ([UPSTREAM_WATCH](UPSTREAM_WATCH.md)) | **Vercel** service `desktop`, public at `/desktop/` (opens in node mode; `?mode=a` explains everyday mode) | Free | None |
 | **Component catalog** | `packages/ui` Storybook (Mode A presentational components) | **Vercel** service `storybook`, public at `/storybook/` | Free | None |
 | **Desktop app** | Tauri 2 shell + `waved`/`litd` sidecars | User's machine; installers on **GitHub Releases** | Free | Signing certs (later) |
 | **Android** | React Native 0.88 | Device; APK on GitHub Releases or Firebase App Distribution → Play Store later | Free → $25 one-time (Play) | Release keystore (later) |
@@ -44,7 +44,7 @@ one project, one domain, two independently built static frontends.
 | Service | Root | Public path | Build |
 | --- | --- | --- | --- |
 | `wallet-demo` | `apps/mobile` | `/` (catch-all, last rewrite) | workspace deps, then `vite build --config vite.preview.config.ts` → `dist` |
-| `desktop` | `apps/desktop` | `/desktop/` (`/desktop` redirects) | workspace deps, typecheck, then `vite build --base=/desktop/ --outDir dist/desktop` → `dist` |
+| `desktop` | `apps/desktop` | `/desktop/` (`/desktop` redirects) | workspace deps, typecheck, then `VITE_SOVEREIGN_DEMO=replay vite build --base=/desktop/ --outDir dist/desktop` → `dist` |
 | `storybook` | `packages/ui` | `/storybook/` (`/storybook` redirects) | workspace deps, then `storybook build -o storybook-static/storybook` → `storybook-static` |
 
 - A service receives the **original** request path, so Storybook is built
@@ -63,13 +63,13 @@ one project, one domain, two independently built static frontends.
   server-side functions. The desktop app's network calls go only to its own
   loopback sidecars (`127.0.0.1`) on the user's machine. That's the
   noncustodial design, so it's not something to route through Vercel.
-- **`desktop` is the UI only.** The desktop app's screens talk to its
-  `waved`/`litd` sidecars on `127.0.0.1`, and those only exist inside the
-  packaged Tauri app. On the web, Mode A shows "Desktop runtime required" and
-  Mode B (`/desktop/?mode=b`) shows "No litd bridge session." Its CSP keeps
-  `connect-src 'self'`, so the dev-only `?devGateway=`/`?devBridgeUrl=`
-  parameters can't make a visitor's browser call their own loopback ports.
-  The working desktop app is the installer (see Desktop below).
+- **`desktop` replays a recorded session.** The real desktop app talks to its
+  `waved`/`litd` sidecars on `127.0.0.1`. The hosted build
+  (`VITE_SOVEREIGN_DEMO=replay`) runs the same `BridgeClient` and screens
+  over real responses recorded from litd on regtest, opens in node mode, and
+  never reads bridge parameters from the URL. Its CSP keeps
+  `connect-src 'self'`. See [UPSTREAM_WATCH](UPSTREAM_WATCH.md) for how the
+  recording is made and refreshed.
 - **Not deployed:** `apps/desktop/src-tauri`, a native desktop binary, not a
   web server. If a Vercel import auto-detects it as a Rust service, or sets the
   project's Root Directory to it, the build fails on missing GTK libraries.

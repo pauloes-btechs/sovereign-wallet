@@ -23,6 +23,9 @@ import { PayScreen } from './screens/pay-screen.js';
 import { DiagnosticsScreen } from './screens/diagnostics-screen.js';
 import { BackupsScreen } from './screens/backups-screen.js';
 import { RemoteNodeScreen } from './screens/remote-node-screen.js';
+import { DEMO_REPLAY } from '../demo/mode.js';
+import { createReplayClient } from '../demo/replay.js';
+import { useDemoFixture } from '../demo/useDemoFixture.js';
 
 const STATE_POLL_MS = 2_000;
 
@@ -44,9 +47,17 @@ const TAB_LABELS: Record<ModeBTab, string> = {
  * disclosed in the plan; dev/e2e uses validated URL params.
  */
 export function useBridgeClient(): { readonly client: BridgeClient | null; readonly reason: string } {
-  const [bootstrap] = useState(() => devBridgeBootstrap(window.location.search));
+  // The hosted demo never reads bridge params from the URL: it only ever
+  // talks to the in-page replay transport.
+  const [bootstrap] = useState(() => (DEMO_REPLAY ? null : devBridgeBootstrap(window.location.search)));
   const isTauri = '__TAURI_INTERNALS__' in window;
+  const fixture = useDemoFixture();
   return useMemo(() => {
+    if (DEMO_REPLAY) {
+      return fixture === null
+        ? { client: null, reason: 'Loading the recorded regtest session…' }
+        : { client: createReplayClient(fixture), reason: '' };
+    }
     if (bootstrap) return { client: new BridgeClient(bootstrap), reason: '' };
     if (isTauri) {
       return {
@@ -58,7 +69,7 @@ export function useBridgeClient(): { readonly client: BridgeClient | null; reado
       client: null,
       reason: 'No litd bridge session. In dev or e2e, open this page with ?devBridgeUrl=http://127.0.0.1:PORT&devBridgeToken=TOKEN from a bridge launch.',
     };
-  }, [bootstrap, isTauri]);
+  }, [bootstrap, isTauri, fixture]);
 }
 
 /** Hoisted poll of the bridge's wallet-phase state. */

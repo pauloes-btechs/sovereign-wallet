@@ -22,7 +22,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const WAVES_VERSION = '0.2.0';
+const PINNED_WAVES_VERSION = '0.2.0';
+// SOVEREIGN_WAVED_VERSION + SOVEREIGN_WAVED_SHA256 test another release (the
+// weekly upstream watch reads the hash from that release's manifest). Both
+// must be set together; shipping builds never set them.
+const WAVES_VERSION = process.env.SOVEREIGN_WAVED_VERSION ?? PINNED_WAVES_VERSION;
 const WAVES_REPO = 'lightninglabs/wavelength';
 // Pinned from the SIGNED release manifest (manifest-v0.2.0.txt, signatures by
 // bhandras + sputn1ck), verified 2026-10-30. Keyed by Tauri target triple.
@@ -50,7 +54,11 @@ if (!TRIPLE_TO_ASSET[triple]) {
   );
   process.exit(2);
 }
-const expectedHash = WAVES_SHA256[triple];
+if ((process.env.SOVEREIGN_WAVED_VERSION === undefined) !== (process.env.SOVEREIGN_WAVED_SHA256 === undefined)) {
+  console.error('fetch-waved: set SOVEREIGN_WAVED_VERSION and SOVEREIGN_WAVED_SHA256 together');
+  process.exit(2);
+}
+const expectedHash = process.env.SOVEREIGN_WAVED_SHA256 ?? WAVES_SHA256[triple];
 const assetBase = TRIPLE_TO_ASSET[triple];
 const isWindowsTarget = triple.includes('windows');
 const archiveName = `${assetBase}-v${WAVES_VERSION}.${isWindowsTarget ? 'zip' : 'tar.gz'}`;

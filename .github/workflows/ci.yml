@@ -72,9 +72,9 @@ jobs:
       # path it is served under.
       - run: pnpm --filter '@sovereign/ui^...' build && pnpm --filter @sovereign/ui exec storybook build -o storybook-static/storybook
       - run: test -f packages/ui/storybook-static/storybook/index.html
-      # Desktop service (vercel.json "desktop"): the Tauri UI as a static page
-      # under /desktop/ (no daemon on the web; it shows the runtime-required state).
-      - run: pnpm --filter '@sovereign/desktop^...' build && cd apps/desktop && pnpm exec tsc --noEmit && pnpm exec vite build --base=/desktop/ --outDir dist/desktop --emptyOutDir
+      # Desktop service (vercel.json "desktop"): the real Mode B UI replaying
+      # recorded litd responses (apps/desktop/src/demo) under /desktop/.
+      - run: pnpm --filter '@sovereign/desktop^...' build && cd apps/desktop && pnpm exec tsc --noEmit && VITE_SOVEREIGN_DEMO=replay pnpm exec vite build --base=/desktop/ --outDir dist/desktop --emptyOutDir
       - run: test -f apps/desktop/dist/desktop/index.html
 
   fuzz:
@@ -308,7 +308,25 @@ jobs:
       - name: Run Mode B e2e
         # `run` (not the bare form): a missing script must FAIL the job —
         # pnpm's bare --filter form exits 0 when no package has the script.
+        # SOVEREIGN_RECORD_DIR: capture the bridge responses the UI receives
+        # (replay fixtures for the hosted /desktop/ demo).
+        env:
+          SOVEREIGN_RECORD_DIR: ${{ github.workspace }}/recording
         run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm --filter @sovereign/desktop run test:e2e:modeb
+      - name: Build the demo fixture from this run's recording
+        if: success()
+        run: |
+          node scripts/demo/build-fixtures.mjs --in=recording/modeb-traffic.jsonl --out=demo-fixture/modeb.json \
+            --source="CI regtest harness (bitcoind, pinned images)"
+          node scripts/upstream-watch/fixture-diff.mjs \
+            --base=apps/desktop/src/demo/fixtures/modeb.json --head=demo-fixture/modeb.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload demo fixture
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-fixture
+          path: demo-fixture/
+          retention-days: 30
       - name: Visual evidence captures
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,289 @@
+name: Upstream watch (Lightning Labs)
+
+# Weekly: are there new Lightning Labs releases (litd, LND, waved, ...), and
+# does Sovereign Wallet still work on them? Compares the vendored protos with
+# what the newest litd bundles, regenerates the gRPC clients and typechecks,
+# then boots the real regtest stack on the NEW releases and runs the
+# integration suite, the real desktop node-mode e2e (re-recording the hosted
+# demo's fixtures) and the real-daemon waved tests. Results land in one
+# GitHub issue per release set (label: upstream-watch). Nothing is pushed.
+
+on:
+  schedule:
+    - cron: '17 14 * * 1' # Mondays 14:17 UTC
+  workflow_dispatch:
+    inputs:
+      litd:
+        description: 'litd release to test (e.g. v0.17.10). Empty = newest.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  api:
+    name: API surface (protos, regenerated clients, unit tests)
+    runs-on: ubuntu-latest
+    outputs:
+      target_litd: ${{ steps.check.outputs.target_litd }}
+      latest_lnd: ${{ steps.check.outputs.latest_lnd }}
+      latest_waved: ${{ steps.check.outputs.latest_waved }}
+      has_updates: ${{ steps.check.outputs.has_updates }}
+      waved_newer: ${{ steps.check.outputs.waved_newer }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Compare pins with the newest releases; vendor the new protos
+        id: check
+        env:
+          LITD_INPUT: ${{ inputs.litd }}
+        run: |
+          args=(--out=uw --write-protos)
+          if [ -n "${LITD_INPUT:-}" ]; then
+            [[ "$LITD_INPUT" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$ ]] || { echo "::error::bad litd input"; exit 1; }
+            args+=(--litd="$LITD_INPUT")
+          fi
+          node scripts/upstream-watch/check.mjs "${args[@]}"
+          cat uw/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Regenerate gRPC clients from the new protos
+        id: regen
+        continue-on-error: true
+        run: pnpm --filter @sovereign/litd-proto generate
+      - name: Typecheck our code against the regenerated clients
+        id: typecheck
+        continue-on-error: true
+        run: pnpm build && pnpm typecheck
+      - name: Unit tests against the regenerated clients
+        id: unit
+        continue-on-error: true
+        run: pnpm test
+      - name: Record results
+        if: always()
+        run: |
+          tc="${{ steps.typecheck.outcome }}"
+          [ "${{ steps.regen.outcome }}" = "failure" ] && tc=failure
+          printf '{"typecheck":"%s","unitTests":"%s"}\n' "$tc" "${{ steps.unit.outcome }}" > uw/results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-watch-api
+          path: uw/
+          retention-days: 30
+
+  integration:
+    name: Integration suite on the new releases
+    needs: api
+    if: needs.api.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      SOVEREIGN_LITD_IMAGE: lightninglabs/lightning-terminal:${{ needs.api.outputs.target_litd }}
+      SOVEREIGN_LND_IMAGE: lightninglabs/lnd:${{ needs.api.outputs.latest_lnd }}
+      SOVEREIGN_SIDECARS_LOCK: ${{ github.workspace }}/canary.lock.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Fetch litd ${{ needs.api.outputs.target_litd }} (hashes from its release manifest)
+        run: |
+          node scripts/upstream-watch/sidecar-lock.mjs --litd=${{ needs.api.outputs.target_litd }} --out="$SOVEREIGN_SIDECARS_LOCK"
+          pnpm sidecar:fetch
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: go install github.com/btcsuite/btcd@v0.26.2
+      - name: Boot the regtest harness on the new images
+        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" scripts/upstream-watch/boot-harness.sh
+      - name: Run integration suite
+        id: integration
+        continue-on-error: true
+        run: pnpm test:integration
+      - name: Record results
+        if: always()
+        run: |
+          mkdir -p out
+          printf '{"integration":"%s"}\n' "${{ steps.integration.outcome }}" > out/results.json
+      - name: Harness logs
+        if: always()
+        run: docker compose -f harness/regtest/docker-compose.yml logs --tail=300 > out/harness.log 2>&1 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-watch-integration
+          path: out/
+          retention-days: 30
+      - name: Teardown
+        if: always()
+        run: docker compose -f harness/regtest/docker-compose.yml down -v || true
+
+  e2e:
+    name: Desktop node-mode e2e on the new releases (+ demo re-record)
+    needs: api
+    if: needs.api.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOVEREIGN_LITD_IMAGE: lightninglabs/lightning-terminal:${{ needs.api.outputs.target_litd }}
+      SOVEREIGN_LND_IMAGE: lightninglabs/lnd:${{ needs.api.outputs.latest_lnd }}
+      SOVEREIGN_SIDECARS_LOCK: ${{ github.workspace }}/canary.lock.json
+      SOVEREIGN_RECORD_DIR: ${{ github.workspace }}/recording
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Fetch litd ${{ needs.api.outputs.target_litd }} (hashes from its release manifest)
+        run: |
+          node scripts/upstream-watch/sidecar-lock.mjs --litd=${{ needs.api.outputs.target_litd }} --out="$SOVEREIGN_SIDECARS_LOCK"
+          pnpm sidecar:fetch
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - run: go install github.com/btcsuite/btcd@v0.26.2
+      - name: Boot the regtest harness on the new images
+        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" scripts/upstream-watch/boot-harness.sh
+      - name: Install Playwright Chromium
+        run: pnpm --filter @sovereign/desktop exec playwright install --with-deps chromium
+      - name: Run Mode B e2e (records the bridge responses the UI receives)
+        id: e2e
+        continue-on-error: true
+        run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" pnpm --filter @sovereign/desktop run test:e2e:modeb
+      - name: Build demo fixture + diff against the committed one
+        if: always()
+        run: |
+          mkdir -p out fixture
+          if [ -s recording/modeb-traffic.jsonl ] && node scripts/demo/build-fixtures.mjs \
+              --in=recording/modeb-traffic.jsonl --out=fixture/modeb.json \
+              --litd=${{ needs.api.outputs.target_litd }} \
+              --source="CI regtest harness (bitcoind, LND ${{ needs.api.outputs.latest_lnd }} peers)"; then
+            node scripts/upstream-watch/fixture-diff.mjs \
+              --base=apps/desktop/src/demo/fixtures/modeb.json --head=fixture/modeb.json --out=out/fixture-diff.md
+            cat out/fixture-diff.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          printf '{"e2e":"%s"}\n' "${{ steps.e2e.outcome }}" > out/results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-watch-e2e
+          path: out/
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-watch-demo-fixture
+          path: fixture/
+          if-no-files-found: ignore
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-watch-e2e-evidence
+          path: apps/desktop/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Teardown
+        if: always()
+        run: docker compose -f harness/regtest/docker-compose.yml down -v || true
+
+  waved:
+    name: waved real-daemon tests on the new release
+    needs: api
+    if: needs.api.outputs.waved_newer == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Fetch waved ${{ needs.api.outputs.latest_waved }} (hash from its release manifest)
+        env:
+          TAG: ${{ needs.api.outputs.latest_waved }}
+        run: |
+          v="${TAG#v}"
+          sha=$(curl -sSfL "https://github.com/lightninglabs/wavelength/releases/download/${TAG}/manifest-${TAG}.txt" \
+            | awk -v f="wavelength-linux-amd64-${TAG}/waved" '$2==f {print $1}')
+          [ -n "$sha" ] || { echo "::error::no waved hash in manifest-${TAG}.txt"; exit 1; }
+          SOVEREIGN_WAVED_VERSION="$v" SOVEREIGN_WAVED_SHA256="$sha" node scripts/fetch-waved.mjs --triple=x86_64-unknown-linux-gnu
+      - run: pnpm -r build
+      - name: Boot real waved through the lifecycle engine
+        id: waved
+        continue-on-error: true
+        run: pnpm --filter @sovereign/daemon-lifecycle exec vitest run
+      - name: Record results
+        if: always()
+        run: |
+          mkdir -p out
+          printf '{"waved":"%s"}\n' "${{ steps.waved.outcome }}" > out/results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-watch-waved
+          path: out/
+          retention-days: 30
+
+  report:
+    name: Open / update the GitHub issue
+    needs: [api, integration, e2e, waved]
+    if: always() && needs.api.result == 'success' && needs.api.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with: { name: upstream-watch-api, path: art/api }
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with: { name: upstream-watch-integration, path: art/integration }
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with: { name: upstream-watch-e2e, path: art/e2e }
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with: { name: upstream-watch-waved, path: art/waved }
+      - name: Build issue body
+        id: body
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/upstream-watch/report.mjs --dir=art --out=issue.md | tee -a "$GITHUB_OUTPUT"
+      - name: Create or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.body.outputs.title }}
+          STATUS: ${{ steps.body.outputs.status }}
+        run: |
+          gh label create upstream-watch --color FBCA04 --description "Lightning Labs upstream release check" --force
+          existing=$(gh issue list --label upstream-watch --state open --limit 50 --json number,title \
+            --jq ".[] | select(.title == env.TITLE) | .number" | head -n1)
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file issue.md
+            gh issue comment "$existing" --body "Re-checked $(date -u +%F): **${STATUS}**. Body updated with this run's results."
+          else
+            gh issue create --title "$TITLE" --body-file issue.md --label upstream-watch
+          fi

@@ -186,13 +186,21 @@ export interface DiagnosticsView {
   readonly faraday: FaradayView;
 }
 
+export interface BridgeClientOptions extends BridgeBootstrap {
+  /** Transport override. Defaults to the global fetch; the hosted demo
+   *  injects a replay transport so the SAME client code runs over recorded
+   *  bridge responses. */
+  readonly fetchImpl?: typeof fetch;
+}
+
 export class BridgeClient {
-  constructor(private readonly options: BridgeBootstrap) {}
+  constructor(private readonly options: BridgeClientOptions) {}
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
     let response: Response;
+    const doFetch = this.options.fetchImpl ?? fetch;
     try {
-      response = await fetch(`${this.options.bridgeUrl}${path}`, {
+      response = await doFetch(`${this.options.bridgeUrl}${path}`, {
         method,
         headers: {
           authorization: `Bearer ${this.options.bridgeToken}`,

@@ -31,7 +31,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const lock = JSON.parse(await readFile(path.join(repoRoot, 'sidecars.lock.json'), 'utf8'));
+// SOVEREIGN_SIDECARS_LOCK points at an alternate lock (the weekly upstream
+// watch tests unreleased-to-us litd builds with hashes from that release's
+// manifest). Shipping builds always use the committed sidecars.lock.json.
+const lockPath = process.env.SOVEREIGN_SIDECARS_LOCK ?? path.join(repoRoot, 'sidecars.lock.json');
+const lock = JSON.parse(await readFile(lockPath, 'utf8'));
 const outDir = path.join(repoRoot, 'apps/desktop/src-tauri/binaries');
 
 /** Current platform key -> Tauri triple + upstream asset identifiers. */

@@ -44,8 +44,8 @@
       "root": "apps/desktop",
       "framework": "vite",
       "installCommand": "pnpm install --frozen-lockfile",
-      "buildCommand": "pnpm --filter '@sovereign/desktop^...' build && pnpm exec tsc --noEmit && pnpm exec vite build --base=/desktop/ --outDir dist/desktop --emptyOutDir",
-      "devCommand": "pnpm --filter '@sovereign/desktop^...' build && pnpm exec vite --base=/desktop/ --port $PORT",
+      "buildCommand": "pnpm --filter '@sovereign/desktop^...' build && pnpm exec tsc --noEmit && VITE_SOVEREIGN_DEMO=replay pnpm exec vite build --base=/desktop/ --outDir dist/desktop --emptyOutDir",
+      "devCommand": "pnpm --filter '@sovereign/desktop^...' build && VITE_SOVEREIGN_DEMO=replay pnpm exec vite --base=/desktop/ --port $PORT",
       "outputDirectory": "dist",
       "headers": [
         {

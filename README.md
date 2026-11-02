@@ -74,6 +74,7 @@ simulated Wavelength client. No real bitcoin, no network calls. See
 ## Documentation
 
 - [Hosting & distribution](docs/HOSTING.md): where each surface runs, cost, secrets
+- [Upstream watch](docs/UPSTREAM_WATCH.md): weekly Lightning Labs release check + the replayed desktop demo
 - [Local dev on macOS](docs/LOCAL_DEV_MAC.md): toolchain, external-SSD caveats, change → ship loop
 - [Architecture](docs/ARCHITECTURE.md) — two engines, one contract, process model
 - [Upstream integrations](docs/UPSTREAM_INTEGRATIONS.md) — full dependency inventory with pins and licenses

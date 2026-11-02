@@ -11,6 +11,8 @@
 # neutrino chain service). A pinned btcd is therefore built in CI and run as a
 # HOST-side helper that follows bitcoind's chain over P2P and serves filters on
 # 127.0.0.1:18555. See README.md and scripts/fetch-sidecars.mjs era docs.
+# Image tags are the pins; SOVEREIGN_{LND,LITD,APERTURE}_IMAGE override them for
+# the weekly upstream watch (.github/workflows/upstream-watch.yml) only.
 services:
   bitcoind:
     image: bitcoin/bitcoin:27.0
@@ -40,7 +42,7 @@ services:
       - ./data/bitcoind:/home/bitcoin/.bitcoin
 
   lnd-alice:
-    image: lightninglabs/lnd:v0.21.5-beta.rc1
+    image: ${SOVEREIGN_LND_IMAGE:-lightninglabs/lnd:v0.21.5-beta.rc1}
     command: ["--lnddir=/root/.lnd", "--configfile=/lnd.conf"]
     ports:
       - "127.0.0.1:10009:10009" # RPC
@@ -50,7 +52,7 @@ services:
       - ./data/lnd-alice:/root/.lnd
 
   lnd-bob:
-    image: lightninglabs/lnd:v0.21.5-beta.rc1
+    image: ${SOVEREIGN_LND_IMAGE:-lightninglabs/lnd:v0.21.5-beta.rc1}
     command: ["--lnddir=/root/.lnd", "--configfile=/lnd.conf"]
     ports:
       - "127.0.0.1:10010:10009" # RPC
@@ -63,7 +65,7 @@ services:
   # embedded-LND port (litd.rpclisten proxy is loopback-only inside the
   # container and not needed by the harness).
   litd:
-    image: lightninglabs/lightning-terminal:v0.17.8
+    image: ${SOVEREIGN_LITD_IMAGE:-lightninglabs/lightning-terminal:v0.17.8}
     command: ["--configfile=/litd.conf"]
     ports:
       - "127.0.0.1:10011:19090" # embedded LND RPC
@@ -79,7 +81,7 @@ services:
   # restarts (sessions bind to the mailbox identity only through the
   # encrypted stream — a fresh mailbox works for new sessions).
   aperture:
-    image: lightninglabs/aperture:v0.5.0
+    image: ${SOVEREIGN_APERTURE_IMAGE:-lightninglabs/aperture:v0.5.0}
     command: ["--configfile=/aperture.yaml"]
     ports:
       - "127.0.0.1:17045:17045" # hashmail websocket (LNC mailbox)

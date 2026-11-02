@@ -36,6 +36,7 @@ import {
   waitForTxInMempool,
 } from '@sovereign/harness-regtest';
 import { MODEB_BOOTSTRAP_FILE, type ModeBE2eBootstrap } from './bootstrap-path.js';
+import { attachRecorder } from './recorder.js';
 
 let bootstrap: ModeBE2eBootstrap;
 
@@ -51,6 +52,12 @@ async function capture(page: Page, name: string): Promise<void> {
 
 test.beforeAll(async () => {
   bootstrap = JSON.parse(await readFile(MODEB_BOOTSTRAP_FILE, 'utf8')) as ModeBE2eBootstrap;
+});
+
+// SOVEREIGN_RECORD_DIR set → capture the bridge responses this run's UI
+// receives (replay fixtures for the hosted /desktop/ demo). No-op otherwise.
+test.beforeEach(({ page }, testInfo) => {
+  attachRecorder(page, testInfo.title);
 });
 
 /**

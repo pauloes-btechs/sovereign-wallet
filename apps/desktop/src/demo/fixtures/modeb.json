@@ -1,0 +1,180 @@
+{
+  "meta": {
+    "recordedAt": "2026-11-02T18:45:42.086Z",
+    "network": "regtest",
+    "source": "local stand-in: btcd v0.26.2 chain + standalone LND v0.21.5-beta peer; litd launched by the bridge (Neutrino)",
+    "litd": "v0.17.8",
+    "lnd": "0.21.5-beta.rc1 commit=lightning-terminal-v0.17.8",
+    "alias": "02feadbfb6ecb5cbb157",
+    "exchanges": 156
+  },
+  "routes": {
+    "GET /channel-backups": {
+      "status": 200,
+      "body": {
+        "multiChanBackupHex": "44608415b9745ea8076d310e1ca3d830c8423cbf38918e985d789af26924c31db6427d8c1ed81961a0e43dd21159530b39d91e607611c2fbb9741373a64d56690c79e5abb4d0026ec44f328da475c94ff9c6259f19ac812199ba0cc66ba0a7efe50111003fd314091f0bcb796af7daad174b30a24ed23cd07479ec5579f87845b038d8c308cea76da0076421cd8b2b32cdbfd0da41d1253829c642c0d7ae0e8bb21ea639e42da7659f3b20ee66ec4ccb868daaaa54bd8bee9b357d08af2d997c741d73ec2574a78c3c9ddbb9bfa2b3c4a50f6f4d6035fa985289210035acddf1489bf779d38bb8e754a47128a07be8150fdab34ed9b5bd097eef028bf42efe20793351232082491b8ebb548a02ff7d142f1c7ec72219f0770c95545a142b3ee989ec4c784e45831d81fede73bf22f0ab35e533585548fd270ce610252827e7e4f4ae8e8fcfff279e9acab1245c08dde93f713bfdd9131ed36190a4b17ffdbb08b49e42bf998809b697079394380f0a025390cfd2f3a607ea551cc0e4578a604f9c597ab6f2a7788f960a427c0c12decf92d836f269aa723b2b68da08b2e01e0da0b0f4a81654db844779a4d0a2773add6845312083e7405b40444d2b29e7ee2b73b2d7eb515fdb4566d7749ad30b1ecd51f7d2b7c29535ab4c0f0da775e35f97215275e24253de3994a4c40ef11c095c4c5247b8065d4c6adc07ee5e5f4de119082b622fb24eaa1cc2629af5da9dde20c013dc2a5b352c3d408d2a8a34011ee47a08df8f52a5eab2e360087b47b40a391df08f0fa544504830527e283a6ff087b09dfa2ccf947b0fd3c50113022d5dc83beee77171afafa3dc05ed28d983dd965d655be08899a4c025ac5e0befe32b499700fd720b9b7148858c86b94662fe6b54f21801c61894ce69b2f99b87de63eaef16937199a9a1ad681b14ecba4bd05b2c98e1f2e8d058ae266882ddf5650dd4b9bb84aeb88f566e81e6bf157ec3759e12b178c552aa5326a64ab15648fa"
+      }
+    },
+    "GET /channels": {
+      "status": 200,
+      "body": {
+        "balance": {
+          "localSat": "12716530",
+          "localUnsettledSat": "0",
+          "pendingOpenLocalSat": "0",
+          "pendingOpenRemoteSat": "0",
+          "remoteSat": "2280000"
+        },
+        "open": [
+          {
+            "capacitySat": "15000000",
+            "chanId": "168225279115264",
+            "channelPoint": "9ba3a4d8b8a7a9124ea6a36bfd6087cfbaaebef8176bc9dca5ea0005229d9f53:0",
+            "initiatorLabel": "opened by you",
+            "localBalanceSat": "12716530",
+            "remoteBalanceSat": "2280000",
+            "remotePubkey": "02803c6b8f6350ae9c59c6fd64c1a79b19b1d7fee21c9d27b9f82b582744fbba3f",
+            "state": "open"
+          }
+        ],
+        "pending": []
+      }
+    },
+    "GET /diagnostics": {
+      "status": 200,
+      "body": {
+        "closed": [],
+        "faraday": {
+          "available": false,
+          "error": "invalid macaroon: verification failed: signature mismatch after caveat verification"
+        },
+        "forwarding": [],
+        "node": {
+          "alias": "02feadbfb6ecb5cbb157",
+          "blockHeight": 158,
+          "chains": [
+            {
+              "chain": "bitcoin",
+              "network": "regtest"
+            }
+          ],
+          "identityPubkey": "02feadbfb6ecb5cbb15797aa0563bf8caea10ed6697bf827a755b751adce1cc039",
+          "numActiveChannels": 1,
+          "numInactiveChannels": 0,
+          "numPeers": 1,
+          "numPendingChannels": 0,
+          "syncedToChain": true,
+          "syncedToGraph": true,
+          "uris": [],
+          "version": "0.21.5-beta.rc1 commit=lightning-terminal-v0.17.8"
+        }
+      }
+    },
+    "GET /onchain/balance": {
+      "status": 200,
+      "body": {
+        "confirmedSat": "24999386",
+        "lockedSat": "0",
+        "reservedAnchorSat": "10000",
+        "totalSat": "24999386",
+        "unconfirmedSat": "0"
+      }
+    },
+    "GET /payments": {
+      "status": 200,
+      "body": {
+        "payments": [
+          {
+            "creationTimeNs": "1793645113457403759",
+            "feeSat": "0",
+            "paymentHash": "d4af22283680fe8c3a9655c7504a0a882e225bab203a4ee3e2eeccb2408a8a88",
+            "status": "succeeded",
+            "valueSat": "2000000"
+          },
+          {
+            "creationTimeNs": "1793645118627186549",
+            "feeSat": "0",
+            "paymentHash": "44db084b88a81cdd6bb71fd3e13b1b7f07ccc63d4edf7b5777595716c1f09241",
+            "status": "succeeded",
+            "valueSat": "250000"
+          },
+          {
+            "creationTimeNs": "1793645119147385178",
+            "feeSat": "0",
+            "paymentHash": "5fdb1169dc7b4f96b7896447fcd686e92d4ed22ff2d2dbd2a8bcc12d45a3c33a",
+            "status": "succeeded",
+            "valueSat": "42000"
+          }
+        ]
+      }
+    },
+    "GET /state": {
+      "status": 200,
+      "body": {
+        "info": {
+          "alias": "02feadbfb6ecb5cbb157",
+          "blockHeight": 158,
+          "chains": [
+            {
+              "chain": "bitcoin",
+              "network": "regtest"
+            }
+          ],
+          "identityPubkey": "02feadbfb6ecb5cbb15797aa0563bf8caea10ed6697bf827a755b751adce1cc039",
+          "numActiveChannels": 1,
+          "numInactiveChannels": 0,
+          "numPeers": 1,
+          "numPendingChannels": 0,
+          "syncedToChain": true,
+          "syncedToGraph": true,
+          "uris": [],
+          "version": "0.21.5-beta.rc1 commit=lightning-terminal-v0.17.8"
+        },
+        "phase": "ready"
+      }
+    },
+    "POST /channels": {
+      "status": 200,
+      "body": {
+        "channelPoint": "539f9d220500eaa5dcc96b17f8beaebacf8760fd6ba3a64e12a9a7b8d8a4a39b:0"
+      }
+    },
+    "POST /invoices": {
+      "status": 200,
+      "body": {
+        "paymentRequest": "lnbcrt120u1p4w3k3mpp52qa4ew0dm997789fxulravt9psegfvpfw33vtx3v273pdxewh0csdqqcqzzsxqyz5vqsp5aswxdljm7p85xdmxwy0f0h5y9dh7n4pzsljjtw9dp3e32m5sqehq9qxpqysgq45qgcdky7dead86vvpp7k5925ry9hy6td9gm3wtp3n0uereuae3ytuz6fyft7dskh89vur9852v08naffjkts4l30yteqqsvw5nzqfgqcr95xx",
+        "rHashHex": "503b5cb9edd94bef1ca9373e3eb1650c3284b0297462c59a2c57a2169b2ebbf1"
+      }
+    },
+    "POST /invoices/decode": {
+      "status": 200,
+      "body": {
+        "amountSat": "42000",
+        "cltvExpiry": "80",
+        "destination": "02803c6b8f6350ae9c59c6fd64c1a79b19b1d7fee21c9d27b9f82b582744fbba3f",
+        "memo": "demo: zap",
+        "paymentHashHex": "5fdb1169dc7b4f96b7896447fcd686e92d4ed22ff2d2dbd2a8bcc12d45a3c33a"
+      }
+    },
+    "POST /onchain/address": {
+      "status": 200,
+      "body": {
+        "address": "bcrt1qxeskl9ze06jrc4658x8hjk6x6fgla3gkxx0j6x"
+      }
+    },
+    "POST /onchain/send": {
+      "status": 200,
+      "body": {
+        "txid": "45a34603e40ef88dec7c69a85300e748b60620aeb0286d29cc9e322b548878c7"
+      }
+    },
+    "POST /payments": {
+      "status": 200,
+      "body": {
+        "paymentHash": "5fdb1169dc7b4f96b7896447fcd686e92d4ed22ff2d2dbd2a8bcc12d45a3c33a",
+        "preimage": "54eff96c08503658164ddba01100314fda2e0257b5b21544fa5e2118da28733f",
+        "status": "succeeded"
+      }
+    }
+  }
+}
