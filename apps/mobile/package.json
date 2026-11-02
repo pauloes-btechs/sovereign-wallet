@@ -2,13 +2,15 @@
   "name": "@sovereign/mobile",
   "version": "0.1.0",
   "private": true,
-  "description": "Mobile app: React Native >=0.76 (New Architecture). Mode A uses native Wavelength SDK bindings; Mode B is LNC-only — no LND-in-app, ever.",
+  "description": "Mobile app: React Native >=0.76 (New Architecture). Mode A uses native Wavelength SDK bindings; Mode B is LNC-only \u2014 no LND-in-app, ever.",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit && tsc -p tsconfig.preview.json --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "web:dev": "vite --config vite.preview.config.ts",
+    "web:build": "vite build --config vite.preview.config.ts"
   },
   "dependencies": {
     "@sovereign/payments": "workspace:*",
