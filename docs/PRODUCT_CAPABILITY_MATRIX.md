@@ -113,7 +113,7 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 | VTXO state / expiry | ✅ code | Desktop reads live per-VTXO classification and operator reachability (was hard-coded "fresh"); unexercised without an operator |
 | On-chain receive / send, Lightning swaps | 🟨 | Real code + UI; unexercised without an operator |
 | Collaborative / unilateral exit | ⬜ / 🟦 | Exit not wired on desktop |
-| Payment history | 🟦 | Not surfaced |
+| Payment history | ✅ mobile, 🟦 desktop | Mobile Activity tab reads `provider.activityHistory()`; desktop everyday mode still doesn't show it |
 | Operator / swap-server availability | ⛔ on regtest | No arkd or swap server; SDK presets cover testnet/testnet4/signet |
 | Mobile everyday mode against a real client | 🧪 | Simulated client in preview and tests |
 
@@ -129,11 +129,11 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Navigation | ✅ desktop | Sidebar in six groups, breadcrumbs, ⌘K palette, `/` search, `.` privacy toggle, hash deep links (was ⬜) |
+| Navigation | ✅ | Mobile: bottom tab bar (Home / Activity / Pay / More). Desktop: sidebar in six groups, breadcrumbs, ⌘K palette, `/` search, `.` privacy toggle, hash deep links (was ⬜) |
 | Dashboard | ✅ | Balances from one function (`computeAccounts`), no double counting; insights from real state |
 | Activity / history | ✅ | Payments, invoices, swaps and on-chain transactions merged; search, filters, totals, detail sheets (was ⬜) |
 | Transfers between rails | ✅ | FROM→TO registry offers only real rails; pairs with no rail say why (cross-chain, ERC-20, assets ≠ BTC). 17 tests |
-| Design system | ✅ desktop | One token source (`packages/ui`, IBM Plex bundled locally); was three palettes |
+| Design system | ✅ | One token source (`packages/ui` CSS + TS export, drift-tested) used by desktop and mobile; was three palettes |
 | Settings | ✅ | Denomination, privacy mode, compact sidebar wired; everything else read-only with where it's configured. No unwired toggles |
 | QR codes, copy buttons, payment URIs | ✅ | Receive, requests, assets, static address |
 | Privacy controls | 🟨 | Amount hiding + connections disclosure; Tor not configured for the node |
@@ -151,7 +151,7 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 3. **Wavelength desktop**: real VTXO state/expiry, operator status, exits,
    history, restore.
 4. **Payments through intents** for advanced mode (crash-safe sends).
-5. Mobile parity beyond navigation and tokens; LNC review step.
+5. Mobile: QR/copy, safe-area insets, real icons, a review total in everyday send, and a decode/review step for remote-node send.
 
 ## Upstream and environment blockers
 
