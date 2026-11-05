@@ -80,6 +80,28 @@ function NodeStatus() {
   );
 }
 
+/** Words for known sub-paths; ids are shortened; anything else is title-cased. */
+const SEGMENT_LABEL: Record<string, string> = {
+  onchain: 'On-chain',
+  lightning: 'Lightning',
+  out: 'Loop Out',
+  in: 'Loop In',
+  static: 'Static address',
+  autoloop: 'AutoLoop',
+  history: 'History',
+  buy: 'Buy liquidity',
+  sell: 'Sell liquidity',
+  sidecar: 'Sidecar',
+  mint: 'Mint',
+};
+
+export function crumbLabel(seg: string): string {
+  const known = SEGMENT_LABEL[seg];
+  if (known !== undefined) return known;
+  if (/^[0-9a-f]{16,}$/i.test(seg)) return `${seg.slice(0, 8)}…${seg.slice(-4)}`;
+  return seg.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase());
+}
+
 function Crumbs({ path }: { path: string }) {
   const route = matchRoute(path);
   const rest = path.slice(route.path === '/' ? 1 : route.path.length).split('/').filter(Boolean);
@@ -95,7 +117,7 @@ function Crumbs({ path }: { path: string }) {
           {rest.map((seg, i) => (
             <span key={seg} className="p-row" style={{ gap: 8 }}>
               <Icon name="chevronRight" size={14} />
-              <span aria-current={i === rest.length - 1 ? 'page' : undefined}>{seg.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase())}</span>
+              <span aria-current={i === rest.length - 1 ? 'page' : undefined}><span className={/^[0-9a-f]{16,}$/i.test(seg) ? 'p-mono' : undefined}>{crumbLabel(seg)}</span></span>
             </span>
           ))}
         </>

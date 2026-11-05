@@ -204,6 +204,16 @@ body {
   min-width: 0;
 }
 
+.p-crumbs > *,
+.p-crumbs > * > * {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.p-crumbs {
+  overflow: hidden;
+}
+
 .p-crumbs a {
   color: inherit;
   text-decoration: none;
@@ -1108,4 +1118,15 @@ kbd {
 
 .p-qr svg {
   display: block;
+}
+
+/* Base link style for plain anchors in page copy. Zero specificity, so any
+   class a page or the kit puts on a link wins. */
+:where(.p-shell) a:where(:not([class])) {
+  color: var(--sovl-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+:where(.p-shell) a:where(:not([class])):hover {
+  color: var(--sovl-accent-hover);
 }
