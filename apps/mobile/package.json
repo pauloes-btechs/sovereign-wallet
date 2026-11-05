@@ -2,7 +2,7 @@
   "name": "@sovereign/mobile",
   "version": "0.1.0",
   "private": true,
-  "description": "Mobile app: React Native >=0.76 (New Architecture). Mode A uses native Wavelength SDK bindings; Mode B is LNC-only \u2014 no LND-in-app, ever.",
+  "description": "Mobile app: React Native >=0.76 (New Architecture). Mode A uses native Wavelength SDK bindings; Mode B is LNC-only — no LND-in-app, ever.",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "web:build": "vite build --config vite.preview.config.ts"
   },
   "dependencies": {
+    "@scure/bip39": "1.6.0",
     "@sovereign/payments": "workspace:*",
     "@sovereign/ui": "workspace:*",
     "@sovereign/wallet-core": "workspace:*",

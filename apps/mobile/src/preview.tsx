@@ -11,6 +11,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App, { ModeAApp } from './App.js';
 import type { LncRpcPort } from './flows/modeBRemoteController.js';
+import { freshDemoMnemonic } from './testing/demoMnemonic.js';
 import { MobileFlowSimulatedClient } from './testing/simulatedWalletClient.js';
 import { SimulatedLncPort } from './testing/simulatedLncPort.js';
 
@@ -30,7 +31,8 @@ if (remoteNode) {
     </StrictMode>,
   );
 } else {
-  const sim = new MobileFlowSimulatedClient();
+  // A new random 12-word phrase (128-bit) for every wallet created in the demo.
+  const sim = new MobileFlowSimulatedClient({ freshMnemonic: () => freshDemoMnemonic(128) });
   createRoot(container).render(
     <StrictMode>
       <ModeAApp client={sim} network="regtest" dataDir="/tmp/sovereign-mobile-preview" />
