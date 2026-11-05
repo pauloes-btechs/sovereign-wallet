@@ -66,7 +66,7 @@ export function mapOutQuoteToLoopQuote(r: Readonly<Loop.OutQuoteResponse>, amoun
   return {
     direction: 'loop-out',
     amountSat,
-    fees: { swapFeeSat, prepayFeeSat, minerFeeSat, routingFeeSat: 0, totalSat: swapFeeSat + prepayFeeSat + minerFeeSat },
+    fees: { swapFeeSat, prepayFeeSat, minerFeeSat, routingFeeSat: 0, totalSat: swapFeeSat + minerFeeSat },
     cltvDelta: r.cltvDelta,
     confTarget: r.confTarget,
     swapFeePpm: amountSat > 0 ? Math.round((swapFeeSat / amountSat) * 1_000_000) : 0,

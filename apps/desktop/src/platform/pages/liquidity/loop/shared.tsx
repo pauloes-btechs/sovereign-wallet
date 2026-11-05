@@ -154,7 +154,7 @@ export function QuoteBreakdown({ quote }: { quote: LoopQuote }) {
       rows={[
         { label: 'Swap fee', sats: f.swapFeeSat, note: quote.swapFeePpm > 0 ? `${quote.swapFeePpm.toLocaleString('en-US')} ppm, charged by the swap server` : 'Charged by the swap server' },
         ...(out
-          ? [{ label: 'No-show prepayment', sats: f.prepayFeeSat, note: 'Paid up front over Lightning; Loop treats it as part of the swap fee, and the server keeps it only if the swap is abandoned. Counted in the ceiling below.' }]
+          ? [{ label: 'Of which paid up front', sats: f.prepayFeeSat, note: 'Part of the swap fee above, not added to it. Paid first over Lightning; the server keeps it if the swap is abandoned.' }]
           : []),
         { label: out ? 'Miner fee (your sweep)' : 'Miner fee (your HTLC)', sats: f.minerFeeSat, note: `Estimate at a ${quote.confTarget}-block target; the bridge refuses if it rises above your ceiling` },
         { label: 'Lightning routing fee', sats: f.routingFeeSat, note: out ? 'Not quoted by Loop; paid at payment time' : 'None: the server pays you' },

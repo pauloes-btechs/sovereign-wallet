@@ -204,6 +204,8 @@ export interface AssetsOverviewView {
 // ——— helpers ———
 
 const hex = (b: Uint8Array | undefined): string => (b === undefined ? '' : Buffer.from(b).toString('hex'));
+/** Raw txid hash bytes are little-endian; explorers, bitcoind and lnd print them reversed. */
+export const txidHex = (b: Uint8Array | undefined): string => (b === undefined ? '' : Buffer.from(b).reverse().toString('hex'));
 const num = (v: bigint | number | undefined): number => (v === undefined ? 0 : Number(v));
 const ms = (sec: bigint | number | undefined): number => num(sec) * 1000;
 const enumName = (e: Record<string | number, string | number>, v: number): string =>
@@ -715,7 +717,7 @@ export class SubServerHub {
           totalPaidSat: num(r.totalAmtPaidSat),
           totalEarnedSat: num(r.totalAmtEarnedSat),
           leases: r.leases.map((l) => ({
-            channelPoint: l.channelPoint === undefined ? '' : `${hex(l.channelPoint.txid)}:${l.channelPoint.outputIndex}`,
+            channelPoint: l.channelPoint === undefined ? '' : `${txidHex(l.channelPoint.txid)}:${l.channelPoint.outputIndex}`,
             amountSat: num(l.channelAmtSat),
             durationBlocks: l.channelDurationBlocks,
             expiryHeight: l.channelLeaseExpiry,
@@ -759,7 +761,7 @@ export class SubServerHub {
   async assetTransfers(): Promise<readonly { txid: string; at: number; anchorTxHeight: number; inputs: number; outputs: { assetIdHex: string; amount: string }[] }[]> {
     const r = await (await this.assets()).listTransfers();
     return r.transfers.map((t) => ({
-      txid: hex(t.anchorTxHash),
+      txid: txidHex(t.anchorTxHash),
       at: ms(t.transferTimestamp),
       anchorTxHeight: num(t.anchorTxHeightHint),
       inputs: t.inputs.length,
@@ -802,7 +804,7 @@ export class SubServerHub {
 
   async sendAsset(address: string): Promise<{ txid: string }> {
     const r = await (await this.assets()).sendAsset({ tapAddresses: [address] });
-    return { txid: hex(r.transfer?.anchorTxHash) };
+    return { txid: txidHex(r.transfer?.anchorTxHash) };
   }
 }
 

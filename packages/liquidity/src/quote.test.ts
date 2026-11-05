@@ -14,7 +14,7 @@ function quote(overrides: Partial<LoopQuote> = {}): LoopQuote {
       prepayFeeSat: 500,
       minerFeeSat: 300,
       routingFeeSat: 0,
-      totalSat: 2_050,
+      totalSat: 1_550, // the prepayment is part of the swap fee, not added to it
     },
     cltvDelta: 80,
     confTarget: 6,
@@ -26,26 +26,29 @@ function quote(overrides: Partial<LoopQuote> = {}): LoopQuote {
 describe('assessChannelLiquidity', () => {
   const thresholds = { outboundFloorSat: 200_000, inboundFloorSat: 200_000 };
 
-  it('recommends Loop In when there are no channels at all', () => {
+  it('points to opening a channel (not a swap) when there are no channels at all', () => {
     const rec = assessChannelLiquidity({ outboundSat: 0, inboundSat: 0, openChannels: 0 }, thresholds);
     expect(rec.kind).toBe('no-channels');
-    expect(rec.suggestedDirection).toBe('loop-in');
+    // Loop In needs an existing channel to pay into, so no swap is suggested.
+    expect(rec.suggestedDirection).toBeUndefined();
     expect(rec.message).toContain('no channels yet');
   });
 
-  it('recommends Loop In with a concrete amount when inbound is below the floor', () => {
+  it('recommends Loop Out with a concrete amount when inbound is below the floor', () => {
+    // Loop Out spends channel balance off-chain, which turns that capacity into inbound.
     const rec = assessChannelLiquidity({ outboundSat: 900_000, inboundSat: 25_000, openChannels: 1 }, thresholds);
     expect(rec.kind).toBe('inbound-low');
-    expect(rec.suggestedDirection).toBe('loop-in');
+    expect(rec.suggestedDirection).toBe('loop-out');
     expect(rec.suggestedAmountSat).toBe(200_000); // ceil(175k / 100k) * 100k
     expect(rec.message).toContain('25,000 sats');
     expect(rec.message).toContain('200,000 sats');
   });
 
-  it('recommends Loop Out when outbound is below the floor', () => {
+  it('recommends Loop In when outbound is below the floor', () => {
+    // Loop In pays on-chain funds into the channel, raising what you can send.
     const rec = assessChannelLiquidity({ outboundSat: 10_000, inboundSat: 900_000, openChannels: 1 }, thresholds);
     expect(rec.kind).toBe('outbound-low');
-    expect(rec.suggestedDirection).toBe('loop-out');
+    expect(rec.suggestedDirection).toBe('loop-in');
     expect(rec.suggestedAmountSat).toBe(200_000);
   });
 
@@ -62,10 +65,10 @@ describe('describeQuote', () => {
     const text = describeQuote(quote());
     expect(text).toContain('Loop Out');
     expect(text).toContain('500,000 sats');
-    expect(text).toContain('2,050 sats');
-    expect(text).toContain('0.4%');
+    expect(text).toContain('1,550 sats');
+    expect(text).toContain('0.3%');
     expect(text).toContain('1,250 sats swap fee');
-    expect(text).toContain('500 sats prepay');
+    expect(text).toContain('500 sats of it paid up front as a prepayment');
   });
 
   it('omits the prepay line when there is none', () => {

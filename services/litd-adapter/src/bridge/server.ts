@@ -259,7 +259,10 @@ export function createLitdBridgeServer(options: BridgeServerOptions): Server {
     }
     if (method === 'POST' && path === '/onchain/estimate-fee') {
       const body = await post();
-      sendJson(res, 200, await session.estimateFee(parseNumber(body.targetConf, 'targetConf')));
+      const address = typeof body.address === 'string' && body.address.trim() ? body.address.trim() : undefined;
+      const output =
+        address === undefined ? undefined : { address, amountSat: BigInt(parseNumber(body.amountSat, 'amountSat')) };
+      sendJson(res, 200, await session.estimateFee(parseNumber(body.targetConf, 'targetConf'), output));
       return;
     }
     if (method === 'POST' && path === '/onchain/send') {

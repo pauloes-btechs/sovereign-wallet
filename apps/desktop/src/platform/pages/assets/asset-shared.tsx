@@ -37,18 +37,9 @@ export function assetNames(view: AssetsView | undefined): Map<string, string> {
   return m;
 }
 
-/**
- * KNOWN BRIDGE BUG: GET /assets/transfers and POST /assets/send return the
- * anchor txid as raw tapd bytes (internal byte order), so it is the reverse of
- * the txid block explorers, bitcoind and tapd's own anchor outpoints use.
- * Verified on regtest: the transfer reported as 8181a3…f030 is on-chain as
- * 30f063…8181. Set to false once the bridge hex-reverses the hash.
- */
-export const BRIDGE_TXID_REVERSED = true;
-
+/** Anchor txids arrive in display byte order (the bridge reverses tapd's raw hash). */
 export function displayTxid(raw: string): string {
-  if (!BRIDGE_TXID_REVERSED || !/^[0-9a-f]{64}$/i.test(raw)) return raw;
-  return (raw.match(/../g) ?? []).reverse().join('');
+  return raw;
 }
 
 export type RawTransfer = Awaited<ReturnType<ReturnType<typeof usePlatform>['api']['assetTransfers']>>[number];
