@@ -3,7 +3,9 @@
 Audit of what Sovereign Wallet actually does, as of 2026-11-05 (branch
 `feat/product-platform`, base `4b5c563`). Evidence comes from reading the
 code, the test suites, and running the apps against a real litd v0.17.8 on
-regtest. A capability counts as **surfaced** only when a user can discover,
+regtest. **Updated after the platform build (same day):** statuses below are
+current as of commit `8824e55`; "was:" notes record the original audit where
+the status changed. A capability counts as **surfaced** only when a user can discover,
 configure, execute, monitor and understand it in the UI. An RPC stub, an
 import or a library function with no route to the UI does not count.
 
@@ -27,101 +29,93 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Create wallet (aezeed) | ✅ | `POST /wallet/seed`, `/wallet/init`; e2e "create" |
-| Restore wallet (aezeed + recovery window) | 🟨 | Bridge route + UI exist; the bridge path is never tested (drill 1 uses raw clients) |
-| Unlock | 🟨 | Route + UI; no e2e |
-| On-chain balance, receive address, send, fee estimate | ✅ | e2e receive + send. Bug: the UI passes the fee-rate input as a confirmation target |
-| Taproot (p2tr) receive addresses | ⬜ | Only p2wkh/np2wkh allowed (`session.ts:addressTypeToProto`) |
-| UTXO list / coin control | ⬜ | No ListUnspent |
-| Lightning pay (BOLT11) + decode | ✅ | e2e outbound. No intent persistence: Mode B bypasses `packages/payments` |
-| Create invoice | ✅ | e2e inbound. No QR, no copy button |
-| Invoice history / subscribe | ⬜ | Only payments are listed |
-| Fee probing before pay (EstimateRouteFee) | ⬜ | User sets a fee cap blind |
-| Keysend | ⬜ | |
-| Open / list channels | ✅ | e2e |
-| Close channel (coop / force) | 🟨 | Route + UI + job polling; no e2e |
-| Channel fee policies (UpdateChannelPolicy, FeeReport) | ⬜ | |
-| Peers list / connect / disconnect | ⬜ | Connect only inside channel open |
-| Forwarding history | 🟨 | Last 7 days, max 100, read-only table |
+| Create wallet (aezeed) | ✅ | `POST /wallet/seed`, `/wallet/init`; e2e "create"; used by `reset.sh` on every rebuild |
+| Restore wallet (aezeed + recovery window) | 🟨 | Bridge route + gate screen; the bridge path is still never tested |
+| Unlock | ✅ | Gate screen; exercised on every bridge restart of the local stack (was 🟨). Relaunch on an existing wallet used to time out; fixed (`client.ts` service-up evidence) |
+| On-chain balance, receive address, send, fee estimate | ✅ | Receive (QR, `bitcoin:` URI, deposit detection) and Send (review, fee rate, txid) verified on regtest. Fee-rate/target mix-up fixed; `/onchain/estimate-fee` sent no outputs and always failed — fixed |
+| On-chain transaction history | ✅ | New `GET /lnd/transactions`; merged into Activity with confirmations, fee and wallet label |
+| Taproot (p2tr) receive addresses | ⬜ | Only p2wkh/np2wkh allowed |
+| UTXO list / coin control | ⬜ | No ListUnspent route |
+| Lightning pay (BOLT11) + decode | ✅ | Decode → review (fee cap, total, destination) → pay → real fee and preimage; verified. Memo/destination of past payments decoded on demand in Activity. Still bypasses `packages/payments` intents |
+| Create invoice | ✅ | QR (`LIGHTNING:`), copy, live "payment received"; verified with alice paying |
+| Invoice history | ✅ | `GET /lnd/invoices`; Payment requests page with filters and detail sheet (was ⬜) |
+| Fee probing before pay (EstimateRouteFee) | ⬜ | User sets a fee cap (default 0.5%, min 10 sats) |
+| Keysend | ⬜ | Received keysends are shown; sending is not offered |
+| Open / list channels | ✅ | Verified opening a second channel; connecting to an already-connected peer no longer fails |
+| Close channel (coop / force) | 🟨 | Sheet with warnings, confirm and job polling; deliberately not executed on the shared node |
+| Channel fee policies (FeeReport, UpdateChannelPolicy) | ✅ | Per-channel and all-channel editor; verified (500 msat / 250 ppm) (was ⬜). Time-lock delta and HTLC limits are not read back |
+| Peers list | ✅ | Network & peers page (was ⬜). Connect/disconnect only via channel open |
+| Forwarding history | 🟨 | 7-day chart + table; capped at the oldest 100 events in the window, no channel ids |
 | Network graph / node lookup | ⬜ | |
-| SCB export / restore | 🟨 | Export in e2e; restore route + UI untested through the bridge |
+| SCB export / restore | 🟨 | Export verified (718 bytes, download + copy). Restore gated behind a typed confirmation; not run on the shared node |
 | PSBT channel funding | ⬜ | |
 
 ## Chain backend
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Neutrino (BIP157) sync | 🟨 | Works (e2e, integration). UI shows "synced" badges but never names the backend or shows progress |
-| bitcoind backend | 🟨 | Config path exists; never run against a real bitcoind backend in tests |
-| Remote LND (litd proxy) | 🟨 | Integration test; UI is static instructions only |
+| Neutrino (BIP157) sync | ✅ | Sync height and status in the top bar, dashboard and Node overview. Backend name is not reported by the bridge; the UI says so |
+| bitcoind backend | 🟨 | Config path exists; never run in tests |
+| Remote LND (litd proxy) | 🟨 | Connections page explains it; no in-app setup |
 
 ## Lightning Loop
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Loop Out / Loop In quotes | 🟦 | `LitdLoopPort`, `LiquidityManager`; no bridge route |
-| Execute Loop Out / Loop In | ⛔ on regtest, 🟦 code | Needs the Lightning Labs swap server; CI pins a dead server and asserts the classified failure |
-| Swap list / live monitor | 🟦 | `listSwaps`, Monitor stream; no route |
-| AutoLoop parameters | 🟨 | Get works; set refused without the swap server; budget guardrails in `packages/liquidity` |
-| Static-address Loop In (deposits) | ⬜ | Only mapped as a swap type |
-| Swap suggestions (SuggestSwaps) | ⬜ | |
-| **Loop daemon running in the shipped app** | ⛔ (bug) | The bridge launches litd without `loop-mode=integrated`, so loopd never starts and every Loop RPC would answer "unknown service" |
+| Loop daemon running in the shipped app | ✅ | `planSubServers` sets `loop-mode=integrated` + per-wallet dirs; super macaroon auth (was ⛔ bug) |
+| Loop Out / Loop In quotes | ✅ code, ⛔ regtest | `/loop/terms`, `/loop/quote`; wizards with real fee breakdown. Here the operator is deliberately offline, and the UI says exactly that. Quote total no longer double-counts the prepayment |
+| Execute Loop Out / Loop In | 🟨 | Wizards send `{amountSat, maxTotalFeeSat}`; the bridge re-quotes and refuses if fees rose. **Unverified end to end**: needs `loopserver` (Docker Hub, blocked in this sandbox). Next step: CI job with `loop/regtest` compose |
+| Swap list / live status / history | ✅ code | `/loop/swaps`, `/loop/swaps/:id`; history with filters, timeline and costs. Empty without a swap server |
+| Static-address Loop In | 🟨 | Address, deposits, Loop In from deposits wired; creation needs the server. No quote route for chosen outpoints |
+| AutoLoop | 🟨 | Read params, budget-limited enable with review, dry run (`SuggestSwaps`). Direction/rules can't be set through the bridge yet; disable is in-memory |
 
 ## Lightning Pool
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Market snapshot (batch history) | 🟦 | `LitdPoolPort.marketRaw` + `classifyPoolMarket`; unreachable auctioneer → "unavailable" |
-| Accounts, orders (bid/ask), leases | ⬜ | |
-| Sidecar tickets | ⬜ | |
-| **Pool daemon running in the shipped app** | ⛔ (bug) | Same as Loop: no `pool-mode=integrated` |
+| Pool daemon running in the shipped app | ✅ | `pool-mode=integrated` (was ⛔ bug) |
+| Market, accounts, orders, leases (read) | ✅ code, ⛔ regtest | `GET /pool` with per-section errors; page shows each table or the raw poold error |
+| Open account, submit bid/ask, sidecar | ⬜ | Guided flows explain pricing and stop at a disabled submit that names the missing routes. No regtest auctioneer and no signet support upstream |
 
 ## Lightning Terminal (litd)
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Sub-server status (litrpc Status) | ⬜ | Readiness inferred from error strings |
-| Super macaroon for sub-servers | ⛔ (bug) | The bridge never bakes it, so every sub-server call authenticates with LND's admin macaroon and fails ("signature mismatch after caveat verification") |
-| LNC sessions create / list / revoke | 🟦 | `LncSessionManager`, real pairing in integration test; desktop has no UI |
+| Sub-server status (litrpc Status) | ✅ | `GET /services`; sidebar marks pages whose service is down (was ⬜) |
+| Super macaroon for sub-servers | ✅ | Baked read-write at launch; used for Loop, Pool, tapd, Faraday (was ⛔ bug) |
+| LNC sessions create / list / revoke | 🟦 | Library + integration test; desktop shows "not available in this app yet" |
 
 ## Taproot Assets
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| List assets / balances | 🟦 | `AssetManager.listAssets/listBalances`; integration-tested |
-| Receive address (new / decode) | 🟦 | integration-tested |
-| Send + transfer history | 🟦 | Self-transfer integration-tested; external transfers need a proof courier |
-| Proof export / verify / backup / restore | 🟦 | Integration + recovery drill 3 |
-| Mint (issuance) | 🟦 | Integration-tested |
-| Universe sync | ⬜ | |
-| Asset channels / RFQ | ⬜ | Deliberately gated off (`assets/experimental.ts`) |
-| Any asset UI | ⬜ | One yes/no row in the capability disclosure |
+| List assets / balances | ✅ | Grouped per asset, issuer-unverified badge, per-output confirmations |
+| Receive address (new / decode) | ✅ | QR + copy; decode on send |
+| Send + transfer history | ✅ | Self-transfer verified (confirmed at block 217). Anchor txids were byte-reversed — fixed in the bridge. Incoming transfers (AddrReceives) not listed |
+| Mint (issuance) | ✅ | `POST /assets/mint` used by `reset.sh`; UI flow reached review (final click not exercised in the page run) |
+| Proof export / verify | 🟦 | Library only |
+| Universe sync, asset channels / RFQ | ⬜ | Asset channels gated off on purpose |
 
 ## Faraday
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Channel insights, revenue report | 🟨 | Wired into Node health, but **always fails** (wrong macaroon, see litd row). The e2e accepts "unavailable", which masked it |
+| Channel insights, revenue report | ✅ | Works with the super macaroon and its own data dir (was 🟨, always failing); Routing & analytics page |
 | Node audit | ⬜ | |
 
 ## Wavelength (everyday mode)
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Create wallet | ✅ | Real waved in CI (persistence test) |
-| Unlock | ✅ | Real waved in CI |
+| Create wallet / unlock | ✅ | Real waved in CI |
 | Restore from mnemonic | 🧪 | Mobile UI over the simulated client only; no desktop UI |
-| Balances | 🟨 | On-chain buckets hard-zeroed; confirmed boarding + on-chain funds shown as "Lightning spendable" (mislabel). Full breakdown (`getWireBalance`) unused |
-| VTXO state / expiry | 🟨 | Real code; desktop hard-codes "fresh", operator reachable, no expiry |
-| On-chain receive (boarding) | 🟨 | Real code + UI; only ever exercised as "operator unavailable" |
-| On-chain send | 🟨 | Real code + UI; gateway path unverified on the wire |
-| Lightning receive / send (swaps) | 🟨 | Real code + UI; unexercised without a swap server |
-| Collaborative exit (offboard) | ⬜ | Gateway route exists, unused |
-| Unilateral exit + progress | 🟦 | Real code; `onStartExit={null}` on desktop; copy only on mobile |
-| Payment history | 🟦 | `list({view:'activity'})`, not surfaced anywhere |
-| Fees / quotes in review | 🟨 | Enforced, but desktop review shows no amount or fee |
-| Operator / swap-server availability | ⛔ on regtest | No arkd or swap server in the harness; SDK presets cover testnet/testnet4/signet only |
-| Mobile everyday mode against a real client | 🧪 | Web preview and tests use `MobileFlowSimulatedClient`; no native client injected |
+| Balances | ✅ | Exact buckets from `getWireBalance`: on-chain and boarding no longer shown as Lightning-spendable (was 🟨 mislabel) |
+| VTXO state / expiry | 🟨 | Desktop still hard-codes "fresh" and operator reachable |
+| On-chain receive / send, Lightning swaps | 🟨 | Real code + UI; unexercised without an operator |
+| Collaborative / unilateral exit | ⬜ / 🟦 | Exit not wired on desktop |
+| Payment history | 🟦 | Not surfaced |
+| Operator / swap-server availability | ⛔ on regtest | No arkd or swap server; SDK presets cover testnet/testnet4/signet |
+| Mobile everyday mode against a real client | 🧪 | Simulated client in preview and tests |
 
 ## LNC (mobile advanced mode)
 
@@ -135,40 +129,29 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Crash-safe payment intents | 🟨 | Engine is real and drill-tested; only Wavelength sends use it |
-| Design system | 🟨 | `@sovereign/ui` tokens exist, but the desktop never imports them (shared components render unstyled); three diverging palettes |
-| Navigation | ⬜ | No router, no sidebar, no search, no breadcrumbs; one tab bar in Mode B |
-| Activity / transaction history | ⬜ | Payments only, last 10 or 20, no search or filters |
-| Transfers between rails | ⬜ | |
-| Settings | ⬜ | None in any app |
-| QR codes, copy buttons, payment URIs | ⬜ | |
-| Privacy controls | 🟨 | Egress policy, Tor, SQLCipher exist in packages; no UI |
+| Navigation | ✅ desktop | Sidebar in six groups, breadcrumbs, ⌘K palette, `/` search, `.` privacy toggle, hash deep links (was ⬜) |
+| Dashboard | ✅ | Balances from one function (`computeAccounts`), no double counting; insights from real state |
+| Activity / history | ✅ | Payments, invoices, swaps and on-chain transactions merged; search, filters, totals, detail sheets (was ⬜) |
+| Transfers between rails | ✅ | FROM→TO registry offers only real rails; pairs with no rail say why (cross-chain, ERC-20, assets ≠ BTC). 17 tests |
+| Design system | ✅ desktop | One token source (`packages/ui`, IBM Plex bundled locally); was three palettes |
+| Settings | ✅ | Denomination, privacy mode, compact sidebar wired; everything else read-only with where it's configured. No unwired toggles |
+| QR codes, copy buttons, payment URIs | ✅ | Receive, requests, assets, static address |
+| Privacy controls | 🟨 | Amount hiding + connections disclosure; Tor not configured for the node |
+| Crash-safe payment intents | 🟨 | Engine is drill-tested; only Wavelength sends use it |
 
-## What this means for the backlog
+## What is left (ordered)
 
-Ordered by what unblocks the most product. Each item is implementable now.
-
-1. **Unblock the sub-servers** in the bridge-launched litd: bake the super
-   macaroon, start Loop and Pool (`loop-mode`/`pool-mode=integrated`), keep
-   their data inside the wallet's data dir, and authenticate Loop, Pool,
-   tapd and Faraday with the super macaroon. Fixes Faraday too.
-2. **Expose what already works** through the bridge: Loop quotes / swaps /
-   monitor / AutoLoop, Pool market, Taproot Assets (list, receive, send,
-   proofs, mint), litd sub-server status, LNC sessions, invoice history,
-   peers, channel policies, UTXOs, p2tr addresses.
-3. **New desktop shell and design system** on one token source shared with
-   mobile and Storybook.
-4. **Dashboard** with non-double-counted balances, liquidity health and
-   insights computed from real state.
-5. **Transfers & Swaps** router that only offers routes the backend
-   declares, with a full preview and status timeline; **Loop In / Loop Out**
-   wizards and swap history.
-6. Pool marketplace, channel manager (policies, peers), assets section,
-   settings center, then Wavelength fixes (balance mislabel, real VTXO state,
-   exits, history, desktop restore) and mobile.
-
-Upstream and environment blockers are listed in
-[UPSTREAM_BLOCKERS](#upstream-and-environment-blockers) below.
+1. **Prove Loop end to end**: CI job running `loop/regtest` (loopserver +
+   aperture + etcd) against the bridge; execute one Loop Out and one Loop In
+   and assert the swap history. Docker Hub is blocked in this sandbox.
+2. **Bridge gaps found while building pages**: static-address quote, AutoLoop
+   direction/rules, Loop In conf target, invoice expiry, peer alias, chain
+   backend name, forwarding pagination, asset AddrReceives and decimals,
+   Pool write routes (accounts, orders, sidecar), p2tr addresses, UTXOs.
+3. **Wavelength desktop**: real VTXO state/expiry, operator status, exits,
+   history, restore.
+4. **Payments through intents** for advanced mode (crash-safe sends).
+5. Mobile parity beyond navigation and tokens; LNC review step.
 
 ## Upstream and environment blockers
 
