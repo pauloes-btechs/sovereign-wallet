@@ -3,9 +3,9 @@
  * activity, accounts) and the Bitcoin asset page. Every number comes from a
  * bridge response; balance math is delegated to ../../balances.ts.
  */
-import { useMemo, type ReactNode } from 'react';
-import type { ChannelsView, PaymentView, WalletBalanceView } from '../../../modeb/bridge-client.js';
-import type { InvoiceView, PoolView, SwapView } from '../../api.js';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import type { ChannelsView, DecodedInvoiceView, PaymentView, WalletBalanceView } from '../../../modeb/bridge-client.js';
+import type { InvoiceView, OnchainTxView, PoolView, SwapView } from '../../api.js';
 import { computeAccounts, fundSegments, type Accounts } from '../../balances.js';
 import { usePlatform, usePoll, usePrefs, useService, type Poll } from '../../context.js';
 import { Amount, Badge, CopyField, Icon, Notice, type Tone } from '../../ui.js';
@@ -160,13 +160,14 @@ export function KV({ rows }: { rows: readonly { k: ReactNode; v: ReactNode; hint
 
 // ——— activity (payments + invoices + swaps, merged) ———
 
-export type ActivityType = 'sent' | 'received' | 'swap';
+export type ActivityType = 'sent' | 'received' | 'swap' | 'onchain';
 export type ActivityState = 'completed' | 'pending' | 'failed' | 'open' | 'canceled';
 
 export type ActivityRef =
   | { readonly kind: 'payment'; readonly payment: PaymentView }
   | { readonly kind: 'invoice'; readonly invoice: InvoiceView }
-  | { readonly kind: 'swap'; readonly swap: SwapView };
+  | { readonly kind: 'swap'; readonly swap: SwapView }
+  | { readonly kind: 'onchain'; readonly tx: OnchainTxView };
 
 export interface ActivityItem {
   readonly key: string;
@@ -269,6 +270,38 @@ function fromSwap(s: SwapView): ActivityItem {
   };
 }
 
+/** What lnd's own transaction labels mean, in plain words. */
+export function onchainTitle(t: OnchainTxView): string {
+  const l = t.label.toLowerCase();
+  if (l.includes('openchannel')) return 'Channel funding';
+  if (l.includes('closechannel')) return 'Channel close';
+  if (l.includes('sweep')) return 'Sweep';
+  if (l.includes('tapd') || l.includes('asset')) return 'Taproot Assets anchor';
+  if (l.includes('loop')) return 'Loop swap transaction';
+  return t.amountSat < 0 ? 'On-chain send' : 'On-chain deposit';
+}
+
+function fromOnchain(t: OnchainTxView): ActivityItem {
+  const out = t.amountSat < 0;
+  const state: ActivityState = t.confirmations > 0 ? 'completed' : 'pending';
+  // lnd's amount for an outgoing transaction includes the miner fee; show the two apart.
+  const amount = out ? Math.max(0, -t.amountSat - t.feeSat) : t.amountSat;
+  const userLabel = t.label && !/^\d+:/.test(t.label) ? t.label : '';
+  return {
+    key: `tx:${t.txid}`,
+    type: 'onchain',
+    title: onchainTitle(t),
+    description: userLabel || (out ? 'Bitcoin sent from this wallet' : 'Bitcoin received by this wallet'),
+    amountSat: amount,
+    sign: state === 'completed' ? (out ? '-' : '+') : undefined,
+    feeSat: out ? t.feeSat : null,
+    state,
+    stateLabel: state === 'completed' ? `${t.confirmations.toLocaleString('en-US')} confirmation${t.confirmations === 1 ? '' : 's'}` : 'Unconfirmed',
+    at: t.at,
+    ref: { kind: 'onchain', tx: t },
+  };
+}
+
 export interface ActivityData {
   readonly items: readonly ActivityItem[];
   readonly loading: boolean;
@@ -276,6 +309,7 @@ export interface ActivityData {
   readonly invoices: Poll<readonly InvoiceView[]>;
   /** null when the Loop sub-server is not running (nothing was asked). */
   readonly swaps: Poll<readonly SwapView[] | null>;
+  readonly onchain: Poll<readonly OnchainTxView[]>;
   readonly reload: () => void;
 }
 
@@ -291,21 +325,25 @@ export function useActivity(): ActivityData {
     20_000,
     [api, refreshKey, loop.running],
   );
+  const onchain = usePoll(() => api.transactions(), 20_000, [api, refreshKey]);
   const items = useMemo(() => {
     const all: ActivityItem[] = [
       ...(payments.data ?? []).map(fromPayment),
       ...(invoices.data ?? []).map(fromInvoice),
       ...(swaps.data ?? []).map(fromSwap),
+      ...(onchain.data ?? []).map(fromOnchain),
     ];
     return all.sort((a, b) => b.at - a.at);
-  }, [payments.data, invoices.data, swaps.data]);
+  }, [payments.data, invoices.data, swaps.data, onchain.data]);
   return {
     items,
     loading: payments.loading && invoices.loading,
     payments,
     invoices,
     swaps,
+    onchain,
     reload: () => {
+      void onchain.reload();
       void payments.reload();
       void invoices.reload();
       void swaps.reload();
@@ -337,7 +375,15 @@ export function ActivitySourceNotices({ activity }: { activity: ActivityData }) 
         {activity.swaps.error}
       </Notice>,
     );
-  } else if (loop.running === false) {
+  }
+  if (activity.onchain.error) {
+    out.push(
+      <Notice key="o" tone="danger" title="On-chain transactions could not be loaded" action={<RetryButton onClick={() => void activity.onchain.reload()} />}>
+        {activity.onchain.error}
+      </Notice>,
+    );
+  }
+  if (!activity.swaps.error && loop.running === false) {
     out.push(
       <Notice key="l" tone="info" title="Loop swaps are not shown">
         The Loop sub-server is not running in litd{loop.error ? ` (${loop.error})` : ''}, so swap history is unavailable until it starts.
@@ -357,7 +403,7 @@ export function RetryButton({ onClick }: { onClick: () => void }) {
 }
 
 export function TypeGlyph({ item }: { item: ActivityItem }) {
-  const icon = item.type === 'sent' ? 'send' : item.type === 'received' ? 'receive' : 'loop';
+  const icon = item.type === 'sent' ? 'send' : item.type === 'received' ? 'receive' : item.type === 'onchain' ? 'bitcoin' : 'loop';
   return (
     <span className="ov-glyph" data-type={item.type} aria-hidden>
       <Icon name={icon} size={16} />
@@ -422,7 +468,39 @@ export function ActivityDetails({ item }: { item: ActivityItem }) {
           <span className="p-label">Payment hash</span>
           <CopyField value={p.paymentHash} label="Payment hash" />
         </div>
-        <p className="p-hint">This node&apos;s payment history does not include the memo or destination of outgoing payments, so neither is shown here.</p>
+        <PaymentRequestDetails paymentRequest={p.paymentRequest} />
+      </div>
+    );
+  }
+  if (ref.kind === 'onchain') {
+    const t = ref.tx;
+    const out = t.amountSat < 0;
+    return (
+      <div className="p-stack">
+        {head}
+        <KV
+          rows={[
+            { k: 'Type', v: onchainTitle(t) },
+            { k: 'Direction', v: out ? 'Sent from this wallet' : 'Received by this wallet' },
+            { k: out ? 'Amount sent' : 'Amount received', v: <Amount sats={item.amountSat} /> },
+            ...(out ? [{ k: 'Miner fee', v: <Amount sats={t.feeSat} /> }, { k: 'Total leaving the wallet', v: <Amount sats={-t.amountSat} /> }] : []),
+            { k: 'Confirmations', v: t.confirmations > 0 ? `${t.confirmations.toLocaleString('en-US')} (block ${t.blockHeight.toLocaleString('en-US')})` : 'Not yet confirmed' },
+            { k: 'Time', v: formatDate(t.at) },
+            ...(t.label ? [{ k: 'Wallet label', v: <span className="p-mono">{t.label}</span>, hint: 'Set by lnd or the app that made this transaction' }] : []),
+          ]}
+        />
+        <div className="p-field">
+          <span className="p-label">Transaction id</span>
+          <CopyField value={t.txid} label="Transaction id" />
+        </div>
+        {t.addresses.length ? (
+          <div className="p-field">
+            <span className="p-label">{out ? 'Change address (this wallet)' : 'Receiving address'}</span>
+            {t.addresses.map((a) => (
+              <CopyField key={a} value={a} label="Address" />
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -504,5 +582,51 @@ export function ActivityDetails({ item }: { item: ActivityItem }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Memo and destination of an outgoing payment, decoded from its payment
+ * request on demand (lnd's payment list keeps the request, not its fields).
+ */
+function PaymentRequestDetails({ paymentRequest }: { paymentRequest: string | undefined }) {
+  const { bridge } = usePlatform();
+  const [decoded, setDecoded] = useState<DecodedInvoiceView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setDecoded(null);
+    setError(null);
+    if (!paymentRequest) return;
+    let live = true;
+    bridge.decodeInvoice(paymentRequest).then(
+      (d) => live && setDecoded(d),
+      (e: unknown) => live && setError(e instanceof Error ? e.message : String(e)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [bridge, paymentRequest]);
+  if (!paymentRequest) {
+    return <p className="p-hint">This payment was made without an invoice (for example keysend), so there is no memo or invoice destination to show.</p>;
+  }
+  return (
+    <>
+      {error ? (
+        <Notice tone="warning" title="The invoice for this payment could not be decoded">
+          {error}
+        </Notice>
+      ) : (
+        <KV
+          rows={[
+            { k: 'Memo', v: decoded === null ? <span className="p-faint">Decoding…</span> : decoded.memo || <span className="p-faint">None</span> },
+            { k: 'Destination node', v: decoded === null ? <span className="p-faint">Decoding…</span> : <span className="p-mono">{decoded.destination}</span> },
+          ]}
+        />
+      )}
+      <div className="p-field">
+        <span className="p-label">Payment request</span>
+        <CopyField value={paymentRequest} label="Payment request" />
+      </div>
+    </>
   );
 }

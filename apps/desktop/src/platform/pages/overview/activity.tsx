@@ -28,6 +28,7 @@ const TYPE_OPTIONS: readonly { value: TypeFilter; label: string }[] = [
   { value: 'sent', label: 'Sent' },
   { value: 'received', label: 'Received' },
   { value: 'swap', label: 'Swaps' },
+  { value: 'onchain', label: 'On-chain' },
 ];
 
 const STATE_OPTIONS: readonly { value: StateFilter; label: string }[] = [
@@ -47,7 +48,13 @@ function matches(it: ActivityItem, q: string): boolean {
     it.description,
     it.stateLabel,
     String(it.amountSat),
-    r.kind === 'payment' ? r.payment.paymentHash : r.kind === 'invoice' ? `${r.invoice.paymentHashHex} ${r.invoice.memo}` : `${r.swap.id} ${r.swap.htlcAddress} ${r.swap.label}`,
+    r.kind === 'payment'
+      ? r.payment.paymentHash
+      : r.kind === 'invoice'
+        ? `${r.invoice.paymentHashHex} ${r.invoice.memo}`
+        : r.kind === 'onchain'
+          ? `${r.tx.txid} ${r.tx.label} ${r.tx.addresses.join(' ')}`
+          : `${r.swap.id} ${r.swap.htlcAddress} ${r.swap.label}`,
   ]
     .join(' ')
     .toLowerCase();
@@ -116,12 +123,12 @@ function Totals({ items }: { items: readonly ActivityItem[] }) {
         <div className="p-stat-value">
           <Amount sats={fees} />
         </div>
-        <div className="p-stat-foot">Routing fees plus Loop swap costs</div>
+        <div className="p-stat-foot">Routing, miner and Loop swap costs</div>
       </div>
       <div>
         <div className="p-stat-label">In progress</div>
         <div className="p-stat-value">{pending.toLocaleString('en-US')}</div>
-        <div className="p-stat-foot">Payments in flight, accepted invoices, active swaps</div>
+        <div className="p-stat-foot">In-flight payments, accepted invoices, active swaps, unconfirmed transactions</div>
       </div>
     </div>
   );
@@ -137,7 +144,7 @@ export default function ActivityPage() {
   const [open, setOpen] = useState<ActivityItem | null>(null);
 
   const counts = useMemo(() => {
-    const c: Record<TypeFilter, number> = { all: activity.items.length, sent: 0, received: 0, swap: 0 };
+    const c: Record<TypeFilter, number> = { all: activity.items.length, sent: 0, received: 0, swap: 0, onchain: 0 };
     for (const it of activity.items) c[it.type] += 1;
     return c;
   }, [activity.items]);
@@ -160,7 +167,7 @@ export default function ActivityPage() {
     <>
       <PageHeader
         title="Activity"
-        sub="Every Lightning payment you sent, every invoice you created, and every Loop swap, newest first."
+        sub="Every Lightning payment you sent, every invoice you created, every Loop swap and every on-chain transaction, newest first."
         actions={
           <button type="button" className="p-btn" onClick={activity.reload}>
             <Icon name="refresh" />
