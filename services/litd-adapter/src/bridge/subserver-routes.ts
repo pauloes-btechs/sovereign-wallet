@@ -18,6 +18,7 @@
  *   GET  /loop/suggestions            AutoLoop dry run (SuggestSwaps)
  *   GET  /lnd/invoices                received payments (newest first)
  *   GET  /lnd/peers                   connected peers
+ *   GET  /lnd/transactions            on-chain transactions (newest first)
  *   GET  /lnd/fees                    per-channel routing fee policies + fees earned
  *   POST /lnd/fees                    { channelPoint?, baseFeeMsat, feePpm, timeLockDelta }
  *   GET  /pool                        market, accounts, orders, leases, durations
@@ -185,6 +186,7 @@ export async function routeSubServers(
   // LND extras
   if (method === 'GET' && path === '/lnd/invoices') return { invoices: await hub.invoices() };
   if (method === 'GET' && path === '/lnd/peers') return { peers: await hub.peers() };
+  if (method === 'GET' && path === '/lnd/transactions') return { transactions: await hub.transactions() };
   if (method === 'GET' && path === '/lnd/fees') return hub.feeReport();
   if (method === 'POST' && path === '/lnd/fees') {
     const b = await post();

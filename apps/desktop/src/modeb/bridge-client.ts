@@ -108,6 +108,8 @@ export interface PaymentView {
   readonly feeSat: string;
   readonly creationTimeNs: string;
   readonly failureReason?: string;
+  /** BOLT-11 request that was paid (empty for keysend; absent from older bridges). */
+  readonly paymentRequest?: string;
 }
 
 export interface PaymentOutcomeView {

@@ -31,6 +31,7 @@ import {
   ListInvoiceRequest,
   ListPeersRequest,
   FeeReportRequest,
+  GetTransactionsRequest,
   PolicyUpdateRequest,
   ChannelPoint,
   type LightningClient,
@@ -278,6 +279,19 @@ export interface InvoiceView {
   readonly isKeysend: boolean;
 }
 
+export interface OnchainTxView {
+  readonly txid: string;
+  /** Net effect on this wallet: positive = received, negative = sent (fee included). */
+  readonly amountSat: number;
+  readonly feeSat: number;
+  readonly confirmations: number;
+  readonly blockHeight: number;
+  readonly at: number;
+  readonly label: string;
+  /** This wallet's own addresses among the outputs. */
+  readonly addresses: readonly string[];
+}
+
 export interface PeerView {
   readonly pubkey: string;
   readonly address: string;
@@ -392,6 +406,24 @@ export class SubServerHub {
     const ln = await this.options.lightning();
     const r = await ln.listInvoices(ListInvoiceRequest.create({ numMaxInvoices: BigInt(max), reversed: true, pendingOnly: false }), T).response;
     return r.invoices.map(mapInvoice).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /** On-chain transactions touching this wallet (newest first). */
+  async transactions(): Promise<readonly OnchainTxView[]> {
+    const ln = await this.options.lightning();
+    const r = await ln.getTransactions(GetTransactionsRequest.create({ startHeight: 0, endHeight: -1, account: '' }), T).response;
+    return r.transactions
+      .map((t) => ({
+        txid: t.txHash,
+        amountSat: num(t.amount),
+        feeSat: num(t.totalFees),
+        confirmations: t.numConfirmations,
+        blockHeight: t.blockHeight,
+        at: ms(t.timeStamp),
+        label: t.label,
+        addresses: t.outputDetails.filter((o) => o.isOurAddress).map((o) => o.address),
+      }))
+      .sort((a, b) => b.at - a.at);
   }
 
   async peers(): Promise<readonly PeerView[]> {

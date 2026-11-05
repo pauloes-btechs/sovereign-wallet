@@ -163,6 +163,18 @@ export interface InvoiceView {
   readonly isKeysend: boolean;
 }
 
+export interface OnchainTxView {
+  readonly txid: string;
+  /** Net effect on this wallet: positive = received, negative = sent (fee included). */
+  readonly amountSat: number;
+  readonly feeSat: number;
+  readonly confirmations: number;
+  readonly blockHeight: number;
+  readonly at: number;
+  readonly label: string;
+  readonly addresses: readonly string[];
+}
+
 export interface PeerView {
   readonly pubkey: string;
   readonly address: string;
@@ -231,6 +243,7 @@ export class PlatformApi {
   sendAsset = (address: string) => this.bridge.request<{ txid: string }>('POST', '/assets/send', { address, authorization: { address } });
 
   invoices = async () => (await this.bridge.request<{ invoices: InvoiceView[] }>('GET', '/lnd/invoices')).invoices;
+  transactions = async () => (await this.bridge.request<{ transactions: OnchainTxView[] }>('GET', '/lnd/transactions')).transactions;
   peers = async () => (await this.bridge.request<{ peers: PeerView[] }>('GET', '/lnd/peers')).peers;
   feeReport = () => this.bridge.request<FeeReportView>('GET', '/lnd/fees');
   updateFeePolicy = (body: { channelPoint?: string; baseFeeMsat: number; feePpm: number; timeLockDelta: number }) =>
