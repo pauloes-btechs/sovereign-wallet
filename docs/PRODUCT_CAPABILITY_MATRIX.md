@@ -64,7 +64,7 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 | --- | --- | --- |
 | Loop daemon running in the shipped app | ✅ | `planSubServers` sets `loop-mode=integrated` + per-wallet dirs; super macaroon auth (was ⛔ bug) |
 | Loop Out / Loop In quotes | ✅ code, ⛔ regtest | `/loop/terms`, `/loop/quote`; wizards with real fee breakdown. Here the operator is deliberately offline, and the UI says exactly that. Quote total no longer double-counts the prepayment |
-| Execute Loop Out / Loop In | 🟨 | Wizards send `{amountSat, maxTotalFeeSat}`; the bridge re-quotes and refuses if fees rose. **Unverified end to end**: needs `loopserver` (Docker Hub, blocked in this sandbox). Next step: CI job with `loop/regtest` compose |
+| Execute Loop Out / Loop In | 🟨 | **Swap server verified in CI**: `loop-regtest.yml` settles a real Loop Out, Loop In and static-address Loop In on regtest (green 2026-11-05). **Wallet path still unverified**: the bridge routes (`/loop/out`, `/loop/in`, fee re-quote) and swap history have not been run against that server yet |
 | Swap list / live status / history | ✅ code | `/loop/swaps`, `/loop/swaps/:id`; history with filters, timeline and costs. Empty without a swap server |
 | Static-address Loop In | 🟨 | Address, deposits, Loop In from deposits wired; creation needs the server. No quote route for chosen outpoints |
 | AutoLoop | 🟨 | Read params, budget-limited enable with review, dry run (`SuggestSwaps`). Direction/rules can't be set through the bridge yet; disable is in-memory |
@@ -141,9 +141,10 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 
 ## What is left (ordered)
 
-1. **Prove Loop end to end**: CI job running `loop/regtest` (loopserver +
-   aperture + etcd) against the bridge; execute one Loop Out and one Loop In
-   and assert the swap history. Docker Hub is blocked in this sandbox.
+1. **Prove the wallet's Loop path**: the swap server already settles real
+   swaps in CI (`loop-regtest.yml`). Next, launch the bridge's litd against
+   that server, execute Loop Out and Loop In through the bridge routes, and
+   assert the swap history.
 2. **Bridge gaps found while building pages**: static-address quote, AutoLoop
    direction/rules, Loop In conf target, invoice expiry, peer alias, chain
    backend name, forwarding pagination, asset AddrReceives and decimals,
@@ -160,7 +161,7 @@ Researched 2026-11-05 against Lightning Labs docs and source (links in
 
 | Area | Fact | Consequence |
 | --- | --- | --- |
-| Loop on regtest | Lightning Labs publishes `lightninglabs/loopserver`, a regtest-only swap server (binary only), wired with aperture (L402) in `loop/regtest/docker-compose.yml` | Real Loop In / Loop Out / static-address journeys **can** be verified on regtest, but only where Docker Hub is reachable (GitHub Actions). This dev environment cannot pull it |
+| Loop on regtest | The `lightninglabs/loopserver` image can no longer be pulled, and loop master's regtest compose still points at it. lightninglabs/loop PR #1222 builds a regtest swap server from source | CI pins PR #1222's head commit and builds it; switch to the merge commit once it lands |
 | Loop on signet / testnet | loopd has built-in `signet.swap.lightning.today` and `test.swap.lightning.today` endpoints | Unverified whether they are online |
 | Static-address Loop In | Standard since Loop v0.29; MuSig2 taproot address, 250k sat minimum; static-address *autoloop* is `--experimental` | Implement deposits → Loop In; keep static autoloop off |
 | AutoLoop | One direction at a time (`--type in|out`); `SuggestSwaps` is the dry run | UI enforces a single direction and offers a dry run |
