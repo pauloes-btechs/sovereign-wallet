@@ -1,0 +1,85 @@
+name: Loop real regtest swaps
+
+# Real Loop Out, Loop In and static-address Loop In on a disposable regtest
+# network. Regtest only: no real funds ever.
+#
+# Why the swap server is built from source: the regtest-only swap server
+# Lightning Labs published as the Docker image `lightninglabs/loopserver` can
+# no longer be pulled ("repository does not exist or may require docker
+# login"), and loop master's regtest/docker-compose.yml still points at it.
+# lightninglabs/loop PR #1222 (sputn1ck) replaces it with a regtest server
+# built from the loop repo, plus an acceptance script (regtest/e2e.sh). That PR
+# is not merged yet, so this job pins its exact head commit. When it merges,
+# switch LOOP_REF to the merge commit on master and drop the PR fetch.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, so upstream drift (images, regtest scripts) shows up even when
+    # nothing here changes.
+    - cron: '17 9 * * 1'
+  pull_request:
+    paths:
+      - '.github/workflows/loop-regtest.yml'
+      - 'scripts/ci/loop-regtest-smoke.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loop-regtest-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LOOP_PR: '1222'
+  LOOP_REF: 3d10930491713c1ee2f9957316747da9a3813072
+  LOOP_DIR: /tmp/loop-upstream
+
+jobs:
+  loop-regtest:
+    name: Real Loop In and Loop Out (isolated regtest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y jq
+          docker compose version
+      - name: Fetch pinned upstream Loop (source-built regtest server)
+        run: |
+          git init -q "$LOOP_DIR"
+          git -C "$LOOP_DIR" remote add origin https://github.com/lightninglabs/loop.git
+          git -C "$LOOP_DIR" fetch -q --depth 1 origin "refs/pull/${LOOP_PR}/head"
+          actual="$(git -C "$LOOP_DIR" rev-parse FETCH_HEAD)"
+          if [ "$actual" != "$LOOP_REF" ]; then
+            echo "::error::loop PR #${LOOP_PR} head is ${actual}, expected the pinned ${LOOP_REF}. Review the new commits, then update LOOP_REF."
+            exit 1
+          fi
+          git -C "$LOOP_DIR" checkout -q "$LOOP_REF"
+      - name: Build images
+        run: docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" build
+      - name: Start regtest and run real swaps
+        run: bash scripts/ci/loop-regtest-smoke.sh "$LOOP_DIR/regtest"
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          mkdir -p loop-ci-logs
+          if [ -f "$LOOP_DIR/regtest/docker-compose.yml" ]; then
+            docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" ps > loop-ci-logs/compose-ps.txt 2>&1 || true
+            docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" logs --no-color --tail=400 > loop-ci-logs/compose-logs.txt 2>&1 || true
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: loop-regtest-diagnostics
+          path: loop-ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Tear down disposable regtest environment
+        if: always()
+        run: |
+          if [ -f "$LOOP_DIR/regtest/docker-compose.yml" ]; then
+            docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" down -v --remove-orphans || true
+          fi
