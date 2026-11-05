@@ -79,7 +79,9 @@ describe('quote mappings', () => {
       500_000,
     );
     expect(q.direction).toBe('loop-out');
-    expect(q.fees).toEqual({ swapFeeSat: 1_250, prepayFeeSat: 500, minerFeeSat: 300, routingFeeSat: 0, totalSat: 1_550 }); // prepay is part of the swap fee, not on top of it
+    // Prepay is part of the swap fee, not on top of it. Routing is loop CLI's cap
+    // (10 sats + 2%) for the swap invoice (10,010) and the prepay invoice (20).
+    expect(q.fees).toEqual({ swapFeeSat: 1_250, prepayFeeSat: 500, minerFeeSat: 300, routingFeeSat: 10_030, totalSat: 11_580 });
     expect(q.swapFeePpm).toBe(2_500);
     expect(q.cltvDelta).toBe(80);
   });

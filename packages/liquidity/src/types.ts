@@ -18,9 +18,13 @@ export interface FeeBreakdownSat {
   prepayFeeSat: number;
   /** Estimated miner fee for the on-chain legs. */
   minerFeeSat: number;
-  /** Estimated routing fees for the off-chain leg (Loop Out). */
+  /**
+   * Loop Out: the most the node may pay to route the swap and prepay
+   * invoices to the server (a cap, not an estimate — see
+   * `loopRoutingFeeCapSat`). 0 for Loop In (the server pays).
+   */
   routingFeeSat: number;
-  /** swapFee + prepay + miner + routing. */
+  /** swapFee + miner + routing (the prepay is part of the swap fee). */
   totalSat: number;
 }
 

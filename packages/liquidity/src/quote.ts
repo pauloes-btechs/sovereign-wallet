@@ -126,3 +126,16 @@ export function describeQuoteFailure(kind: LiquidityProviderFailureKind): Liquid
     message: describeProviderFailure(kind),
   };
 }
+
+/** loop CLI's routing-fee cap: 10 sats + 2% (swap.CalcFee(amt, 10, 20000)). */
+export const LOOP_ROUTING_FEE_BASE_SAT = 10;
+export const LOOP_ROUTING_FEE_RATE_PPM = 20_000;
+
+/**
+ * Most a Loop Out may pay to route one invoice of `amountSat` to the server,
+ * the same default Lightning Labs' loop CLI applies. Integer sats, rounded
+ * down like swap.CalcFee.
+ */
+export function loopRoutingFeeCapSat(amountSat: number): number {
+  return LOOP_ROUTING_FEE_BASE_SAT + Math.floor((amountSat * LOOP_ROUTING_FEE_RATE_PPM) / 1_000_000);
+}

@@ -255,6 +255,9 @@ describe('Loop sub-server over litd on regtest', () => {
         destAddress: 'bcrt1qzgerezhqwxp9sxx3he4389wre6z80r9yqmalfr',
         maxSwapFeeSat: 1_000,
         maxMinerFeeSat: 1_000,
+        maxPrepayAmtSat: 1_000,
+        maxSwapRoutingFeeSat: 10_010,
+        maxPrepayRoutingFeeSat: 30,
       })
       .then(
         () => null,

@@ -237,6 +237,11 @@ describe('LiquidityManager — manual execution', () => {
     const req = fx.loop.executeOutCalls[0];
     expect(req?.maxSwapFeeSat).toBe(1_250);
     expect(req?.maxMinerFeeSat).toBe(600); // 2x quoted miner fee
+    // loopd treats unset limits as 0 and refuses the swap: the prepay limit is
+    // the quoted prepay, routing limits are loop CLI's 10 sats + 2% caps.
+    expect(req?.maxPrepayAmtSat).toBe(500);
+    expect(req?.maxSwapRoutingFeeSat).toBe(10_010);
+    expect(req?.maxPrepayRoutingFeeSat).toBe(20);
     expect(req?.destAddress).toBe('bcrt1qtest');
 
     // Manual settlement is journaled but does NOT consume automation budget.
