@@ -223,6 +223,11 @@ export class PlatformApi {
     (await this.bridge.request<{ transfers: { txid: string; at: number; anchorTxHeight: number; inputs: number; outputs: { assetIdHex: string; amount: string }[] }[] }>('GET', '/assets/transfers')).transfers;
   newAssetAddress = (assetIdHex: string, amount: string) => this.bridge.request<{ address: string }>('POST', '/assets/address', { assetIdHex, amount });
   decodeAssetAddress = (address: string) => this.bridge.request<{ assetIdHex: string; amount: string }>('POST', '/assets/decode', { address });
+  mintAsset = (body: { name: string; amount: string; description?: string; grouped?: boolean }) =>
+    this.bridge.request<{ batchKeyHex: string; state: string; txid: string }>('POST', '/assets/mint', {
+      ...body,
+      authorization: { name: body.name, amount: body.amount },
+    });
   sendAsset = (address: string) => this.bridge.request<{ txid: string }>('POST', '/assets/send', { address, authorization: { address } });
 
   invoices = async () => (await this.bridge.request<{ invoices: InvoiceView[] }>('GET', '/lnd/invoices')).invoices;

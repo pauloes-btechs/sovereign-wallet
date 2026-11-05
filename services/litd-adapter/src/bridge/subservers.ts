@@ -25,6 +25,7 @@ import {
   PoolAuctioneer,
   PoolClient,
   tapdAssets,
+  tapdMint,
   AddressType,
   Invoice_InvoiceState,
   ListInvoiceRequest,
@@ -744,6 +745,27 @@ export class SubServerHub {
   async decodeAssetAddress(address: string): Promise<{ assetIdHex: string; amount: string; network: string }> {
     const r = await (await this.assets()).decodeTapAddress(address);
     return { assetIdHex: hex(r.assetId), amount: String(r.amount), network: '' };
+  }
+
+  /**
+   * Issue a new asset (advanced; costs an on-chain fee). Stages and finalizes
+   * a mint batch; the batch anchors on-chain and becomes spendable after
+   * confirmation. The caller must echo name + amount as authorization.
+   */
+  async mintAsset(req: { name: string; amount: string; description?: string; grouped: boolean }): Promise<{ batchKeyHex: string; state: string; txid: string }> {
+    if (!/^[1-9][0-9]{0,18}$/.test(req.amount)) throw new BridgeRequestError(400, 'amount must be a positive whole number of units');
+    if (req.name.length < 1 || req.name.length > 64) throw new BridgeRequestError(400, 'name must be 1–64 characters');
+    const batch = await (await this.assets()).issueAsset({
+      name: req.name,
+      amount: BigInt(req.amount),
+      metaJson: req.description ? { name: req.name, description: req.description } : { name: req.name },
+      enableEmission: req.grouped,
+    });
+    return {
+      batchKeyHex: hex(batch?.batchKey),
+      state: batch === undefined ? 'unknown' : enumName(tapdMint.BatchState as unknown as Record<number, string>, batch.state),
+      txid: batch?.batchTxid ?? '',
+    };
   }
 
   async sendAsset(address: string): Promise<{ txid: string }> {

@@ -25,6 +25,7 @@
  *   GET  /assets/transfers            transfer history
  *   POST /assets/address              { assetIdHex, amount }
  *   POST /assets/decode               { address }
+ *   POST /assets/mint                 { name, amount, description?, grouped?, authorization: { name, amount } }
  *   POST /assets/send                 { address, authorization: { address } }
  */
 import type { AutoLoopBudgetPolicy } from '@sovereign/liquidity';
@@ -217,6 +218,18 @@ export async function routeSubServers(
   if (method === 'POST' && path === '/assets/decode') {
     const b = await post();
     return hub.decodeAssetAddress(str(b, 'address', true));
+  }
+  if (method === 'POST' && path === '/assets/mint') {
+    const b = await post();
+    const name = str(b, 'name', true);
+    const amount = str(b, 'amount', true);
+    const a = obj(b, 'authorization');
+    if (str(a, 'name', true) !== name || str(a, 'amount', true) !== amount) {
+      throw new BridgeRequestError(400, 'authorization does not match the asset name and amount');
+    }
+    const grouped = b['grouped'];
+    if (grouped !== undefined && typeof grouped !== 'boolean') throw new BridgeRequestError(400, 'grouped must be a boolean');
+    return hub.mintAsset({ name, amount, description: str(b, 'description'), grouped: grouped === true });
   }
   if (method === 'POST' && path === '/assets/send') {
     const b = await post();

@@ -73,3 +73,16 @@ Layout classes: `.p-grid` + `.p-span-{3,4,5,6,7,8,12}`, `.p-stack`, `.p-row`,
   `alice-cli getinfo`, P2P `127.0.0.1:19735`).
 - `cd /home/claude/sw/apps/desktop && pnpm exec tsc --noEmit` and
   `cd /home/claude/sw && pnpm lint` must pass.
+
+## If the node is down
+
+The sandbox can reboot; btcd's chain does not survive it. If
+`/home/claude/stack/api.sh GET /state` fails or reports a height far behind,
+rebuild everything (chain, peer, wallet, channel, payments, test asset) with
+`flock /home/claude/stack/.reset.lock /home/claude/stack/reset.sh`, then
+re-read `/home/claude/stack/app-url` (the bridge token changes).
+
+Shared-node etiquette: never close the existing channel, lock the wallet,
+restore channel backups, or kill the bridge / btcd / lnd / vite processes
+outside `reset.sh`. Opening extra channels, paying, creating invoices,
+mining blocks and minting extra test assets are fine.
