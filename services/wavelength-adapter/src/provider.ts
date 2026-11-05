@@ -35,6 +35,7 @@ import type {
 } from './sdk/index.js';
 import { FORCE_UNROLL_ACK, exitBatch } from './sdk/index.js';
 import type { Unsubscribe } from './sdk/index.js';
+import type { WireBalance } from './sdk/gateway-client.js';
 import type { ExitReadiness } from './exit.js';
 import { summarizeExitReadiness } from './exit.js';
 import { mapEntryToRecord } from './entry-mapping.js';
@@ -184,6 +185,16 @@ export class WavelengthProvider implements WalletProvider {
    */
   async balanceBuckets(classified?: readonly VtxoWithState[]): Promise<BalanceBuckets> {
     this.assertStarted();
+    // The waved REST gateway exposes the daemon's full breakdown; when it's
+    // available, use it so on-chain and boarding funds are never shown as
+    // Lightning-spendable (the unified SDK balance below cannot tell them apart).
+    if (hasWireBalance(this.client)) {
+      const [wire, inventory] = await Promise.all([
+        this.client.getWireBalance(),
+        classified !== undefined ? Promise.resolve(classified) : this.classifyCurrentInventory(),
+      ]);
+      return bucketsFromWireBalance(wire, lockedOrExpiringSat(inventory));
+    }
     const [balance, inventory] = await Promise.all([
       this.client.balance(),
       classified !== undefined ? Promise.resolve(classified) : this.classifyCurrentInventory(),
@@ -398,3 +409,31 @@ export class WavelengthProvider implements WalletProvider {
 
 /** Balance type re-export for hosts that want the pinned shape without the SDK. */
 export type { Balance };
+
+/** Clients that expose the daemon's raw balance breakdown (the waved gateway). */
+function hasWireBalance(client: unknown): client is { getWireBalance(): Promise<WireBalance> } {
+  return typeof (client as { getWireBalance?: unknown }).getWireBalance === 'function';
+}
+
+/**
+ * Exact Mode A buckets from waved's balance breakdown — each sat lands in
+ * exactly one bucket:
+ * - on-chain confirmed: the backing on-chain wallet + confirmed boarding
+ *   deposits (on-chain outputs waiting to join a batch)
+ * - on-chain pending: unconfirmed boarding deposits
+ * - Lightning spendable: VTXOs (Ark-held, spendable off-chain), minus the
+ *   subset classified as locked or expiring
+ * - Lightning pending: VTXO value still settling inbound
+ * - locked or expiring: VTXOs in unilateral exit + expiring/at-risk VTXOs
+ */
+export function bucketsFromWireBalance(wire: Readonly<WireBalance>, lockedOrExpiringVtxoSat: bigint): BalanceBuckets {
+  const vtxo = BigInt(wire.vtxoBalanceSat);
+  const expiring = lockedOrExpiringVtxoSat > vtxo ? vtxo : lockedOrExpiringVtxoSat;
+  return {
+    onchainConfirmedSat: BigInt(wire.onchainWalletConfirmedSat + wire.boardingConfirmedSat),
+    onchainPendingSat: BigInt(wire.boardingUnconfirmedSat),
+    lightningSpendableSat: vtxo - expiring,
+    lightningPendingSat: BigInt(wire.vtxoPendingSat),
+    lockedOrExpiringSat: expiring + BigInt(wire.vtxoUnilateralExitSat),
+  };
+}
