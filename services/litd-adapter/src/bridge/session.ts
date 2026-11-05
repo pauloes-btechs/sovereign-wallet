@@ -565,7 +565,13 @@ export function sessionJsonReplacer(_key: string, value: unknown): unknown {
 export async function createRealBridgeDeps(options: {
   readonly connectionOptions: LitdConnectionOptions;
   /** Faraday subserver config; integrated litd serves it on the same mux. */
-  readonly faraday?: { readonly rpcPort: number; readonly tlsCertPath: string; readonly macaroonGlobDir: string };
+  readonly faraday?: {
+    readonly rpcPort: number;
+    readonly tlsCertPath: string;
+    readonly macaroonGlobDir: string;
+    /** Preferred credential (litd's super macaroon). Faraday rejects LND's admin macaroon. */
+    readonly macaroonPath?: string;
+  };
 }): Promise<LitdBridgeDeps> {
   const { createLightningClient, createRouterClient, createWalletUnlockerClient } = await import('../client.js');
   const conn = options.connectionOptions;
@@ -625,13 +631,19 @@ export async function createRealBridgeDeps(options: {
           // The faraday subserver validates against its own macaroon when
           // present (faraday.macaroon beside the admin macaroon); the admin
           // macaroon is the fallback for deployments that never minted one.
+          // Credential order: litd's super macaroon (what integrated litd
+          // accepts for frdrpc), then a faraday.macaroon beside the admin
+          // macaroon, then — last resort, known to fail against integrated
+          // litd with "signature mismatch" — LND's admin macaroon.
           let macaroonHex = adminMacaroonHex;
-          try {
-            macaroonHex = (
-              await readFile(join(faradayOptions.macaroonGlobDir, 'faraday.macaroon'))
-            ).toString('hex');
-          } catch {
-            // faraday.macaroon is optional — admin macaroon works too.
+          for (const candidate of [faradayOptions.macaroonPath, join(faradayOptions.macaroonGlobDir, 'faraday.macaroon')]) {
+            if (candidate === undefined) continue;
+            try {
+              macaroonHex = (await readFile(candidate)).toString('hex');
+              break;
+            } catch {
+              // not baked yet / not present — try the next credential
+            }
           }
           const transport = await createLitdTransport({
             rpcHost: '127.0.0.1',

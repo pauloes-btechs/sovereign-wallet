@@ -6,34 +6,64 @@
 
 :root,
 .sovl-root {
-  --sovl-bg: #0d0d10;
-  --sovl-surface: #15161b;
-  --sovl-surface-raised: #1c1e24;
-  --sovl-border: #26282f;
-  --sovl-border-strong: #343741;
-  --sovl-text: #e8e8ea;
-  --sovl-text-secondary: #9a9ba3;
-  --sovl-text-faint: #5f6069;
+  /* Surfaces: app → sidebar → panel → raised (menus, sheets, inputs). */
+  --sovl-bg: #0b0d12;
+  --sovl-sidebar: #10131a;
+  --sovl-surface: #161b24;
+  --sovl-surface-raised: #1d2430;
+  --sovl-border: #232a36;
+  --sovl-border-strong: #2f3847;
+  /* Text */
+  --sovl-text: #f5f7fa;
+  --sovl-text-secondary: #9ca6b5;
+  --sovl-text-faint: #6b7686;
+  /* Bitcoin amber is reserved for primary actions and Lightning-spendable funds. */
   --sovl-accent: #f7931a;
-  --sovl-accent-contrast: #161006;
-  --sovl-positive: #2fbf9c;
-  --sovl-warning: #f0b429;
-  --sovl-danger: #e5484d;
-  --sovl-info: #5c8df6;
-  --sovl-radius: 10px;
+  --sovl-accent-hover: #ffa640;
+  --sovl-accent-contrast: #1a1206;
+  --sovl-accent-soft: rgba(247, 147, 26, 0.12);
+  /* Status: muted, never decorative. */
+  --sovl-positive: #52b788;
+  --sovl-warning: #d4a548;
+  --sovl-danger: #dc6b63;
+  --sovl-info: #7a9fe0;
+  /* Where funds sit — the liquidity bar's four segments, used consistently app-wide. */
+  --sovl-fund-onchain: #7286a8;
+  --sovl-fund-outbound: #f7931a;
+  --sovl-fund-inbound: #3e9e98;
+  --sovl-fund-locked: #4a5466;
+  --sovl-radius: 12px;
   --sovl-radius-sm: 8px;
+  --sovl-radius-xs: 6px;
   --sovl-font:
-    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --sovl-mono:
-    ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+    'IBM Plex Mono', ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  /* Type scale (major third on 14px). */
+  --sovl-text-xs: 12px;
+  --sovl-text-sm: 13px;
+  --sovl-text-md: 14px;
+  --sovl-text-lg: 17px;
+  --sovl-text-xl: 22px;
+  --sovl-text-2xl: 28px;
+  --sovl-text-3xl: 36px;
+  /* Spacing: 4px base. */
+  --sovl-space-1: 4px;
+  --sovl-space-2: 8px;
+  --sovl-space-3: 12px;
+  --sovl-space-4: 16px;
+  --sovl-space-5: 24px;
+  --sovl-space-6: 32px;
+  --sovl-space-7: 48px;
 }
 
 .sovl-root {
   background: var(--sovl-bg);
   color: var(--sovl-text);
   font-family: var(--sovl-font);
-  font-size: 15px;
+  font-size: var(--sovl-text-md);
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -48,10 +78,8 @@
 
 .sovl-card-title {
   margin: 0 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--sovl-text-sm);
+  font-weight: 500;
   color: var(--sovl-text-secondary);
 }
 

@@ -15,6 +15,8 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { BridgeRequestError, sessionJsonReplacer, type LitdBridgeSession } from './session.js';
 import { mapPaymentView } from '../state-mappings.js';
+import { NO_ROUTE, routeSubServers } from './subserver-routes.js';
+import type { SubServerHub } from './subservers.js';
 
 const MAX_BODY_BYTES = 1 << 20; // 1 MiB — requests are small JSON documents.
 
@@ -23,6 +25,8 @@ export interface BridgeServerOptions {
   /** Per-launch random token from the bootstrap file. */
   readonly token: string;
   readonly onLog?: (line: string) => void;
+  /** Loop / Pool / Taproot Assets / litd status routes (absent → those paths 404). */
+  readonly subServers?: SubServerHub;
 }
 
 type Json = Record<string, unknown>;
@@ -384,6 +388,14 @@ export function createLitdBridgeServer(options: BridgeServerOptions): Server {
       const body = await post();
       sendJson(res, 200, await session.restoreChannelBackups(requireString(body, 'backupHex')));
       return;
+    }
+
+    if (options.subServers !== undefined) {
+      const out = await routeSubServers(options.subServers, method, path, post);
+      if (out !== NO_ROUTE) {
+        sendJson(res, 200, out);
+        return;
+      }
     }
 
     throw new BridgeRequestError(404, `no route for ${method} ${path}`);

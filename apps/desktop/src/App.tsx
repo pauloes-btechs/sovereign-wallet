@@ -124,19 +124,15 @@ export function App() {
   const bootstrap = useGatewayBootstrap(config, phase);
 
   if (isModeB) {
+    // Full-window layout: optional demo banner, then the node app (its own
+    // setup/unlock frames, or the platform shell once the node is ready).
     return (
-      <main
-        style={{
-          background: '#0d0d10',
-          color: '#e8e8ea',
-          minHeight: '100vh',
-          fontFamily: 'system-ui',
-        }}
-      >
+      <div className="p-app-root" style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0b0d12', color: '#f5f7fa' }}>
         {DEMO_REPLAY ? <DemoBanner meta={demoFixture?.meta ?? null} /> : null}
-        <h1 style={{ textAlign: 'center', paddingTop: 16, margin: 0 }}>Sovereign Wallet — Node mode</h1>
-        <ModeBApp />
-      </main>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          <ModeBApp />
+        </div>
+      </div>
     );
   }
 

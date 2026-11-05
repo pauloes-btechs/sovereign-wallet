@@ -73,6 +73,8 @@ export interface ExecuteLoopOutOptions {
   maxSwapFeeSat?: number;
   maxMinerFeeSat?: number;
   sweepConfTarget?: number;
+  outgoingChanIds?: readonly string[];
+  label?: string;
 }
 
 export interface ExecuteLoopInOptions {
@@ -80,6 +82,7 @@ export interface ExecuteLoopInOptions {
   maxSwapFeeSat?: number;
   maxMinerFeeSat?: number;
   lastHopPubkeyHex?: string;
+  label?: string;
 }
 
 /** Margin applied to quoted fees when deriving execution bounds. */
@@ -235,6 +238,8 @@ export class LiquidityManager {
       maxSwapFeeSat,
       maxMinerFeeSat,
       sweepConfTarget: opts.sweepConfTarget,
+      outgoingChanIds: opts.outgoingChanIds,
+      label: opts.label,
     });
     this.manualSwapIds.add(swapId);
     await this.journal.append(this.entry('manual-swap', `Loop Out of ${opts.amountSat} sats initiated`, {
@@ -262,6 +267,7 @@ export class LiquidityManager {
       maxSwapFeeSat,
       maxMinerFeeSat,
       lastHopPubkeyHex: opts.lastHopPubkeyHex,
+      label: opts.label,
     });
     this.manualSwapIds.add(swapId);
     await this.journal.append(this.entry('manual-swap', `Loop In of ${opts.amountSat} sats initiated`, {

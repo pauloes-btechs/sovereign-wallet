@@ -219,6 +219,12 @@ export class BridgeClient {
     return (await response.json()) as T;
   }
 
+  /** Typed escape hatch for bridge routes without a dedicated method
+   * (the platform API in src/platform/api.ts builds on this). */
+  request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+    return this.call<T>(method, path, body);
+  }
+
   state(): Promise<BridgeStateView> {
     return this.call<BridgeStateView>('GET', '/state');
   }

@@ -36,6 +36,9 @@ export {
 } from './generated/lit-sessions';
 export { MacaroonPermission as LitMacaroonPermission } from './generated/lit-sessions';
 export * from './generated/lit-sessions.client';
+// litrpc.Status: sub-server health (namespaced; generic message names).
+export * as litStatus from './generated/lit-status';
+export * as litStatusClient from './generated/lit-status.client';
 // routerrpc (LND v0.21.5-beta.rc1): payment dispatch (SendPaymentV2 etc.).
 // Its types collide with lnrpc's on several names (Payment, SendPayment…),
 // so the type surface is explicit — only the Router service client and the

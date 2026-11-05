@@ -27,6 +27,8 @@ const protoFiles = [
   'router.proto',
   'faraday.proto',
   'lit-sessions.proto',
+  // litrpc.Status (since litd v0.11): per-sub-server running/disabled/error.
+  'lit-status.proto',
   // tapd v0.8.6 (bundled in litd v0.17.8): tapcommon is the shared-types
   // import of taprootassets; mint.proto is the mintrpc.Mint service (imports
   // taprootassets.proto — upstream paths are same-dir, flat layout resolves).

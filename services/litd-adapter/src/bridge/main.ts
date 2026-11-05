@@ -25,6 +25,9 @@ import { buildLitdConfig, pickFreeLoopbackPort, type LitdBackendOptions, type Li
 import { launchLitdSidecar, type LaunchedLitd } from '../launcher.js';
 import { LitdBridgeSession, createRealBridgeDeps } from './session.js';
 import { createLitdBridgeServer } from './server.js';
+import { planSubServers } from './subserver-config.js';
+import { SubServerHub } from './subservers.js';
+import { connectionOptionsFromConfig, createLightningClient } from '../client.js';
 
 interface BridgeArgs {
   readonly dataDir: string;
@@ -37,6 +40,11 @@ interface BridgeArgs {
   readonly launch: boolean;
   readonly assumeRunning: boolean;
   readonly bootstrapPath?: string;
+  /** Loop swap server host:port (regtest default: offline). */
+  readonly loopServer?: string;
+  /** Pool auctioneer host:port (regtest default: offline). */
+  readonly poolServer?: string;
+  readonly subServerArgs: readonly string[];
 }
 
 function fail(message: string): never {
@@ -64,6 +72,9 @@ function parseArgs(argv: readonly string[]): BridgeArgs {
   let bitcoindRpcPass = '';
   let bitcoindZmqBlock = '';
   let bitcoindZmqTx = '';
+  let loopServer: string | undefined;
+  let poolServer: string | undefined;
+  const subServerArgs: string[] = [];
 
   for (const arg of argv) {
     const [rawKey, ...rest] = arg.replace(/^--/, '').split('=');
@@ -101,6 +112,11 @@ function parseArgs(argv: readonly string[]): BridgeArgs {
       case 'bitcoindRpcPass': bitcoindRpcPass = value; break;
       case 'bitcoindZmqBlock': bitcoindZmqBlock = value; break;
       case 'bitcoindZmqTx': bitcoindZmqTx = value; break;
+      case 'loopServer': loopServer = value; break;
+      case 'poolServer': poolServer = value; break;
+      // Raw `loop.`/`pool.` lines (e.g. loop.server.notls=true for a local regtest
+      // swap server); buildLitdConfig validates the prefix.
+      case 'subServerArg': subServerArgs.push(value); break;
       default:
         break;
     }
@@ -139,7 +155,10 @@ function parseArgs(argv: readonly string[]): BridgeArgs {
   if (backend.kind === 'bitcoind-rpc' && (backend.rpcPass === '' || backend.zmqRawBlock === '' || backend.zmqRawTx === '')) {
     fail('bitcoind-rpc requires --bitcoindRpcHost/User/Pass and ZMQ endpoints');
   }
-  return { dataDir, network, bridgePort, rpcPort, uiPort, backend, litdBinary, launch, assumeRunning, bootstrapPath };
+  return {
+    dataDir, network, bridgePort, rpcPort, uiPort, backend, litdBinary, launch, assumeRunning, bootstrapPath,
+    loopServer, poolServer, subServerArgs,
+  };
 }
 
 async function main(): Promise<void> {
@@ -150,25 +169,32 @@ async function main(): Promise<void> {
   const bridgePort = args.bridgePort ?? (await pickFreeLoopbackPort());
 
   let launched: LaunchedLitd | undefined;
-  const config = buildLitdConfig({
+  // Loop + Pool started in integrated mode with their data inside dataDir;
+  // regtest operators stay offline unless configured (subserver-config.ts).
+  const plan = planSubServers(args.network, args.dataDir, {
+    loopServer: args.loopServer,
+    poolServer: args.poolServer,
+    extra: args.subServerArgs,
+  });
+  const litdOptions = {
     network: args.network,
     dataDir: args.dataDir,
     backend: args.backend,
     rpcPort: args.rpcPort,
     uiPort: args.uiPort,
-  });
+    // The one credential litd accepts for every sub-server (Loop, Pool,
+    // tapd, Faraday, Status). LND's admin macaroon is rejected there with
+    // "signature mismatch after caveat verification".
+    superMacaroon: { bake: 'read-write' as const },
+    extraSubServerArgs: plan.extraSubServerArgs,
+  };
+  const config = buildLitdConfig(litdOptions);
 
   if (args.launch) {
     log(`launching litd sidecar (network: ${args.network})`);
     launched = await launchLitdSidecar({
       binaryPath: args.litdBinary ?? 'litd',
-      options: {
-        network: args.network,
-        dataDir: args.dataDir,
-        backend: args.backend,
-        rpcPort: args.rpcPort,
-        uiPort: args.uiPort,
-      },
+      options: litdOptions,
       onLog: log,
     });
   } else {
@@ -176,6 +202,14 @@ async function main(): Promise<void> {
   }
 
   const resolvedConfig = launched?.config ?? config;
+  // litd's integrated mux: the httpslisten port with litd's OWN TLS cert —
+  // where litd serves every sub-server (resolved for integrated mode).
+  const litdMux = {
+    rpcHost: '127.0.0.1',
+    rpcPort: resolvedConfig.tapd?.rpcPort ?? args.uiPort ?? 8443,
+    tlsCertPath: resolvedConfig.tapd?.tlsCertPath ?? `${resolvedConfig.litDir}/tls.cert`,
+  };
+  const superMacaroonPath = resolvedConfig.superMacaroonPath ?? `${resolvedConfig.litDir}/super.macaroon`;
 
   const session = new LitdBridgeSession(
     await createRealBridgeDeps({
@@ -186,14 +220,24 @@ async function main(): Promise<void> {
         macaroonPath: resolvedConfig.adminMacaroonPath,
       },
       faraday: {
-        rpcPort: resolvedConfig.rpcPort,
-        tlsCertPath: resolvedConfig.tlsCertPath,
+        rpcPort: litdMux.rpcPort,
+        tlsCertPath: litdMux.tlsCertPath,
         macaroonGlobDir: path.dirname(resolvedConfig.adminMacaroonPath),
+        macaroonPath: superMacaroonPath,
       },
     }),
   );
 
-  const server = createLitdBridgeServer({ session, token, onLog: log });
+  const subServers = new SubServerHub({
+    network: args.network,
+    litdEndpoint: litdMux,
+    superMacaroonPath,
+    plan,
+    lightning: () => createLightningClient(connectionOptionsFromConfig(resolvedConfig)),
+    onLog: log,
+  });
+
+  const server = createLitdBridgeServer({ session, token, onLog: log, subServers });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(bridgePort, '127.0.0.1', () => resolve());

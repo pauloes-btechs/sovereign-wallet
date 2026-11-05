@@ -285,10 +285,10 @@ export function buildLitdConfig(options: LitdSidecarOptions): ResolvedLitdConfig
   }
 
   for (const extra of options.extraSubServerArgs ?? []) {
-    const modeGate = /^loop-mode=|^pool-mode=/.test(extra);
-    if (!modeGate && !extra.startsWith('loop.') && !extra.startsWith('pool.')) {
+    const modeGate = /^(loop|pool|faraday)-mode=/.test(extra);
+    if (!modeGate && !/^(loop|pool|faraday)\./.test(extra)) {
       throw new Error(
-        `extraSubServerArgs entries must be prefixed with "loop.", "pool.", "loop-mode=", or "pool-mode=" (got: ${extra})`,
+        `extraSubServerArgs entries must be prefixed with "loop.", "pool.", "faraday.", or a "<loop|pool|faraday>-mode=" gate (got: ${extra})`,
       );
     }
     publicLines.push(extra);

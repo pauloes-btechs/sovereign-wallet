@@ -122,7 +122,16 @@ export function probeRpcReady(
 /** Errors that prove a service is REGISTERED and legitimately refusing —
  * positive evidence the RPC surface is up (used by waitForServices to
  * distinguish "not started yet" from "up but rejecting this call"). */
-const SERVICE_UP_EVIDENCE = /already unlocked|wallet locked/i;
+// "wallet already exists" is the Unlocker's GenSeed answer on every launch
+// after the first: without it here, relaunching on an existing wallet timed
+// out after 60s ("litd RPC services not serving … wallet already exists")
+// and the advanced wallet could not start a second time (observed).
+const SERVICE_UP_EVIDENCE = /already unlocked|wallet locked|wallet already exists/i;
+
+/** True when a canary error proves the RPC surface is registered and serving. */
+export function isServiceUpEvidence(message: string): boolean {
+  return SERVICE_UP_EVIDENCE.test(message);
+}
 
 /**
  * Wait until litd's RPC services actually serve. The TLS channel accepts
@@ -148,7 +157,7 @@ export async function waitForServices(
       () => 'serving' as const,
       (err: unknown) => {
         lastErr = err instanceof Error ? err.message : String(err);
-        return SERVICE_UP_EVIDENCE.test(lastErr) ? ('serving' as const) : ('starting' as const);
+        return isServiceUpEvidence(lastErr) ? ('serving' as const) : ('starting' as const);
       },
     );
     if (outcome === 'serving') {
