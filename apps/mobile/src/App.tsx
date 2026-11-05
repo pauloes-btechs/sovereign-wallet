@@ -10,7 +10,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { PaymentEngine, InMemoryPaymentIntentStore } from '@sovereign/payments';
 import {
   SDK_PIN,
@@ -18,7 +18,8 @@ import {
   WavelengthProvider,
 } from '@sovereign/wavelength-adapter';
 import type { WavelengthClient } from '@sovereign/wavelength-adapter';
-import { ModeAController } from './flows/modeAController.js';
+import { ModeAController, tabForScreen } from './flows/modeAController.js';
+import type { ModeATab } from './flows/modeAController.js';
 import { ModeBRemoteController } from './flows/modeBRemoteController.js';
 import type { LncRpcPort } from './flows/modeBRemoteController.js';
 import { ModeBRemoteApp } from './ui/modeBScreens.js';
@@ -27,12 +28,27 @@ import {
   OnboardingScreen,
   RestoreScreen,
 } from './ui/onboardingScreens.js';
+import { MobileTabBar, mobilePalette } from './ui/Primitives.js';
 import {
+  ActivityScreen,
   CapabilitiesScreen,
   HomeScreen,
+  MoreScreen,
   ReceiveScreen,
   SendScreen,
 } from './ui/walletScreens.js';
+
+/**
+ * The everyday wallet's primary destinations. Every tab maps onto a screen
+ * backed by the provider: Activity reads the daemon's activity stream, Pay
+ * hosts Send and Receive, More holds status and the capability disclosure.
+ */
+const MODE_A_TABS: ReadonlyArray<{ id: ModeATab; label: string; glyph: string }> = [
+  { id: 'home', label: 'Home', glyph: '⌂' },
+  { id: 'activity', label: 'Activity', glyph: '≡' },
+  { id: 'pay', label: 'Pay', glyph: '⇅' },
+  { id: 'more', label: 'More', glyph: '⋯' },
+];
 
 export interface ModeAAppPorts {
   /** A CONNECTED Wavelength client (native bindings or the harness simulator). */
@@ -78,23 +94,43 @@ export function ModeAApp(ports: ModeAAppPorts): ReactNode {
     };
   }, [controller]);
 
-  switch (state.screen) {
-    case 'onboarding':
-      return <OnboardingScreen controller={controller} />;
-    case 'backup':
-      return <BackupConfirmationScreen controller={controller} state={state} />;
-    case 'restore':
-      return <RestoreScreen controller={controller} state={state} />;
-    case 'send':
-      return <SendScreen controller={controller} state={state} />;
-    case 'receive':
-      return <ReceiveScreen controller={controller} state={state} />;
-    case 'capabilities':
-      return <CapabilitiesScreen controller={controller} />;
-    case 'home':
-      return <HomeScreen controller={controller} state={state} network={ports.network} />;
-  }
+  const screen = ((): ReactNode => {
+    switch (state.screen) {
+      case 'onboarding':
+        return <OnboardingScreen controller={controller} />;
+      case 'backup':
+        return <BackupConfirmationScreen controller={controller} state={state} />;
+      case 'restore':
+        return <RestoreScreen controller={controller} state={state} />;
+      case 'send':
+        return <SendScreen controller={controller} state={state} />;
+      case 'receive':
+        return <ReceiveScreen controller={controller} state={state} />;
+      case 'activity':
+        return <ActivityScreen controller={controller} state={state} />;
+      case 'more':
+        return <MoreScreen controller={controller} state={state} network={ports.network} />;
+      case 'capabilities':
+        return <CapabilitiesScreen controller={controller} />;
+      case 'home':
+        return <HomeScreen controller={controller} state={state} network={ports.network} />;
+    }
+  })();
+  const tab = tabForScreen(state.screen);
+
+  return (
+    <View style={shellStyles.shell}>
+      {screen}
+      {tab !== null && (
+        <MobileTabBar tabs={MODE_A_TABS} activeId={tab} onChange={(id) => controller.selectTab(id)} />
+      )}
+    </View>
+  );
 }
+
+const shellStyles = StyleSheet.create({
+  shell: { flex: 1, backgroundColor: mobilePalette.bg },
+});
 
 /**
  * Native entry (registered in index.js). The native shell injects a resolver

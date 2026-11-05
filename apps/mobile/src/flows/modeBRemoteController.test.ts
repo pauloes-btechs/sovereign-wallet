@@ -276,6 +276,18 @@ describe('ModeBRemoteController receive + revocation', () => {
     expect(addSpy).not.toHaveBeenCalled();
   });
 
+  it('says what is missing for an invalid amount and surfaces a node error', async () => {
+    controller.editInvoiceAmount('abc');
+    await controller.createInvoice();
+    expect(controller.getState().invoiceError).toMatch(/whole number of sats/);
+    controller.editInvoiceAmount('1200');
+    expect(controller.getState().invoiceError).toBeNull();
+
+    vi.spyOn(port, 'addInvoice').mockRejectedValueOnce(new Error('permission denied: invoices:write'));
+    await expect(controller.createInvoice()).rejects.toThrow('permission denied');
+    expect(controller.getState().invoiceError).toBe('permission denied: invoices:write');
+  });
+
   it('moves to the revoked screen when the port reports a revoked session', async () => {
     const disconnectSpy = vi.spyOn(port, 'disconnect');
     port.emit({ type: 'revoked' });

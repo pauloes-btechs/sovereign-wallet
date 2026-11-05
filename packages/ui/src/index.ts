@@ -12,6 +12,7 @@
 
 export * from './copy.js';
 export * from './totals.js';
+export * from './tokens.js';
 export * from './Amount.js';
 export * from './Badge.js';
 export * from './Button.js';

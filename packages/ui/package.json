@@ -20,6 +20,10 @@
       "types": "./dist/totals.d.ts",
       "default": "./dist/totals.js"
     },
+    "./tokens": {
+      "types": "./dist/tokens.d.ts",
+      "default": "./dist/tokens.js"
+    },
     "./styles.css": "./src/styles.css"
   },
   "files": ["dist"],

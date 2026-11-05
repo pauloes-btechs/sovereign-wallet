@@ -10,24 +10,57 @@
 
 import { useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import {
   MobileButton,
   MobileButtonGroup,
   MobileErrorNote,
   MobileField,
+  MobileFlowTabs,
   MobileHeader,
   MobileLabelRow,
+  MobilePanel,
+  MobileSats,
   MobileScreen,
+  MobileTabBar,
   MobileWarningBand,
   mobilePalette,
   styles,
 } from './Primitives.js';
-import type { ModeBRemoteController, ModeBRemoteState } from '../flows/modeBRemoteController.js';
+import type {
+  ModeBRemoteController,
+  ModeBRemoteScreen,
+  ModeBRemoteState,
+} from '../flows/modeBRemoteController.js';
 import {
   DESKTOP_ONLY_DISCLOSURE,
   isDesktopOnly,
 } from '../flows/modeBRemoteController.js';
+
+type ModeBTab = 'home' | 'pay' | 'more';
+
+/** Remote-node destinations. No Activity tab: the LNC port reads no payment history yet. */
+const MODE_B_TABS: ReadonlyArray<{ id: ModeBTab; label: string; glyph: string }> = [
+  { id: 'home', label: 'Home', glyph: '⌂' },
+  { id: 'pay', label: 'Pay', glyph: '⇅' },
+  { id: 'more', label: 'More', glyph: '⋯' },
+];
+
+function tabFor(screen: ModeBRemoteScreen): ModeBTab | null {
+  switch (screen) {
+    case 'home':
+      return 'home';
+    case 'send':
+    case 'receive':
+      return 'pay';
+    case 'more':
+      return 'more';
+    case 'pairing':
+    case 'connecting':
+    case 'revoked':
+      return null;
+  }
+}
 
 /** Full Mode B mobile tree — the host supplies a connected-capable port. */
 export function ModeBRemoteApp({
@@ -38,6 +71,31 @@ export function ModeBRemoteApp({
   network: string;
 }): ReactNode {
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
+  const tab = tabFor(state.screen);
+  const selectTab = (next: ModeBTab): void => {
+    if (next === 'pay') {
+      if (tab !== 'pay') controller.navigate('send');
+      return;
+    }
+    controller.navigate(next);
+  };
+  return (
+    <View style={shell.shell}>
+      <ModeBScreenBody controller={controller} state={state} network={network} />
+      {tab !== null && <MobileTabBar tabs={MODE_B_TABS} activeId={tab} onChange={selectTab} />}
+    </View>
+  );
+}
+
+function ModeBScreenBody({
+  controller,
+  state,
+  network,
+}: {
+  controller: ModeBRemoteController;
+  state: ModeBRemoteState;
+  network: string;
+}): ReactNode {
   switch (state.screen) {
     case 'pairing':
       return <PairingScreen controller={controller} state={state} />;
@@ -56,6 +114,8 @@ export function ModeBRemoteApp({
       return <ModeBSendScreen controller={controller} state={state} />;
     case 'receive':
       return <ModeBReceiveScreen controller={controller} state={state} />;
+    case 'more':
+      return <ModeBMoreScreen state={state} network={network} />;
     case 'revoked':
       return (
         <MobileScreen>
@@ -109,7 +169,7 @@ function PairingScreen({
         <MobileButton
           label={state.busy ? 'Connecting…' : 'Connect'}
           kind={state.phraseValidation === 'ok' ? 'primary' : 'secondary'}
-          disabled={state.busy}
+          busy={state.busy}
           onPress={() => {
             void controller.pair().catch(() => undefined);
           }}
@@ -135,37 +195,60 @@ function ModeBHomeScreen({
 }): ReactNode {
   const { node, balances } = state;
   const caps = controller.capabilities();
+  const activeChannels = balances?.channels.filter((c) => c.active).length ?? 0;
   return (
     <MobileScreen>
-      <MobileHeader title="Node wallet" />
-      {node !== null && (
-        <View>
-          <MobileLabelRow label="Node" value={node.alias} />
-          <MobileLabelRow label="Lightning" value="Channels (your node)" />
-        </View>
-      )}
+      <MobileHeader
+        title="Node wallet"
+        subtitle={node !== null ? `${network} · ${node.alias}` : network}
+      />
       {balances !== null ? (
-        <View>
-          <MobileLabelRow
-            label="Lightning-spendable"
-            value={`${balances.lightningSpendableSat} sat`}
+        <MobilePanel title="Balances on your node">
+          <MobileSats
+            label="Lightning (spendable)"
+            sats={balances.lightningSpendableSat}
+            swatch={mobilePalette.fundOutbound}
           />
-          <MobileLabelRow
+          <MobileSats
             label="On-chain (node wallet)"
-            value={`${balances.onchainConfirmedSat} sat`}
+            sats={balances.onchainConfirmedSat}
+            swatch={mobilePalette.fundOnchain}
           />
-        </View>
+          <Text style={styles.faint}>
+            {balances.channels.length === 0
+              ? 'No channels'
+              : `${balances.channels.length} channel${balances.channels.length === 1 ? '' : 's'}, ${activeChannels} active`}
+          </Text>
+        </MobilePanel>
       ) : (
         <Text style={styles.dim}>Loading balances…</Text>
       )}
-      <MobileWarningBand>{caps.note}</MobileWarningBand>
-      <MobileWarningBand tone="warning">{DESKTOP_ONLY_DISCLOSURE}</MobileWarningBand>
-      <MobileButtonGroup>
+      <MobileButtonGroup row>
         <MobileButton label="Send" onPress={() => controller.navigate('send')} />
         <MobileButton label="Receive" onPress={() => controller.navigate('receive')} />
       </MobileButtonGroup>
-      <Text style={[styles.dim, { color: mobilePalette.textDim }]}>network: {network}</Text>
+      <MobileWarningBand>{caps.note}</MobileWarningBand>
+      <MobileWarningBand tone="warning">{DESKTOP_ONLY_DISCLOSURE}</MobileWarningBand>
     </MobileScreen>
+  );
+}
+
+function PaySwitch({
+  controller,
+  active,
+}: {
+  controller: ModeBRemoteController;
+  active: 'send' | 'receive';
+}): ReactNode {
+  return (
+    <MobileFlowTabs
+      tabs={[
+        { id: 'send', label: 'Send' },
+        { id: 'receive', label: 'Receive' },
+      ]}
+      activeId={active}
+      onChange={(id) => controller.navigate(id === 'receive' ? 'receive' : 'send')}
+    />
   );
 }
 
@@ -181,9 +264,12 @@ function ModeBSendScreen({
   controller: ModeBRemoteController;
   state: ModeBRemoteState;
 }): ReactNode {
+  const empty = state.sendBolt11Text.trim().length === 0;
+  const sending = state.sendStatus === 'sending';
   return (
     <MobileScreen>
-      <MobileHeader title="Send" />
+      <MobileHeader title="Pay" />
+      <PaySwitch controller={controller} active="send" />
       {!state.foregrounded && (
         <MobileWarningBand tone="warning">
           The app is in the background — reopen it to make payments.
@@ -194,19 +280,26 @@ function ModeBSendScreen({
         value={state.sendBolt11Text}
         onChangeText={(text) => controller.editSendDestination(text)}
         placeholder="lnbc…"
+        multiline
       />
       <MobileErrorNote error={state.sendError} />
-      <MobileButtonGroup>
-        <MobileButton
-          label={state.sendStatus === 'sending' ? 'Paying…' : 'Pay'}
-          kind="primary"
-          disabled={!state.foregrounded || state.sendStatus === 'sending'}
-          onPress={() => {
-            void controller.send().catch(() => undefined);
-          }}
-        />
-        <MobileButton label="Back" kind="secondary" onPress={() => controller.navigate('home')} />
-      </MobileButtonGroup>
+      {state.sendStatus === 'settled' && (
+        <MobileWarningBand tone="positive">Payment sent.</MobileWarningBand>
+      )}
+      <MobileButton
+        label={sending ? 'Paying…' : 'Pay invoice'}
+        kind="primary"
+        disabled={!state.foregrounded || empty}
+        busy={sending}
+        onPress={() => {
+          void controller.send().catch(() => undefined);
+        }}
+      />
+      {empty && <Text style={styles.faint}>Paste an invoice to pay it from your node.</Text>}
+      <Text style={styles.faint}>
+        Your node pays the invoice and picks the route; its routing fee is not quoted here
+        beforehand.
+      </Text>
     </MobileScreen>
   );
 }
@@ -218,33 +311,78 @@ function ModeBReceiveScreen({
   controller: ModeBRemoteController;
   state: ModeBRemoteState;
 }): ReactNode {
+  const amountReady = /^\d+$/.test(state.invoiceAmountText.trim());
   return (
     <MobileScreen>
-      <MobileHeader title="Receive" />
+      <MobileHeader title="Pay" />
+      <PaySwitch controller={controller} active="receive" />
       <MobileField
         label="Amount (sats)"
         value={state.invoiceAmountText}
         onChangeText={(text) => controller.editInvoiceAmount(text)}
         placeholder="1000"
       />
-      <MobileButtonGroup>
-        <MobileButton
-          label="Create invoice"
-          kind="primary"
-          onPress={() => {
-            void controller.createInvoice().catch(() => undefined);
-          }}
-        />
-        <MobileButton label="Back" kind="secondary" onPress={() => controller.navigate('home')} />
-      </MobileButtonGroup>
+      <MobileButton
+        label="Create invoice"
+        kind="primary"
+        disabled={!amountReady}
+        onPress={() => {
+          void controller.createInvoice().catch(() => undefined);
+        }}
+      />
+      {!amountReady && (
+        <Text style={styles.faint}>Enter a whole number of sats to create an invoice.</Text>
+      )}
+      <MobileErrorNote error={state.invoiceError} />
       {state.invoice !== null && (
-        <View>
+        <MobilePanel>
           <MobileLabelRow label="Invoice" value={state.invoice} />
-        </View>
+        </MobilePanel>
       )}
     </MobileScreen>
   );
 }
+
+/** Node identity as the node reports it, and what this app leaves to desktop. */
+function ModeBMoreScreen({
+  state,
+  network,
+}: {
+  state: ModeBRemoteState;
+  network: string;
+}): ReactNode {
+  const { node } = state;
+  return (
+    <MobileScreen>
+      <MobileHeader title="More" />
+      <MobilePanel title="Your node">
+        <MobileLabelRow label="Connection" value="Lightning Node Connect" mono={false} />
+        <MobileLabelRow label="Network" value={network} mono={false} />
+        {node !== null ? (
+          <>
+            <MobileLabelRow label="Alias" value={node.alias} mono={false} />
+            <MobileLabelRow label="Version" value={node.version} />
+            <MobileLabelRow label="Block height" value={String(node.blockHeight)} />
+            <MobileLabelRow label="Identity key" value={node.identityPubkey} />
+          </>
+        ) : (
+          <Text style={styles.dim}>Node details load after pairing.</Text>
+        )}
+      </MobilePanel>
+      <MobileWarningBand tone="warning">{DESKTOP_ONLY_DISCLOSURE}</MobileWarningBand>
+      <MobilePanel title="Not in this app yet">
+        <Text style={styles.dim}>
+          Payment history, channel management and liquidity tools (Loop, Pool) are not read
+          over this connection. Use the desktop app connected to the same node.
+        </Text>
+      </MobilePanel>
+    </MobileScreen>
+  );
+}
+
+const shell = StyleSheet.create({
+  shell: { flex: 1, backgroundColor: mobilePalette.bg },
+});
 
 // Re-export for the host shell: mobile renders channel ops as desktop-only.
 export { isDesktopOnly };
