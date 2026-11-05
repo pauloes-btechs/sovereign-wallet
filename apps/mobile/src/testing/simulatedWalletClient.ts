@@ -23,7 +23,23 @@ export const SIM_WORDS: readonly string[] = [
   'abandon', 'abandon', 'abandon', 'abandon', 'abandon', 'about',
 ];
 
+export interface MobileFlowSimulatedClientOptions {
+  /**
+   * Where a fresh wallet's phrase comes from. Tests leave it out and get the
+   * fixed SIM_WORDS (so they can type known words); the web demo passes a
+   * CSPRNG generator so every new wallet shows a different phrase.
+   */
+  readonly freshMnemonic?: () => string[];
+}
+
 export class MobileFlowSimulatedClient extends SimulatedWavelengthClient {
+  private readonly phraseSource: () => string[];
+
+  constructor(options: MobileFlowSimulatedClientOptions = {}) {
+    super();
+    this.phraseSource = options.freshMnemonic ?? (() => [...SIM_WORDS]);
+  }
+
   /** Driver observability: what the wallet layer asked the daemon to do. */
   walletCreated = false;
   restoredFromWords: string[] | null = null;
@@ -37,7 +53,7 @@ export class MobileFlowSimulatedClient extends SimulatedWavelengthClient {
    */
   override async createWallet(req: CreateWalletRequest): Promise<CreateWalletResult> {
     this.walletCreated = true;
-    const mnemonic = req.mnemonic !== undefined && req.mnemonic.length > 0 ? [...req.mnemonic] : [...SIM_WORDS];
+    const mnemonic = req.mnemonic !== undefined && req.mnemonic.length > 0 ? [...req.mnemonic] : this.phraseSource();
     if (req.mnemonic !== undefined && req.mnemonic.length > 0) this.restoredFromWords = [...req.mnemonic];
     this.recoveryRan = req.recoverState ?? false;
     this.recoveredVTXOs = this.recoveryRan ? 3 : 0;
