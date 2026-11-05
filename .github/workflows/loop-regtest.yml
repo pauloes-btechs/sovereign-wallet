@@ -1,0 +1,59 @@
+name: Loop real regtest swaps
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/loop-regtest.yml'
+      - 'scripts/ci/loop-regtest-smoke.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loop-regtest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loop-regtest:
+    name: Real Loop In and Loop Out (isolated regtest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y jq
+          docker compose version
+      - name: Fetch pinned upstream Loop regtest environment
+        run: |
+          git clone https://github.com/lightninglabs/loop.git /tmp/loop-upstream
+          git -C /tmp/loop-upstream checkout b98b65c9109856df4a9ff8916aee0344ee2d6278
+          # Upstream's helper uses docker exec -ti; Actions has no TTY.
+          sed -i 's/docker exec -ti /docker exec -i /g' /tmp/loop-upstream/regtest/regtest.sh
+      - name: Preflight swap server image
+        run: docker pull lightninglabs/loopserver:latest
+      - name: Start real Loop regtest and verify settlements
+        run: bash scripts/ci/loop-regtest-smoke.sh /tmp/loop-upstream/regtest
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          mkdir -p loop-ci-logs
+          if [ -f /tmp/loop-upstream/regtest/docker-compose.yml ]; then
+            docker compose -p regtest -f /tmp/loop-upstream/regtest/docker-compose.yml ps > loop-ci-logs/compose-ps.txt 2>&1 || true
+            docker compose -p regtest -f /tmp/loop-upstream/regtest/docker-compose.yml logs --no-color --tail=250 > loop-ci-logs/compose-logs.txt 2>&1 || true
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: loop-regtest-diagnostics
+          path: loop-ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Tear down disposable regtest environment
+        if: always()
+        run: |
+          if [ -f /tmp/loop-upstream/regtest/docker-compose.yml ]; then
+            docker compose -p regtest -f /tmp/loop-upstream/regtest/docker-compose.yml down -v --remove-orphans || true
+          fi
