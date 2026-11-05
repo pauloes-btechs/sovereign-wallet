@@ -55,13 +55,24 @@ export async function poll<T>(
   }
 }
 
-/** Waits until a LightningClient answers GetInfo (service registered). */
+/** Waits until a LightningClient is fully serving: GetInfo answers and a non-whitelisted call succeeds. */
 export async function waitNodeReady(client: LightningClient, what: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   await poll(
     async () => client.getInfo(GetInfoRequest.create({})).response,
     (info) => info.identityPubkey.length > 0,
     `${what} GetInfo to answer`,
     timeoutMs,
+  );
+  // GetInfo is whitelisted: lnd answers it before its RPC server finishes
+  // starting, and a non-whitelisted call in that window fails with "waiting
+  // to start, RPC services not available" (seen in CI on NewAddress right
+  // after a fresh init). Ready means a non-whitelisted call succeeds too.
+  await poll(
+    async () => (await client.walletBalance(WalletBalanceRequest.create({})).response).confirmedBalance,
+    () => true,
+    `${what} full RPC service (WalletBalance)`,
+    Math.max(1_000, deadline - Date.now()),
   );
 }
 
