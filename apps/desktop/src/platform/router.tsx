@@ -3,7 +3,7 @@
  * Hash routing keeps deep links working inside the Tauri webview and under
  * the hosted demo's /desktop/ base without server rewrites.
  */
-import { lazy, useEffect, useState, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react';
+import { lazy, useEffect, useState, type AnchorHTMLAttributes, type ComponentType, type LazyExoticComponent, type ReactNode } from 'react';
 
 export type ServiceName = 'loop' | 'pool' | 'taproot-assets' | 'faraday';
 
@@ -86,7 +86,7 @@ export function matchRoute(path: string): RouteDef {
   return best ?? (ROUTES[0] as RouteDef);
 }
 
-export function Link({ to, children, className, ...rest }: { to: string; children: ReactNode; className?: string } & Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, 'href'>) {
+export function Link({ to, children, className, ...rest }: { to: string; children: ReactNode; className?: string } & Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'>) {
   return (
     <a href={`#${to}`} className={className} {...rest}>
       {children}

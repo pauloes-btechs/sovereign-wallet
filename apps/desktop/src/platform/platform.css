@@ -650,6 +650,10 @@ kbd {
   white-space: nowrap;
 }
 
+.p-table th.p-num {
+  text-align: right;
+}
+
 /* ——— forms ——— */
 
 .p-field {
