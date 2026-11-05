@@ -1,56 +1,47 @@
 #!/usr/bin/env bash
-# Real settlement smoke test using upstream Loop regtest and regtest-only
-# Lightning Labs swap server. Regtest only — never real funds.
+# Real swap settlement on regtest against the source-built regtest Loop server
+# (lightninglabs/loop PR #1222). Regtest only — never real funds.
+#
+# 1. Boots upstream's regtest topology (bitcoind, two lnd nodes, swap server,
+#    aperture/L402, loopd) and waits for channels.
+# 2. Checks the swap server answers terms and quotes in both directions.
+# 3. Runs upstream's acceptance script, which performs a real Loop Out, a real
+#    Loop In and a static-address deposit Loop In, mines what each protocol
+#    needs, and fails on any FAILED state.
+# 4. Asserts from loopd's own swap list that each swap type reached success.
 set -Eeuo pipefail
 
 REGTEST_DIR="${1:?usage: loop-regtest-smoke.sh /path/to/loop/regtest}"
 cd "$REGTEST_DIR"
 
 fail() { echo "::error::$*" >&2; exit 1; }
-loop() { docker exec -i loopclient loop --network regtest "$@"; }
+loop() { ./regtest.sh loop "$@"; }
 
 echo "::group::Bootstrap upstream Loop regtest environment"
-timeout 20m bash ./regtest.sh start || fail "Upstream regtest setup failed"
+timeout 25m ./regtest.sh start || fail "Upstream regtest setup failed"
 echo "::endgroup::"
 
-echo "::group::Swap server quote checks"
-timeout 90s bash -c 'until docker exec -i loopclient loop --network regtest terms >/dev/null 2>&1; do sleep 3; done' || fail "Loop terms endpoint unavailable"
+echo "::group::Swap server terms and quotes"
+loop terms || fail "Loop terms unavailable"
 loop quote out 500000 || fail "Loop Out quote failed"
 loop quote in 500000 || fail "Loop In quote failed"
 echo "::endgroup::"
 
-wait_for_settlement() {
-  local direction="$1"
-  local attempt listing total succeeded failed
-  for attempt in $(seq 1 55); do
-    listing="$(loop listswaps)" || fail "Cannot read Loop swaps for $direction"
-    total="$(jq --arg direction "$direction" '[.swaps[]? | select(.type == $direction)] | length' <<< "$listing")"
-    succeeded="$(jq --arg direction "$direction" '[.swaps[]? | select(.type == $direction and .state == "SUCCESS")] | length' <<< "$listing")"
-    failed="$(jq --arg direction "$direction" '[.swaps[]? | select(.type == $direction and .state == "FAILED")] | length' <<< "$listing")"
-    echo "$direction poll=$attempt count=$total succeeded=$succeeded failed=$failed"
-    if [[ "$failed" -gt 0 ]]; then
-      echo "$listing" >&2
-      fail "$direction failed"
-    fi
-    if [[ "$total" -eq 1 && "$succeeded" -eq 1 ]]; then
-      echo "$listing" | jq .
-      return 0
-    fi
-    bash ./regtest.sh mine 1 || fail "Unable to mine regtest block"
-    sleep 5
-  done
-  loop listswaps || true
-  fail "$direction did not reach SUCCESS within polling limit"
-}
-
-echo "::group::Real Loop Out"
-loop out --amt 500000 --fast --force || fail "Loop Out initiation failed"
-wait_for_settlement LOOP_OUT
+echo "::group::Real swaps (upstream regtest/e2e.sh)"
+TIMEOUT_SECONDS=300 timeout 25m ./e2e.sh || fail "Upstream swap acceptance failed"
 echo "::endgroup::"
 
-echo "::group::Real Loop In"
-loop in --amt 500000 --force || fail "Loop In initiation failed"
-wait_for_settlement LOOP_IN
+echo "::group::Verify settled swaps"
+listing="$(loop listswaps)" || fail "Cannot read Loop swaps"
+echo "$listing" | jq .
+for t in LOOP_OUT LOOP_IN; do
+  ok="$(jq --arg t "$t" '[.swaps[]? | select(.type == $t and .state == "SUCCESS")] | length' <<< "$listing")"
+  [[ "$ok" -ge 1 ]] || fail "No successful $t swap in loopd's swap list"
+done
+static="$(loop static listswaps)" || fail "Cannot read static-address swaps"
+echo "$static" | jq .
+[[ "$(jq '[.swaps[]? | select(.state == "SUCCEEDED")] | length' <<< "$static")" -ge 1 ]] \
+  || fail "No successful static-address Loop In"
 echo "::endgroup::"
 
-echo "Both real Loop swaps reached SUCCESS on regtest."
+echo "Real Loop Out, Loop In and static-address Loop In all settled on regtest."
