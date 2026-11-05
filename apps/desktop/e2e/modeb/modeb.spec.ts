@@ -7,7 +7,8 @@
  *
  * Ordered single-worker flows (one shared wallet, one shared channel):
  * create → on-chain receive/send → channel open → Lightning out/in →
- * diagnostics → SCB export.
+ * diagnostics → SCB export → a tour of every platform route. Navigation is
+ * by hash route (src/platform/router.tsx), the same links the sidebar uses.
  *
  * Regtest only. No mainnet anywhere in this file.
  */
@@ -35,6 +36,7 @@ import {
   waitForRoutable,
   waitForTxInMempool,
 } from '@sovereign/harness-regtest';
+import { matchRoute, ROUTES } from '../../src/platform/router.js';
 import { MODEB_BOOTSTRAP_FILE, type ModeBE2eBootstrap } from './bootstrap-path.js';
 import { attachRecorder } from './recorder.js';
 
@@ -61,27 +63,61 @@ test.beforeEach(({ page }, testInfo) => {
 });
 
 /**
- * Opens the app in dev/e2e mode against the live bridge. The bridge is
- * reached through the vite same-origin proxy (/modeb).
+ * App URL in dev/e2e mode against the live bridge, landing on a hash route
+ * of the platform. The bridge is reached through the vite same-origin
+ * proxy (/modeb).
  */
-function openApp(page: Page): Promise<void> {
+function appUrl(route = '/'): string {
   const params = new URLSearchParams({
     mode: 'b',
     devBridgeUrl: '/modeb',
     devBridgeToken: bootstrap.bridgeToken,
   });
-  return page.goto(`/?${params.toString()}`);
+  return `/?${params.toString()}#${route}`;
 }
 
-/** Navigate by clicking the tab buttons in the Mode B nav. */
-async function gotoTab(page: Page, name: string): Promise<void> {
-  await page.getByRole('button', { name, exact: true }).click();
+/** Loads the app without waiting for a ready wallet (onboarding lands here). */
+async function launchApp(page: Page): Promise<void> {
+  await page.goto(appUrl('/'));
 }
 
 /**
- * Force a dashboard remount (refetch) and read the total balance as a
- * bigint, retrying until the predicate holds — Neutrino sync trails the
- * chain by a few seconds after mining.
+ * Opens the ready wallet on its landing page (the Dashboard, #/) and waits
+ * until the platform is mounted (only happens once the bridge reports a
+ * ready wallet) and the dashboard shows balances loaded from the bridge.
+ */
+async function openApp(page: Page): Promise<void> {
+  await launchApp(page);
+  await expect(page.getByTestId('modeb-ready')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('balance-overview')).toContainText('Total balance', { timeout: 30_000 });
+}
+
+/** Navigate by hash route (what every sidebar / in-page link does). */
+async function gotoRoute(page: Page, route: string): Promise<void> {
+  await page.evaluate((r) => {
+    window.location.hash = r;
+  }, route);
+  await expect.poll(() => page.evaluate(() => window.location.hash)).toBe(`#${route}`);
+}
+
+/** Reads a rendered <Amount> (sats unit, the default) as a bigint, waiting until it has loaded. */
+async function readSats(page: Page, testId: string): Promise<bigint> {
+  let sats = -1n;
+  await expect
+    .poll(async () => {
+      const digits = ((await page.getByTestId(testId).textContent()) ?? '').replace(/[^\d]/g, '');
+      if (digits === '') return false;
+      sats = BigInt(digits);
+      return true;
+    })
+    .toBe(true);
+  return sats;
+}
+
+/**
+ * Force a remount of the on-chain receive view (refetch) and read the total
+ * on-chain balance as a bigint, retrying until the predicate holds —
+ * Neutrino sync trails the chain by a few seconds after mining.
  */
 async function pollTotalBalance(
   page: Page,
@@ -92,8 +128,8 @@ async function pollTotalBalance(
   // (`.satisfies` is a Jest API; chaining it here threw a TypeError in CI.)
   await expect
     .poll(async () => {
-      await gotoTab(page, 'On-chain');
-      await gotoTab(page, 'Overview');
+      await gotoRoute(page, '/receive');
+      await gotoRoute(page, '/receive/onchain');
       const text = await page.getByTestId('balance-total').textContent();
       const digits = (text ?? '').replace(/[^\d]/g, '');
       return digits !== '' && predicate(BigInt(digits));
@@ -102,7 +138,7 @@ async function pollTotalBalance(
 }
 
 test('create → ready: aezeed wallet creation over the real sidecar', async ({ page }) => {
-  await openApp(page);
+  await launchApp(page);
 
   // Fresh sidecar reports phase 'missing' → onboarding choice, verbatim.
   await expect(page.getByRole('heading', { name: 'Advanced node setup' })).toBeVisible();
@@ -118,17 +154,24 @@ test('create → ready: aezeed wallet creation over the real sidecar', async ({ 
   await page.getByLabel('Confirm password').fill('correct horse battery staple');
   await page.getByRole('button', { name: 'Create wallet' }).click();
 
-  // Ready wallet: node health renders from the live sidecar.
+  // Ready wallet: the platform mounts on the Dashboard with live balances…
+  await expect(page.getByTestId('modeb-ready')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('balance-overview')).toContainText('Total balance', { timeout: 30_000 });
+  await capture(page, 'tc-1-wallet-created-dashboard');
+  // …and node health (Node overview) renders from the live sidecar.
+  await gotoRoute(page, '/node');
   await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('node-health')).toContainText(/synced to chain/);
-  await capture(page, 'tc-1-wallet-created-dashboard');
 });
 
 test('on-chain receive: a mined deposit reaches the Neutrino wallet', async ({ page }) => {
   await openApp(page);
-  await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
-  await gotoTab(page, 'On-chain');
+  await gotoRoute(page, '/receive/onchain');
+  // Balances before the deposit: 0 on the fresh e2e wallet, so the checks
+  // below are exactly "total ≥ 50,000,000" and "confirmed shows 50,000,000".
+  const totalBefore = await readSats(page, 'balance-total');
+  const confirmedBefore = await readSats(page, 'balance-confirmed');
   await page.getByRole('button', { name: 'New address' }).click();
   const address = await page.getByTestId('receive-address').textContent();
   expect(address ?? '').toMatch(/^bcrt1/);
@@ -138,35 +181,35 @@ test('on-chain receive: a mined deposit reaches the Neutrino wallet', async ({ p
   await waitForTxInMempool(txid);
   await mineBlocks(1);
 
-  await pollTotalBalance(page, (sats) => sats >= 50_000_000n);
-  await expect(page.getByTestId('balance-confirmed')).toContainText('50,000,000');
+  await pollTotalBalance(page, (sats) => sats >= totalBefore + 50_000_000n);
+  await expect(page.getByTestId('balance-confirmed')).toContainText((confirmedBefore + 50_000_000n).toLocaleString('en-US'));
   await capture(page, 'tc-2-onchain-funded');
 });
 
 test('on-chain send: review → authorize → txid, verified in the mempool', async ({ page }) => {
   await openApp(page);
-  await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
   const dest = await getNewAddress();
 
-  await gotoTab(page, 'On-chain');
+  await gotoRoute(page, '/send/onchain');
   await page.getByLabel('Bitcoin address').fill(dest);
   await page.getByLabel('Amount (sats)').fill('10000000'); // 0.1 BTC = 10M sats (run7: 100000000 sats = 1 BTC > 0.5 BTC balance → lnd correctly refused)
   await page.getByLabel('Fee rate (sat/vbyte)').fill('2');
   await page.getByRole('button', { name: 'Review send' }).click();
   await page.getByRole('button', { name: 'Authorize and send' }).click();
 
-  const txid = await page.getByTestId('send-txid').textContent();
-  expect(txid ?? '').toMatch(/[0-9a-f]{64}/);
+  // send-txid wraps the "Transaction id" field; its <code> holds only the
+  // txid (reading the wrapper's text would glue the label's "id" onto it).
+  const txid = ((await page.getByTestId('send-txid').locator('code').textContent()) ?? '').trim();
+  expect(txid).toMatch(/^[0-9a-f]{64}$/);
   await expect(page.getByTestId('send-error')).toHaveCount(0);
 
-  await waitForTxInMempool((txid ?? '').match(/[0-9a-f]{64}/)![0]);
+  await waitForTxInMempool(txid);
   await mineBlocks(1);
 });
 
 test('channel open: pending (confirming funding) → open after 6 blocks', async ({ page }) => {
   await openApp(page);
-  await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
   // Run 12 pinned: the send test's mineBlocks(1) lands while lnd's Neutrino
   // view is still ~12s behind bitcoind (CI verbatim: funding coin selection
@@ -177,7 +220,7 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
   // second AFTER the funding attempt). Gate the open on confirmed balance
   // covering the funding amount so Neutrino's catch-up can't race the
   // coin selection.
-  await gotoTab(page, 'Overview');
+  await gotoRoute(page, '/receive/onchain');
   await expect
     .poll(async () => {
       const text = await page.getByTestId('balance-confirmed').textContent();
@@ -186,12 +229,12 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
     }, { timeout: 120_000, interval: 5_000 })
     .toBe(true);
 
-  await gotoTab(page, 'Channels');
+  await gotoRoute(page, '/channels');
   await page.getByLabel('Peer node pubkey (66 hex)').fill(bootstrap.peerPubkey);
   await page.getByLabel(/Peer host/).fill(bootstrap.peerHost);
   await page.getByLabel('Funding amount (sats, min 20,000)').fill('15000000'); // 0.15 BTC — under LND's 16,777,215-sat max channel size (run9: 0.2 BTC > cap → "funding amount is too large")
   await page.getByLabel('Fee rate (sat/vbyte)').fill('2');
-  await page.getByRole('button', { name: 'Open channel' }).click();
+  await page.getByRole('button', { name: 'Open channel', exact: true }).click();
 
   await expect(page.getByTestId('channel-opened')).toBeVisible();
 
@@ -210,10 +253,18 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
   }
   await mineBlocks(6);
 
-  await gotoTab(page, 'Overview');
-  await gotoTab(page, 'Channels');
+  // Remount Channels (refetch). The row for THIS channel moves from pending
+  // to open channels with the "Active" state badge (the old tab UI's 'open').
+  await gotoRoute(page, '/');
+  await gotoRoute(page, '/channels');
   await expect(page.getByTestId('open-channels')).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByTestId('open-channels').getByTestId('channel-row').first()).toContainText('open');
+  const openRows = page.getByTestId('open-channels').getByTestId('channel-row');
+  const openedRow =
+    channelPoint !== null && channelPoint !== ''
+      ? openRows.and(page.locator(`[data-channel-point="${channelPoint}"]`))
+      : openRows.first();
+  await expect(openedRow).toContainText('Active', { timeout: 60_000 });
+  await expect(openedRow).toContainText('opened by you');
   // Channel funds appear in the Lightning balance card.
   await expect(page.getByTestId('channel-balance')).toContainText('Spendable');
   await capture(page, 'tc-4-channel-open');
@@ -222,7 +273,6 @@ test('channel open: pending (confirming funding) → open after 6 blocks', async
 test('lightning outbound: decode → review → pay succeeds over the channel', async ({ page }) => {
   test.slow(); // probe + payment ride behind Neutrino's block-filter sync
   await openApp(page);
-  await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
   // Alice requests 2,000,000 sats; our wallet pays her over the fresh channel.
   // Run 12 pinned: with Alice's invoice at 21,000 sats the INBOUND test could
@@ -238,7 +288,7 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
   // Harness nodes are regtest — invoices start lnbcrt (run7 received a valid lnbcrt invoice).
   expect(invoice.paymentRequest).toMatch(/^lnbcrt/);
 
-  await gotoTab(page, 'Lightning');
+  await gotoRoute(page, '/send');
   await page.getByLabel('Invoice (BOLT-11)').fill(invoice.paymentRequest);
   await page.getByRole('button', { name: 'Decode and review' }).click();
 
@@ -252,7 +302,7 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
   await waitForRoutable(sidecar, 2_000_000n, bootstrap.peerPubkey, 60_000);
   await page.getByRole('button', { name: /Pay 2,000,000 sats/ }).click();
 
-  await expect(page.getByTestId('payment-outcome')).toContainText('succeeded', { timeout: 60_000 });
+  await expect(page.getByTestId('payment-outcome')).toContainText('Payment succeeded', { timeout: 60_000 });
   await expect(page.getByTestId('pay-error')).toHaveCount(0);
   await capture(page, 'tc-5-lightning-payment-succeeded');
 });
@@ -260,9 +310,8 @@ test('lightning outbound: decode → review → pay succeeds over the channel', 
 test('lightning inbound: alice pays our invoice through the channel', async ({ page }) => {
   test.slow(); // alice's router needs her side of the channel live too
   await openApp(page);
-  await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
-  await gotoTab(page, 'Lightning');
+  await gotoRoute(page, '/receive');
   await page.getByLabel('Amount (sats — leave empty for a zero-amount invoice)').fill('12000');
   await page.getByRole('button', { name: 'Create invoice' }).click();
   const ourInvoice = await page.getByTestId('invoice-request').textContent();
@@ -305,25 +354,83 @@ test('lightning inbound: alice pays our invoice through the channel', async ({ p
 
 test('diagnostics: node health renders live data; faraday section honest either way', async ({ page }) => {
   await openApp(page);
-  await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
-  await gotoTab(page, 'Node health');
+  // Node overview: node health hero + sync diagnostics + Faraday status.
+  await gotoRoute(page, '/node');
+  await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('node-health')).toContainText(/synced to chain/);
   await expect(page.getByTestId('diagnostics-node')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId('diagnostics-node')).toContainText(/synced to chain/);
   await expect(page.getByTestId('diagnostics-node')).toContainText(/height \d+/);
 
   // Faraday either answers (data) or discloses unavailability — never blank.
   await expect(page.getByTestId('faraday-available').or(page.getByTestId('faraday-unavailable'))).toBeVisible();
-  // Forwarded payments section renders (possibly the honest empty state).
+  // Forwarded payments live on Routing & analytics (possibly the honest empty state).
+  await gotoRoute(page, '/routing');
   await expect(page.getByTestId('forwarding-events').or(page.getByText('No forwarded payments'))).toBeVisible();
 });
 
 test('backups: SCB export offers a multi-channel backup blob', async ({ page }) => {
   await openApp(page);
-  await expect(page.getByTestId('node-health')).toBeVisible({ timeout: 30_000 });
 
-  await gotoTab(page, 'Backups');
+  await gotoRoute(page, '/security');
   await page.getByRole('button', { name: 'Export channel backup' }).click();
   await expect(page.getByTestId('backup-hex')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId('backup-hex')).toContainText(/hex chars/);
+  // The blob is LND's multi-channel backup as hex; its size (the old tab UI's
+  // "N hex chars") is now disclosed as "Exported … · N bytes".
+  const hex = ((await page.getByTestId('backup-hex').textContent()) ?? '').trim();
+  expect(hex).toMatch(/^(?:[0-9a-f]{2})+$/);
+  await expect(page.getByText(`${(hex.length / 2).toLocaleString('en-US')} bytes`)).toBeVisible();
+});
+
+// Sub-views that resolve to a registered route's page (router.tsx: longest
+// prefix wins) and fetch their own data.
+const SUB_PATHS = [
+  '/send/onchain',
+  '/receive/onchain',
+  '/loop/out',
+  '/loop/in',
+  '/loop/static',
+  '/loop/history',
+  '/loop/autoloop',
+  '/pool/buy',
+] as const;
+
+const ASSET_DETAIL_HREF = /^#\/assets\/[0-9a-f]{64}$/;
+
+/** Asserts a platform page mounted, finished loading, and is the page the route registry maps it to. */
+async function expectRouteRendered(page: Page, route: string): Promise<void> {
+  await expect(page, route).toHaveTitle(`${matchRoute(route).title} · Sovereign Wallet`);
+  await expect(page.locator('main#main h1'), route).toBeVisible();
+  // Every page shows Skeletons only until its first bridge answers arrive.
+  await expect(page.locator('main#main .p-skeleton'), `${route} never finished loading`).toHaveCount(0, { timeout: 30_000 });
+}
+
+// Last on purpose: with the recorder on, this pass leaves the end-state
+// answer of every route the UI calls in the recording, so the replayed
+// /desktop/ demo shows every page populated.
+test('platform tour: every route renders from the live bridge', async ({ page }) => {
+  test.slow();
+  const pageErrors: string[] = [];
+  page.on('pageerror', (err) => pageErrors.push(`${page.url()}: ${err.message}`));
+  await openApp(page);
+
+  for (const route of [...ROUTES.map((r) => r.path), ...SUB_PATHS]) {
+    await gotoRoute(page, route);
+    await expectRouteRendered(page, route);
+  }
+
+  // Asset detail: the first Taproot Asset the node holds, if any.
+  await gotoRoute(page, '/assets');
+  await expectRouteRendered(page, '/assets');
+  const hrefs = await page.locator('main#main a[href^="#/assets/"]').evaluateAll((as) => as.map((a) => a.getAttribute('href') ?? ''));
+  const assetHref = hrefs.find((h) => ASSET_DETAIL_HREF.test(h));
+  if (assetHref !== undefined) {
+    const route = assetHref.slice(1);
+    await gotoRoute(page, route);
+    await expectRouteRendered(page, route);
+    await expect(page.locator('main#main')).toContainText(route.slice('/assets/'.length, '/assets/'.length + 8));
+  }
+
+  expect(pageErrors).toEqual([]);
 });

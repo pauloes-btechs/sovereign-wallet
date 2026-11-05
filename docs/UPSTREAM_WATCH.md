@@ -69,7 +69,11 @@ pnpm --filter @sovereign/litd-proto generate && pnpm typecheck        # …and s
 
 The committed fixture was first recorded on 2026-11-02 from real litd v0.17.8
 (LND 0.21.5-beta.rc1) on a local stand-in chain (btcd regtest + a
-standalone LND peer). CI recordings use the docker harness (bitcoind).
+standalone LND peer), and re-recorded on 2026-11-05 on the same stand-in for
+the hash-routed platform UI. The spec's last test tours every route in
+`src/platform/router.tsx` (plus the Send/Receive on-chain, Loop and Pool
+sub-views and an asset detail page), so every page the demo can open has a
+recorded answer. CI recordings use the docker harness (bitcoind).
 
 ## First findings (2026-11-02)
 
