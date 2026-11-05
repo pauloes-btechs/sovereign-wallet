@@ -1,0 +1,832 @@
+{
+  "meta": {
+    "recordedAt": "2026-11-05T19:55:27.141Z",
+    "network": "regtest",
+    "source": "local stand-in: btcd v0.26.2 chain + standalone LND v0.21.5-beta peer; litd launched by the bridge (Neutrino)",
+    "litd": "v0.17.8",
+    "lnd": "0.21.5-beta.rc1 commit=lightning-terminal-v0.17.8",
+    "alias": "03c759634a9bc960e087",
+    "exchanges": 411
+  },
+  "routes": {
+    "GET /assets": {
+      "status": 200,
+      "body": {
+        "assets": [
+          {
+            "amount": "1000",
+            "anchorBlockHeight": 217,
+            "anchorOutpoint": "30f063cca136b41b88ce39a02d91460a4ff08a9165cfcbbbba6e8ee013a38181:1",
+            "assetIdHex": "121053d207a50e28cba4ccfd249b0a5c592cdc6799fbdf0cb32d614b2d114797",
+            "genesisPoint": "dd2fe2a01aef1cf054d64c9cbaeb4c10a4db992b3b123f57f7ee50da9baec946:1",
+            "groupKeyHex": null,
+            "isSpent": false,
+            "metaHashHex": "ac5ec8756b37088ff5fad21083f612635d86273c5d7668a4d97adda3c5c747de",
+            "name": "Demo USD (regtest)",
+            "type": "normal",
+            "version": "v0"
+          },
+          {
+            "amount": "999000",
+            "anchorBlockHeight": 217,
+            "anchorOutpoint": "30f063cca136b41b88ce39a02d91460a4ff08a9165cfcbbbba6e8ee013a38181:0",
+            "assetIdHex": "121053d207a50e28cba4ccfd249b0a5c592cdc6799fbdf0cb32d614b2d114797",
+            "genesisPoint": "dd2fe2a01aef1cf054d64c9cbaeb4c10a4db992b3b123f57f7ee50da9baec946:1",
+            "groupKeyHex": null,
+            "isSpent": false,
+            "metaHashHex": "ac5ec8756b37088ff5fad21083f612635d86273c5d7668a4d97adda3c5c747de",
+            "name": "Demo USD (regtest)",
+            "type": "normal",
+            "version": "v0"
+          }
+        ],
+        "balances": [
+          {
+            "assetIdHex": "121053d207a50e28cba4ccfd249b0a5c592cdc6799fbdf0cb32d614b2d114797",
+            "balance": "1000000",
+            "name": "Demo USD (regtest)",
+            "type": "normal"
+          }
+        ],
+        "universe": {
+          "blockHeight": 242,
+          "network": "regtest",
+          "version": "0.8.6-alpha commit=v0.8.6"
+        }
+      }
+    },
+    "GET /assets/transfers": {
+      "status": 200,
+      "body": {
+        "transfers": [
+          {
+            "anchorTxHeight": 216,
+            "at": 1793906404000,
+            "inputs": 1,
+            "outputs": [
+              {
+                "amount": "999000",
+                "assetIdHex": "121053d207a50e28cba4ccfd249b0a5c592cdc6799fbdf0cb32d614b2d114797"
+              },
+              {
+                "amount": "1000",
+                "assetIdHex": "121053d207a50e28cba4ccfd249b0a5c592cdc6799fbdf0cb32d614b2d114797"
+              }
+            ],
+            "txid": "30f063cca136b41b88ce39a02d91460a4ff08a9165cfcbbbba6e8ee013a38181"
+          }
+        ]
+      }
+    },
+    "GET /channel-backups": {
+      "status": 200,
+      "body": {
+        "multiChanBackupHex": "f06b67fbe547aecc285741ae1e7f0385da13e4fef0ef55171f9c44057e10e3e1c1995f452a8e5db56201e1884ea6da4deae07ea58ee6d37c5a9ce90529650666bbfafc178d2fa55d4b51c88a702e7f54c882fa9c9aa735e760b96e7a64146d5891f3d4cfbc44226f0499154131d0e2dcd110a012cafbbd12d54482a84afa78d0a0942ab63e6532187099fbfceb349d63880f3bf0da915fcef6802c6b320dab4ce0e4cafc3ed696068ea5bd86504233464a13206444139719a463ef81bfebadd0ec77e583eba325ba49d29df64875549b57e9ac0284f62162c85256f102a17f90d5d922e4e3233230940a22e5dca0790d7f2522897581046f6a308e7c04f98cbbf863e0f3b9fe5e0fa43592d5b9fe0978ad32def878e20ec17cfdac53d2942c3dc3eaad461971502ea28985dec91511eec68f479ab2271f6537361d8d4b6eff3dbf8364e4f0f8826d8c48cd8de02da24b12a44b97e9a6216c2db3a151ae75d35ed315f1c2782c9ca3d68258c2b3560f8916a70284952ff048f0b677dd07a32e0b00f24f31d9a36ac975ecaa196a9b9a65720d42e6d7920e629b64fcfe2fa42cc2e6817aa2146257caf584a88e0db705749af7488f740711c2547f025110c11c1aea45d70ba8746c2147ba7706588c88564f5e1920ed9bb306578395bbb6330bb355227941d420fd7f23939dfd6d0751ec05ba9dad259c872c490a8c3876f71558dab85aaf4a06556db7b41d5ecdc02e81079101c70563a9f0fabbbdfb7e8ec251b47803b24b5cfb255674807985a8857991f520ce6f4ae0f43c30b370c93869fec66e89ee6bbd4ef5547b2c8a2980548e5802d7bef897adfb06d6778aaee7a097cd4df3f00c24f10ccb242a521a6c6b731f10ab64ac9203b266e239d6b58c088b7fdd0d8d8e824802959171fdef24ee67c20ceed2c4af3e1bc6d35f1714109a177564c91497eec6356558d6b45a72d1c272a37fc67160455dd808fa21854bbcf9933c42286c658942cd1f1646913521bd919c07c7464da616ab869f2be1a49967e5870345b3301e5679de7c912b665f62a049b2279f391b54d412550592445798025af95639e6d504ebb0fb3aa887d3996f35bee3e9e6b512463974bf0c632e75f399ba42dbb47deda86ab9c1d344b14230cf407323e00b1491ae90652cb48700514d7095320c810019393c35e64ce48d6ae9c62acac5be56c9c7ebe574ab89c73b408c98d89158f462006ed14b55d4836d7670ecc4d6f796542b88b1bb980e6d80b353952549ba8550169d01df4741a4cf50e555caea1e952b23db49b04340a4768cd4b88fc789142651b5a3dabb6befb6a13418c95b1d0abbc091662b642e6c27183bf67879b921854132c58e95f3215e34c9ce2702b1a3904aa3ee69f0bc329c6b6447b0b78721578a7389a108f55863104a3cbb6cacedc52e3c118ebaa6f21ec288430176e4534c2e6d2e9517ee3a95af61b5c507dd78b3c41796d3b5a72c0ad25b2d453e6835f05184242c1ac135f8a3800267c76cd4ddf4423ef4f6f3ae3dc5322b58c7dd8dd2b47a8187a38a49bc579e1f52e9bc1e4eabe5cb101c9898960b333a9a8e07259efcfe3b84deae0fc54bb26eabe0802c8069276e9278a3a0e310b1c73e80589e523951dea08a078fef8d2e016318944d5803d4dc40259c667d804186cc82b93c61f0575c53ef7b109cc1dd72ebb2d1148644a92ca59e5ca7ddc4f4ace778e5c15d2d59afe3dfe8607f3453e66a962db9102bcbb2d51fa3d0833f5bcbd82c46b6109befaca1e5f7559155ce438abec8d3439aca815cff02e676332aff65e51013fdcaa38b4b28399d9c21d3c7162a7511cbed9f847fe003d1bdee1db6a3dc10d4a2a17cc76d39f6cb6d98e35e079aa1ebb46c95d809fb448496bfc046d1bd382013069c9d4f28c67a1a9d25ba6a8c9f77f3e6a95e5855b24e97fdff5a5c39fb1360ba695aad19bc70b59c534e482b4780fce436fb4f19b8077a989e4916e723b2a1da689d80c63649319d61dec53ea806d0384973280f0b290add03dc566ed262cee53bd66bc6ec4f681013e537cdc2223749fd3cdd73d2ddddaed522aa133038eb4109b52d0ed45e5e25c65211652c730756c43d77d4228d7ffaddd130f003ddaf80a5692b562fbd3adc0a1f3a7ec6f65781daca6db163889a7e99fb3b2b6cd04a8fae5a02746f0dc29878ec2cb3c8f3a097f5df722bad80f73593068caf896665c6ca65a5232e5e01ddde3838c89b465aa1be900a5810c2e24afce9b3888d7702316af03133eeae7bc263d65b96961e0cd53f7923895dc538752642f888919ee64573d351a6624df28dfd81e4cf5033e1bec34fb0214ca61f27baf59e322d0a67d19525cd14ce2c6bcf611fa69c6f7ff08f8e46681782016e0d3df9beb5175ae552f8be552c7d156e5f32693e15fd64a8d3203ed52b06162a856893777717c40d3bab15944868772578c6399bc6b3b34b4b6b0e4ab0ded8181b9acd86ca08780ca7275ec82199b20687039230151ff3d3e9972130ede69547994d4ebea1c4473cfd6bc1eb10e7443925fe8f85848149107019740bb4157905d2356fa26cfbc9bb880827fafd685a17d0817aec300e5269546d9ce747de156b62750d0a701e752b639e573e62375c821148601a2e99242e03c02905765e759211e8fd36c5ae2c41a6b2bb16d6c2d57b59937e6c0596971404a6e2648d35041e764bd057f3d93195c1a764f1a7f5451dc46ef7cde002b407208270c97af71ad7dac15ea32c65b90d3bfb98929b47bc802a5920c3f3582110e385e493d5113702394f89b5ecb03b126cf3ba634329e6e060b02dbc56b3d0552d3a47a001d4c010dd04746a63e4d62fde511f642bf46088609b0c05b5bdd531ba8340cc6903ef5f78420d15e5b6a61fd575042de80e67042850896d0ef6ab33c34113ae12a283779f8604056f697ad3f8b5028d449dbf71d56349d34bf66208fc297338ce1d7a6153444e4e07764016b407fc7f856ad1e5421fbf3c8b2c108726959c98f943fecc2badfc08d5fc2778a2e4a6639f97f0ea0c27c0c5589cd29be85e8b7a173510feaa2985379fb89d11c6d68362df85bcf717dff86e911d7a2e0ffdf94cb02d37d1b84776d2fd2cdcac662f2946be486f8f49642000fd0e8b612c02b3d7b7729097374f18f1810381aaddab3b3af38e89e6209fa32e23669eb407ca59ad379e37484555216412c2cc38c8548fd3505ed2c335333a82d7311ede05c0dc1c6fd11e2bc8461df6131a392efca40de95c77e06703974fb1e4ac115fa9b2b2f4d50458a7174127bb5cc9c87cb2f0674fcbf9fea65f6c2dd63ad5a10e2210d3f68a6e2652a2fe3b2d0097d5dab1c3af8ee6cf6efea0a890b9655b7564533a7b6fc30985d60ad0475c40532781ece3189dd6d15fc5ce07aa7f7dd4ae2937cd463b32aca7e9d40b9993b6b729fddd2e4a685c61483661cddb7d9f20edf56206eaa4a0dc118e6aaaff41f51a7e1017804785b207a1031e495893e80922bb8139faab877fbf328a4d5c1d9f23a0cfa0c138b55b564fe6a633b6a4c9096629f9910b82c791ced7dc04b029fdcd14d4af0adf575dea3b267715df1a3610e3e03ea8223d0390d5509523b91fcffae910f230e700235d9cf477e1da67b11029ae245f10c806d329a14485231e00455c8850a6efdaeaf38ef367168639eaac0c8a20258dd07bc98c407643120754a684cae9e4cd5d394c932e282eb4f9476803a9d0afde42"
+      }
+    },
+    "GET /channels": {
+      "status": 200,
+      "body": {
+        "balance": {
+          "localSat": "39109120",
+          "localUnsettledSat": "0",
+          "pendingOpenLocalSat": "0",
+          "pendingOpenRemoteSat": "0",
+          "remoteSat": "6127000"
+        },
+        "open": [
+          {
+            "capacitySat": "15000000",
+            "chanId": "260584255848448",
+            "channelPoint": "d48d68422c0df13964ef9d30d06e44a7776c592398e4a86ada6bf7875150b92a:0",
+            "initiatorLabel": "opened by you",
+            "localBalanceSat": "12996530",
+            "remoteBalanceSat": "2000000",
+            "remotePubkey": "027f884245f894f37468db222fe84c3a9eed9858ba096a29e498e0e0eb09b2ba4d",
+            "state": "open"
+          },
+          {
+            "capacitySat": "15000000",
+            "chanId": "224300372131840",
+            "channelPoint": "dd2fe2a01aef1cf054d64c9cbaeb4c10a4db992b3b123f57f7ee50da9baec946:0",
+            "initiatorLabel": "opened by you",
+            "localBalanceSat": "12869530",
+            "remoteBalanceSat": "2127000",
+            "remotePubkey": "027f884245f894f37468db222fe84c3a9eed9858ba096a29e498e0e0eb09b2ba4d",
+            "state": "open"
+          },
+          {
+            "capacitySat": "15000000",
+            "chanId": "251788162891776",
+            "channelPoint": "d406f8e978ea6abb03482bb354d01018bdb8300d290257d1eb2f3a25c1d35d60:0",
+            "initiatorLabel": "opened by you",
+            "localBalanceSat": "12996530",
+            "remoteBalanceSat": "2000000",
+            "remotePubkey": "027f884245f894f37468db222fe84c3a9eed9858ba096a29e498e0e0eb09b2ba4d",
+            "state": "open"
+          },
+          {
+            "capacitySat": "250000",
+            "chanId": "244091581431808",
+            "channelPoint": "71cafa35b7028b88870bc044d053216f3127ccc383107aba255412636255a8a7:0",
+            "initiatorLabel": "opened by you",
+            "localBalanceSat": "246530",
+            "remoteBalanceSat": "0",
+            "remotePubkey": "027f884245f894f37468db222fe84c3a9eed9858ba096a29e498e0e0eb09b2ba4d",
+            "state": "open"
+          }
+        ],
+        "pending": []
+      }
+    },
+    "GET /diagnostics": {
+      "status": 200,
+      "body": {
+        "closed": [],
+        "faraday": {
+          "available": true,
+          "insights": [
+            {
+              "chanPoint": "d48d68422c0df13964ef9d30d06e44a7776c592398e4a86ada6bf7875150b92a:0",
+              "feesEarnedMsat": "0",
+              "isPrivate": false,
+              "monitoredSeconds": "10",
+              "uptimeRatio": 1,
+              "uptimeSeconds": "10",
+              "volumeIncomingMsat": "0",
+              "volumeOutgoingMsat": "0"
+            },
+            {
+              "chanPoint": "dd2fe2a01aef1cf054d64c9cbaeb4c10a4db992b3b123f57f7ee50da9baec946:0",
+              "feesEarnedMsat": "0",
+              "isPrivate": false,
+              "monitoredSeconds": "809",
+              "uptimeRatio": 1,
+              "uptimeSeconds": "809",
+              "volumeIncomingMsat": "0",
+              "volumeOutgoingMsat": "0"
+            },
+            {
+              "chanPoint": "d406f8e978ea6abb03482bb354d01018bdb8300d290257d1eb2f3a25c1d35d60:0",
+              "feesEarnedMsat": "0",
+              "isPrivate": false,
+              "monitoredSeconds": "58",
+              "uptimeRatio": 1,
+              "uptimeSeconds": "58",
+              "volumeIncomingMsat": "0",
+              "volumeOutgoingMsat": "0"
+            },
+            {
+              "chanPoint": "71cafa35b7028b88870bc044d053216f3127ccc383107aba255412636255a8a7:0",
+              "feesEarnedMsat": "0",
+              "isPrivate": false,
+              "monitoredSeconds": "809",
+              "uptimeRatio": 1,
+              "uptimeSeconds": "809",
+              "volumeIncomingMsat": "0",
+              "volumeOutgoingMsat": "0"
+            }
+          ],
+          "revenue": []
+        },
+        "forwarding": [],
+        "node": {
+          "alias": "03c759634a9bc960e087",
+          "blockHeight": 242,
+          "chains": [
+            {
+              "chain": "bitcoin",
+              "network": "regtest"
+            }
+          ],
+          "identityPubkey": "03c759634a9bc960e087862e72bcf5cf2dde1bac9c311ba3ac6cc1fdc267244c01",
+          "numActiveChannels": 4,
+          "numInactiveChannels": 0,
+          "numPeers": 1,
+          "numPendingChannels": 0,
+          "syncedToChain": true,
+          "syncedToGraph": true,
+          "uris": [],
+          "version": "0.21.5-beta.rc1 commit=lightning-terminal-v0.17.8"
+        }
+      }
+    },
+    "GET /lnd/fees": {
+      "status": 200,
+      "body": {
+        "earnedDaySat": 0,
+        "earnedMonthSat": 0,
+        "earnedWeekSat": 0,
+        "policies": [
+          {
+            "baseFeeMsat": 500,
+            "channelId": "224300372131840",
+            "channelPoint": "dd2fe2a01aef1cf054d64c9cbaeb4c10a4db992b3b123f57f7ee50da9baec946:0",
+            "feePpm": 250,
+            "inboundBaseFeeMsat": 0,
+            "inboundFeePpm": 0
+          },
+          {
+            "baseFeeMsat": 1000,
+            "channelId": "244091581431808",
+            "channelPoint": "71cafa35b7028b88870bc044d053216f3127ccc383107aba255412636255a8a7:0",
+            "feePpm": 1,
+            "inboundBaseFeeMsat": 0,
+            "inboundFeePpm": 0
+          },
+          {
+            "baseFeeMsat": 1000,
+            "channelId": "251788162891776",
+            "channelPoint": "d406f8e978ea6abb03482bb354d01018bdb8300d290257d1eb2f3a25c1d35d60:0",
+            "feePpm": 1,
+            "inboundBaseFeeMsat": 0,
+            "inboundFeePpm": 0
+          },
+          {
+            "baseFeeMsat": 1000,
+            "channelId": "260584255848448",
+            "channelPoint": "d48d68422c0df13964ef9d30d06e44a7776c592398e4a86ada6bf7875150b92a:0",
+            "feePpm": 1,
+            "inboundBaseFeeMsat": 0,
+            "inboundFeePpm": 0
+          }
+        ]
+      }
+    },
+    "GET /lnd/invoices": {
+      "status": 200,
+      "body": {
+        "invoices": [
+          {
+            "createdAt": 1793908488000,
+            "expiresAt": 1793994888000,
+            "isKeysend": false,
+            "memo": "",
+            "paidSat": 12000,
+            "paymentHashHex": "5176427eba1715c43efbe48d866e7cb6281b82925b0a6ce46cff3bb19f05b9f5",
+            "paymentRequest": "lnbcrt120u1p4wehcgpp529myyl46zu2ug0hmujxcvmnukc5phq5jtv9xeervluamr8c9h86sdqqcqzzsxqyz5vqsp59785z2w80p6uk7n0dh2a4nqy796eyz9sq7tkcp5qcz5ajy4qp4vq9qxpqysgq4pkl46c2hh8ecskw8n3w9dqpe6x7e3exuyx38edcf3pa56j4x6s8l5rl9vma62y6h8sxfx8qg6xm863zn5tjjd3qvgjmjmeahhlu7ycqvlwqw9",
+            "settledAt": 1793908488000,
+            "state": "settled",
+            "valueSat": 12000
+          },
+          {
+            "createdAt": 1793908440000,
+            "expiresAt": 1793994840000,
+            "isKeysend": false,
+            "memo": "",
+            "paidSat": 12000,
+            "paymentHashHex": "2289d34f84c03423f7cf216aba85e86a89b27a913acc0db25cf42fa981610029",
+            "paymentRequest": "lnbcrt120u1p4wehkcpp5y2yaxnuycq6z8a70y94t4p0gd2ymy7538txqmvju7sh6nqtpqq5sdqqcqzzsxqyz5vqsp5phhcs533y0eju3eckdrur95gyq2tcgwuvc7pfnwq3hcsxnn0wx3q9qxpqysgqvrcmjnn54r0hsnknjttcfwfhe5v4myrp3mqcpye3c59z4kz99j7h65a290yjcvtlj8q7gqfdkm8794q8y6r6faa76gd6zgnk6ezv6hqqejxkmg",
+            "settledAt": 1793908440000,
+            "state": "settled",
+            "valueSat": 12000
+          },
+          {
+            "createdAt": 1793907086000,
+            "expiresAt": 1793993486000,
+            "isKeysend": false,
+            "memo": "Sheet test",
+            "paidSat": 0,
+            "paymentHashHex": "2a57cb0706c4e78810a6ce384f81d6e8257697cfa133068ed1cc31a486291914",
+            "paymentRequest": "lnbcrt30u1p4wekvwpp59ftukpcxcnncsy9xecuylqwkaqjhd9705yesdrk3esc6fp3fry2qdqs2d5x2et5yp6x2um5cqzzsxqyz5vqsp5gxm4ec5upukhwrelvk98aee8eg3m3m5upz9m3q8kvkgmr69uk4jq9qxpqysgqunjv0q6xt25hllq0m7mtgjdmggvurdc667aawy8fydzm958dh8qyr7779tgzufms3txkd4hu2j7as8ezr0kl8vfu09qk8te5huhg5qgqvu3klu",
+            "settledAt": null,
+            "state": "open",
+            "valueSat": 3000
+          },
+          {
+            "createdAt": 1793906916000,
+            "expiresAt": 1793993316000,
+            "isKeysend": false,
+            "memo": "Design review",
+            "paidSat": 12000,
+            "paymentHashHex": "54872633ffbbb5e02cd6494be5ba60363a3516fb5887af1ff3dfb49b474f6ef9",
+            "paymentRequest": "lnbcrt120u1p4wek8ypp52jrjvvllhw67qtxkf997twnqxcar29hmtzr678lnm76fk360dmusdq4g3jhx6t8dcs8yetkd9jhwcqzzsxqyz5vqsp5hss2j4gf23zg8dczgdr0jxc6j86hsrn628y3t72tutmh5puujc2q9qxpqysgq6m5slu86nexhzluepmhwezfyvngtyapaxayhhutxduh2qkem6t585ks6hk0vszq2tr9yl7z0pru0g7ef5pgj8tetst6gnvv8878wtegqyu0pay",
+            "settledAt": 1793906920000,
+            "state": "settled",
+            "valueSat": 12000
+          },
+          {
+            "createdAt": 1793905676000,
+            "expiresAt": 1793992076000,
+            "isKeysend": false,
+            "memo": "Invoice 120000",
+            "paidSat": 120000,
+            "paymentHashHex": "a3f8b0ad20e26f174404a3fbb91cab245229b4bc5d22390801617bd09f044608",
+            "paymentRequest": "lnbcrt1200u1p4we4qvpp550utptfqufh3w3qy50amj89ty3fznd9ut53rjzqpv9aap8cygcyqdqhf9h8vmmfvdjjqvfjxqcrqvqcqzzsxqyz5vqsp5vz0epmlajyq3z068h7zl6xxd83u95szea3v62adas86405u6kfkq9qxpqysgq2yd924unlavdx4rq08tfc3hf0utp4vv3ej2na2yz00d8jlvf53lz08h4yde9dtxrje98xtnacfjjnuspmeszqr43gk9rddnm440gkwcqwgldrr",
+            "settledAt": 1793905676000,
+            "state": "settled",
+            "valueSat": 120000
+          },
+          {
+            "createdAt": 1793905676000,
+            "expiresAt": 1793992076000,
+            "isKeysend": false,
+            "memo": "Invoice 15000",
+            "paidSat": 15000,
+            "paymentHashHex": "7c027a5f3483709f3f86c4e27a5bde32cca3bbd26a7d40164cb28f804ea00c32",
+            "paymentRequest": "lnbcrt150u1p4we4qvpp50sp85he5sdcf70uxcn385k77xtx28w7jdf75q9jvk28cqn4qpseqdq4f9h8vmmfvdjjqvf4xqcrqcqzzsxqyz5vqsp5dq0f74axuxjtmjv5sxmsc35yqspjqupl5pernvn83mnhtluvxfsq9qxpqysgquu005775yttnc4sxyggtuyje6ky2r3zeg494uv0l9huv7elaxecr0msc77spurztrpz9e4n7gw4g62cz9kxjwx3y53uwt4yf9z7g0gcqm2vp7n",
+            "settledAt": 1793905677000,
+            "state": "settled",
+            "valueSat": 15000
+          }
+        ]
+      }
+    },
+    "GET /lnd/peers": {
+      "status": 200,
+      "body": {
+        "peers": [
+          {
+            "address": "127.0.0.1:19735",
+            "flapCount": 3,
+            "inbound": false,
+            "pingMs": 1,
+            "pubkey": "027f884245f894f37468db222fe84c3a9eed9858ba096a29e498e0e0eb09b2ba4d",
+            "satReceived": 171000,
+            "satSent": 6298000
+          }
+        ]
+      }
+    },
+    "GET /lnd/transactions": {
+      "status": 200,
+      "body": {
+        "transactions": [
+          {
+            "addresses": [
+              "bcrt1p6363z73zzgmlaglyz53h45vcp63c9wmqvp3tmydhxf75ff6amq8q5sken3"
+            ],
+            "amountSat": -15000308,
+            "at": 1793908484000,
+            "blockHeight": 237,
+            "confirmations": 6,
+            "feeSat": 308,
+            "label": "0:openchannel:shortchanid-260584255848448",
+            "txid": "d48d68422c0df13964ef9d30d06e44a7776c592398e4a86ada6bf7875150b92a"
+          },
+          {
+            "addresses": [
+              "bcrt1pkgrr6lgk0664srhyc6830e8jan0j5u6kg4wan5r2dg6fzud8jgesgyv4l5"
+            ],
+            "amountSat": -10000286,
+            "at": 1793908481000,
+            "blockHeight": 236,
+            "confirmations": 7,
+            "feeSat": 286,
+            "label": "external",
+            "txid": "3470bfc5959d9f0811f29c24ba7fe4ea327007e0f39349bef0ce397ea65e3577"
+          },
+          {
+            "addresses": [
+              "bcrt1qx2q44948g9ptv28g9d97nmf4s8ywlk8kunltzz"
+            ],
+            "amountSat": 50000000,
+            "at": 1793908477000,
+            "blockHeight": 235,
+            "confirmations": 8,
+            "feeSat": 0,
+            "label": "",
+            "txid": "36837553153630fe42f53092fce6d0c5933a4d21ec703948c4058da0e10e294b"
+          },
+          {
+            "addresses": [
+              "bcrt1p6enf2ljzck56dflg7jw4fwfwkxypt2nmymn3ff79pn9usm6aev2qa086hf"
+            ],
+            "amountSat": -15000329,
+            "at": 1793908436000,
+            "blockHeight": 229,
+            "confirmations": 14,
+            "feeSat": 329,
+            "label": "0:openchannel:shortchanid-251788162891776",
+            "txid": "d406f8e978ea6abb03482bb354d01018bdb8300d290257d1eb2f3a25c1d35d60"
+          },
+          {
+            "addresses": [
+              "bcrt1prppjltmldr5aw4dr65g3490xc4xp5lga9s5hssqce9junhz4grtqyvhq3j"
+            ],
+            "amountSat": -10000286,
+            "at": 1793908436000,
+            "blockHeight": 229,
+            "confirmations": 14,
+            "feeSat": 286,
+            "label": "external",
+            "txid": "8052a2c7b8643b776d7475f241458b364c53f0ff73da41af0816a8da5cb31802"
+          },
+          {
+            "addresses": [
+              "bcrt1qmeg729n7zwx3vuhmu82gzrty8ywqzvh8h7ynj8"
+            ],
+            "amountSat": 50000000,
+            "at": 1793908368000,
+            "blockHeight": 228,
+            "confirmations": 15,
+            "feeSat": 0,
+            "label": "",
+            "txid": "af6bfc795432abb58e273dd7a13de8f5a78ce5e0b05503e910108160a39bb8ed"
+          },
+          {
+            "addresses": [
+              "bcrt1pn04e9rl72spcp5409jx27vkvv3wmd9pnmvyduhauze5j2fj77jks36awju"
+            ],
+            "amountSat": -250308,
+            "at": 1793907047000,
+            "blockHeight": 222,
+            "confirmations": 21,
+            "feeSat": 308,
+            "label": "0:openchannel:shortchanid-244091581431808",
+            "txid": "71cafa35b7028b88870bc044d053216f3127ccc383107aba255412636255a8a7"
+          },
+          {
+            "addresses": [
+              "bcrt1p39fduu3ds65vq7hv2kzupa2snkwx6knyupmc4ggc5hq8ww4kaqcq7d9ggw"
+            ],
+            "amountSat": -25286,
+            "at": 1793906954000,
+            "blockHeight": 221,
+            "confirmations": 22,
+            "feeSat": 286,
+            "label": "external",
+            "txid": "d8c40a7fa218b825e2e89c175c48ac35d70a9581124ea385b267c7381287d94e"
+          },
+          {
+            "addresses": [
+              "bcrt1p84rmkh48095d770d90mwnm67rhpcgt7cdjahvg4ewvmwcda9nzhqq9qecl"
+            ],
+            "amountSat": -150286,
+            "at": 1793906892000,
+            "blockHeight": 220,
+            "confirmations": 23,
+            "feeSat": 286,
+            "label": "external",
+            "txid": "9c874201d9369ca6e5b72cf9fd61504f4749492bb8ae5310cb40d0680cb799d5"
+          },
+          {
+            "addresses": [
+              "bcrt1qg4ueyq56ea4afvy67wzkwnxzk5h2zurjp939df"
+            ],
+            "amountSat": 200000,
+            "at": 1793906873000,
+            "blockHeight": 219,
+            "confirmations": 24,
+            "feeSat": 0,
+            "label": "",
+            "txid": "bfb32c673fc44d77d392c8f4d1da67ecb2c4c53a9958917603ae195fb273f5a2"
+          },
+          {
+            "addresses": [
+              "bcrt1q29zvjsm369tzc89xk7e76f7ech25d8mfl5pwlg"
+            ],
+            "amountSat": 200000,
+            "at": 1793906857000,
+            "blockHeight": 218,
+            "confirmations": 25,
+            "feeSat": 0,
+            "label": "",
+            "txid": "11df2c5034439bdfa9995c28c4ea0ec464c9715c6149e8d098b40988e285779a"
+          },
+          {
+            "addresses": [
+              "bcrt1p2qf4zqr9dgn7f4cyp4vdd2w4lna5p2573zeh6fuyaf3zfatmhh3sg2tnl5",
+              "bcrt1px2hg35skgw6w7ga9mr8xysmnmd727g5qhfmrqthvmy09dz7ugg4syv5krt",
+              "bcrt1pjxz8wvzz9vgsau37pegvhq74y8c8f3a9rcaqc9a5077qu09l3kpsvpaaf0"
+            ],
+            "amountSat": -12725,
+            "at": 1793906489000,
+            "blockHeight": 217,
+            "confirmations": 26,
+            "feeSat": 12725,
+            "label": "tapd-asset-transfer",
+            "txid": "30f063cca136b41b88ce39a02d91460a4ff08a9165cfcbbbba6e8ee013a38181"
+          },
+          {
+            "addresses": [
+              "bcrt1ps2fdvs442sqwt0e9ryqxtf59hjf66j6eqatrdj0vrn2ucf6v3mjs8mtjhh",
+              "bcrt1p8yzgnrj67utjn24pwu4tlvddrpgc2dfa3jp2pkh9gjud8tr6nl0q89ng9y"
+            ],
+            "amountSat": -7700,
+            "at": 1793905681000,
+            "blockHeight": 211,
+            "confirmations": 32,
+            "feeSat": 7700,
+            "label": "tapd-asset-issuance",
+            "txid": "5a1cd1389199f5ae376a4d13f7dbddbce80bdacf98face6692adbe1b54ca2926"
+          },
+          {
+            "addresses": [
+              "bcrt1pq6slqang0ldgjuldy7gq95ex9kfgllen9amwm3mc0j2uvp00ggqssxne7d"
+            ],
+            "amountSat": -15000329,
+            "at": 1793905657000,
+            "blockHeight": 204,
+            "confirmations": 39,
+            "feeSat": 329,
+            "label": "0:openchannel:shortchanid-224300372131840",
+            "txid": "dd2fe2a01aef1cf054d64c9cbaeb4c10a4db992b3b123f57f7ee50da9baec946"
+          },
+          {
+            "addresses": [
+              "bcrt1qay2qjy9sjpzp4k776j64jdxhp94ldre63nmcdp"
+            ],
+            "amountSat": 25000000,
+            "at": 1793905657000,
+            "blockHeight": 201,
+            "confirmations": 42,
+            "feeSat": 0,
+            "label": "",
+            "txid": "7d5e8aebdaebddbfb6d113d00f67a87834ed242d38f73c72d251896e2d88bb9c"
+          },
+          {
+            "addresses": [
+              "bcrt1qay2qjy9sjpzp4k776j64jdxhp94ldre63nmcdp"
+            ],
+            "amountSat": 100000000,
+            "at": 1793905657000,
+            "blockHeight": 201,
+            "confirmations": 42,
+            "feeSat": 0,
+            "label": "",
+            "txid": "f7547d1dd7fbf9b7c5659eb11e907c01daedb09eeb44ee856d59be318ca242a3"
+          }
+        ]
+      }
+    },
+    "GET /loop/autoloop": {
+      "status": 200,
+      "body": {
+        "enabledByThisApp": false,
+        "params": {
+          "autoloopEnabled": false,
+          "budgetSat": 335544,
+          "budgetStartSec": 0,
+          "failureBackoffSec": 86400,
+          "maxMinerFeeSat": 0,
+          "maxPrepaySat": 0,
+          "maxSwapFeePpm": 0,
+          "sweepConfTarget": 100,
+          "sweepFeeRateSatPerVbyte": 0
+        },
+        "policy": null
+      }
+    },
+    "GET /loop/static": {
+      "status": 200,
+      "body": {
+        "deposits": [],
+        "error": "no static address parameters found",
+        "summary": null
+      }
+    },
+    "GET /loop/swaps": {
+      "status": 200,
+      "body": {
+        "swaps": []
+      }
+    },
+    "GET /loop/terms": {
+      "status": 200,
+      "body": {
+        "loopIn": {
+          "error": "connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:1: connect: connection refused\""
+        },
+        "loopOut": {
+          "error": "connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:1: connect: connection refused\""
+        }
+      }
+    },
+    "GET /onchain/balance": {
+      "status": 200,
+      "body": {
+        "confirmedSat": "159952157",
+        "lockedSat": "0",
+        "reservedAnchorSat": "40000",
+        "totalSat": "159952157",
+        "unconfirmedSat": "0"
+      }
+    },
+    "GET /payments": {
+      "status": 200,
+      "body": {
+        "payments": [
+          {
+            "creationTimeNs": "1793905675827229306",
+            "feeSat": "0",
+            "paymentHash": "ee506d277416380fc7c2cf43ddb12217d49a9e6ccf67df25862ac800d49b381b",
+            "paymentRequest": "lnbcrt20m1p4we4qtpp5aegx6fm5zcuql37zeapamvfzzl2f48nveana7fvx9tyqp4ym8qdsdpy2a5x7mr9wdskcefqvdhkven9v5sxyetpdeescqzzsxqyz5vqsp5cnl0v5cgmep6a76psrjlckllmvmmdm3gdk9nl36a3kvaywafpfes9qxpqysgq8qhg2jcm2k8xmsdpq04y9cq2vnmgnht0hfz6w0mvz2y7sj2setarqjy0zf9ldsrtqsyanmuggmx6ahf7e4c75pkmpzruqg3afjs954cpftyuy9",
+            "status": "succeeded",
+            "valueSat": "2000000"
+          },
+          {
+            "creationTimeNs": "1793905676104325802",
+            "feeSat": "0",
+            "paymentHash": "f13fa41f6f301d6c037b77b0bd189e92f399648020201b818f9b07643bb8dd63",
+            "paymentRequest": "lnbcrt2500u1p4we4qvpp57yl6g8m0xqwkcqmmw7ct6xy7jteejeyqyqsphqv0nvrkgwacm43sdq42phkgcmpwd6zqcn0daehgcqzzsxqyz5vqsp5s0txt27fqe36agltww8uylduqesphsz6yk3r288w7datkxtz0uqs9qxpqysgqyafkxhyhqqlus0eal4d27c00xd5j3zvnl7ws5085wc3yf02gzyxhr8ldhw542e56u247f2lyhrvtcwcd2wk9q5v8lehyuuy0lhm6fjqqvuyjmh",
+            "status": "succeeded",
+            "valueSat": "250000"
+          },
+          {
+            "creationTimeNs": "1793905676369511760",
+            "feeSat": "0",
+            "paymentHash": "64cbe9ca53dc8cf91f741c9fc18b85eb9a0dcddf834b5970dfcfccae71923aff",
+            "paymentRequest": "lnbcrt420u1p4we4qvpp5vn97njjnmjx0j8m5rj0urzu9awdqmnwlsd94juxlelx2uuvj8tlsdq9tfshqcqzzsxqyz5vqsp5j0m9djvrwgsgg6t7p2ejcl276acsk975jxejg4gkmvllre4cghfs9qxpqysgqx6gx6rupn6rkek2tvuzzefzezw4qt52zy3gk9c463w0fv4f4tndyvv53v2q39eq43f4zwkyx3kfyz3up38n9wpye5hrxuwug9jf94yqpyylal8",
+            "status": "succeeded",
+            "valueSat": "42000"
+          },
+          {
+            "creationTimeNs": "1793906905973289850",
+            "feeSat": "0",
+            "paymentHash": "cb9198c0ee35bbc5aca2d5ca1bf7188cd3086416f370181cf3007df3a9fc9a31",
+            "paymentRequest": "lnbcrt50u1p4wekxhpp5ewge3s8wxkautt9z6h9phacc3nfsseqk7dcps88nqp7l820ungcsdq5gdhkven9v5sxyetpdeescqzzsxqyz5vqsp53luhclvdpgwsn8jyxc0ncdpkkt79n002sqy6zcl5u4z6d300kxuq9qxpqysgqp9am9u33ykmwk0xvnxqxlzwtktum5kams8cen8ellkuxfvlgh428pw906vzx6k5enum5jymm4fy8v8rpmzzcc95u2magdsv3d7q3cucq9twewc",
+            "status": "succeeded",
+            "valueSat": "5000"
+          },
+          {
+            "creationTimeNs": "1793906978048091625",
+            "feeSat": "0",
+            "paymentHash": "87d58b516042a151dc5437cf3be3e1017bf3556a0f7b7f7862a1bb194ab404ad",
+            "paymentRequest": "lnbcrt10u1p4wekgmpp5sl2ck5tqg2s4rhz5xl8nhclpq9alx4t2paah77rz5xa3jj45qjksdqh23exzmnnvejhyueqw3jhxaqcqzzsxqyz5vqsp56fhaq3dv27naxrupt7kz3hka5v6gzu0nwmelqzug9x820ldrpejq9qxpqysgq4v86lvhfykftr4rwxey7pyu6vs9kc6wekeswvp4syw6q7p3u4nurn9r9nkzxlrmacu8t8cy0kvezn66hg70ze0hq3fw5687gy7dyt7cqfaqtp5",
+            "status": "succeeded",
+            "valueSat": "1000"
+          },
+          {
+            "creationTimeNs": "1793908438839682400",
+            "feeSat": "0",
+            "paymentHash": "13d6422585f45e0ff97a7339dd23dd151331f5699829e0a57ae01e1985c7058f",
+            "paymentRequest": "lnbcrt20m1p4wehkkpp5z0tyyfv9730ql7t6wvua6g7az5fnratfnq57pft6uq0pnpw8qk8sdq5v5ex2gr0w46xymm4dejqcqzzsxqyz5vqsp569vufnam246qftffdmgc6pn79en57uhnv7fjugzwyde3dpp6hlxq9qxpqysgqksyanuyxytlp8fjde2wfvmdceg5g5g8yx2872cscx0vyw2r2nz2xemjdd7qxhu69r096jyhd0twejksfpp5tcx5awxa5rxn9mms6d6sqxxc20z",
+            "status": "succeeded",
+            "valueSat": "2000000"
+          },
+          {
+            "creationTimeNs": "1793908486826373505",
+            "feeSat": "0",
+            "paymentHash": "48390bd03b85504c98de393d28abd727ad3f5a53f58418cc77185f981e7f486c",
+            "paymentRequest": "lnbcrt20m1p4wehcxpp5fqush5pms4gyexx78y7j327hy7kn7kjn7kzp3nrhrp0es8nlfpkqdq5v5ex2gr0w46xymm4dejqcqzzsxqyz5vqsp5qgmh2a8v9keqye65v34dsr4kqswtgsdtdpkzhuyvmh3nk3qpw8qs9qxpqysgqdsnnnt553h2ccfjp2q8f3cuvdx4pne3049325tllj5m305jhd74q9gl7nglvsgd7z76g83v8u7jc3f2l9jleze9wlptm6q5u0j2jmwsqd4z49x",
+            "status": "succeeded",
+            "valueSat": "2000000"
+          }
+        ]
+      }
+    },
+    "GET /pool": {
+      "status": 200,
+      "body": {
+        "accounts": {
+          "error": "unable to list marshalled accounts: unable to query auctioneer terms: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:1: connect: connection refused\"",
+          "ok": false
+        },
+        "leaseDurations": {
+          "error": "unable to query auctioneer terms: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:1: connect: connection refused\"",
+          "ok": false
+        },
+        "leases": {
+          "error": "unable to fetch node ratings: unable to query node tier: rpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing: dial tcp 127.0.0.1:1: connect: connection refused\"",
+          "ok": false
+        },
+        "market": {
+          "matchedBatches": 0,
+          "message": "The liquidity service is not reachable right now. This can happen while the node is still syncing.",
+          "state": "unavailable"
+        },
+        "orders": {
+          "data": [],
+          "ok": true
+        }
+      }
+    },
+    "GET /services": {
+      "status": 200,
+      "body": {
+        "network": "regtest",
+        "operators": {
+          "loop": {
+            "host": "127.0.0.1:1",
+            "mode": "offline"
+          },
+          "pool": {
+            "host": "127.0.0.1:1",
+            "mode": "offline"
+          }
+        },
+        "ready": true,
+        "subServers": {
+          "accounts": {
+            "customStatus": "",
+            "disabled": false,
+            "error": "",
+            "running": true
+          },
+          "faraday": {
+            "customStatus": "",
+            "disabled": false,
+            "error": "",
+            "running": true
+          },
+          "lit": {
+            "customStatus": "",
+            "disabled": false,
+            "error": "",
+            "running": true
+          },
+          "lnd": {
+            "customStatus": "",
+            "disabled": false,
+            "error": "",
+            "running": true
+          },
+          "loop": {
+            "customStatus": "",
+            "disabled": false,
+            "error": "",
+            "running": true
+          },
+          "pool": {
+            "customStatus": "",
+            "disabled": false,
+            "error": "",
+            "running": true
+          },
+          "taproot-assets": {
+            "customStatus": "",
+            "disabled": false,
+            "error": "",
+            "running": true
+          }
+        }
+      }
+    },
+    "GET /state": {
+      "status": 200,
+      "body": {
+        "info": {
+          "alias": "03c759634a9bc960e087",
+          "blockHeight": 242,
+          "chains": [
+            {
+              "chain": "bitcoin",
+              "network": "regtest"
+            }
+          ],
+          "identityPubkey": "03c759634a9bc960e087862e72bcf5cf2dde1bac9c311ba3ac6cc1fdc267244c01",
+          "numActiveChannels": 4,
+          "numInactiveChannels": 0,
+          "numPeers": 1,
+          "numPendingChannels": 0,
+          "syncedToChain": true,
+          "syncedToGraph": true,
+          "uris": [],
+          "version": "0.21.5-beta.rc1 commit=lightning-terminal-v0.17.8"
+        },
+        "phase": "ready"
+      }
+    },
+    "POST /channels": {
+      "status": 200,
+      "body": {
+        "channelPoint": "d48d68422c0df13964ef9d30d06e44a7776c592398e4a86ada6bf7875150b92a:0"
+      }
+    },
+    "POST /invoices": {
+      "status": 200,
+      "body": {
+        "paymentRequest": "lnbcrt120u1p4wehcgpp529myyl46zu2ug0hmujxcvmnukc5phq5jtv9xeervluamr8c9h86sdqqcqzzsxqyz5vqsp59785z2w80p6uk7n0dh2a4nqy796eyz9sq7tkcp5qcz5ajy4qp4vq9qxpqysgq4pkl46c2hh8ecskw8n3w9dqpe6x7e3exuyx38edcf3pa56j4x6s8l5rl9vma62y6h8sxfx8qg6xm863zn5tjjd3qvgjmjmeahhlu7ycqvlwqw9",
+        "rHashHex": "5176427eba1715c43efbe48d866e7cb6281b82925b0a6ce46cff3bb19f05b9f5"
+      }
+    },
+    "POST /invoices/decode": {
+      "status": 200,
+      "body": {
+        "amountSat": "2000000",
+        "cltvExpiry": "80",
+        "destination": "027f884245f894f37468db222fe84c3a9eed9858ba096a29e498e0e0eb09b2ba4d",
+        "memo": "e2e outbound",
+        "paymentHashHex": "48390bd03b85504c98de393d28abd727ad3f5a53f58418cc77185f981e7f486c"
+      }
+    },
+    "POST /onchain/address": {
+      "status": 200,
+      "body": {
+        "address": "bcrt1qx2q44948g9ptv28g9d97nmf4s8ywlk8kunltzz"
+      }
+    },
+    "POST /onchain/estimate-fee": {
+      "status": 200,
+      "body": {
+        "feeSat": "7650",
+        "satPerVbyte": "50"
+      }
+    },
+    "POST /onchain/send": {
+      "status": 200,
+      "body": {
+        "txid": "3470bfc5959d9f0811f29c24ba7fe4ea327007e0f39349bef0ce397ea65e3577"
+      }
+    },
+    "POST /payments": {
+      "status": 200,
+      "body": {
+        "paymentHash": "48390bd03b85504c98de393d28abd727ad3f5a53f58418cc77185f981e7f486c",
+        "preimage": "26c510d84b538ef80d9355747a3b0996e0c52939c13650ad4f443697613d46be",
+        "status": "succeeded"
+      }
+    }
+  }
+}

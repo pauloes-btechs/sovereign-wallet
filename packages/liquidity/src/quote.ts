@@ -54,16 +54,15 @@ export function assessChannelLiquidity(
       kind: 'no-channels',
       severity: 'notice',
       message:
-        'You have no channels yet. A Loop In swap opens your first channel from on-chain funds — you keep the keys.',
-      suggestedDirection: 'loop-in',
+        'You have no channels yet. Open a channel from your on-chain funds first; Loop swaps rebalance channels you already have.',
     };
   }
   if (channels.inboundSat < thresholds.inboundFloorSat) {
     return {
       kind: 'inbound-low',
       severity: 'notice',
-      message: `Only ${formatSats(channels.inboundSat)} sats can be received over Lightning. A Loop In swap of about ${formatSats(suggestedSwapAmountSat(channels.inboundSat, thresholds.inboundFloorSat))} sats would raise receiving capacity.`,
-      suggestedDirection: 'loop-in',
+      message: `Only ${formatSats(channels.inboundSat)} sats can be received over Lightning. A Loop Out swap of about ${formatSats(suggestedSwapAmountSat(channels.inboundSat, thresholds.inboundFloorSat))} sats would raise receiving capacity: it moves your channel balance to on-chain and leaves that room inbound.`,
+      suggestedDirection: 'loop-out',
       suggestedAmountSat: suggestedSwapAmountSat(channels.inboundSat, thresholds.inboundFloorSat),
     };
   }
@@ -71,8 +70,8 @@ export function assessChannelLiquidity(
     return {
       kind: 'outbound-low',
       severity: 'notice',
-      message: `Only ${formatSats(channels.outboundSat)} sats can be sent over Lightning. A Loop Out swap of about ${formatSats(suggestedSwapAmountSat(channels.outboundSat, thresholds.outboundFloorSat))} sats would free up sending capacity.`,
-      suggestedDirection: 'loop-out',
+      message: `Only ${formatSats(channels.outboundSat)} sats can be sent over Lightning. A Loop In swap of about ${formatSats(suggestedSwapAmountSat(channels.outboundSat, thresholds.outboundFloorSat))} sats would add sending capacity: it moves on-chain funds into your channels.`,
+      suggestedDirection: 'loop-in',
       suggestedAmountSat: suggestedSwapAmountSat(channels.outboundSat, thresholds.outboundFloorSat),
     };
   }
@@ -107,7 +106,7 @@ export function describeQuote(quote: Readonly<LoopQuote>): string {
   return (
     `A ${directionLabel} swap of ${formatSats(quote.amountSat)} sats is estimated to cost ` +
     `${formatSats(quote.fees.totalSat)} sats (${pct}%): ${formatSats(quote.fees.swapFeeSat)} sats swap fee` +
-    (quote.fees.prepayFeeSat > 0 ? `, ${formatSats(quote.fees.prepayFeeSat)} sats prepay` : '') +
+    (quote.fees.prepayFeeSat > 0 ? ` (${formatSats(quote.fees.prepayFeeSat)} sats of it paid up front as a prepayment)` : '') +
     `, plus ${formatSats(quote.fees.minerFeeSat)} sats miner fees.`
   );
 }

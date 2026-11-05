@@ -19,6 +19,10 @@ export interface LoopOutRequest {
   maxMinerFeeSat: number;
   /** Confirmation target for the sweep (0 = fast/next-block). */
   sweepConfTarget?: number;
+  /** Restrict the off-chain leg to these channels (short channel ids). */
+  outgoingChanIds?: readonly string[];
+  /** User-visible label stored with the swap. */
+  label?: string;
 }
 
 /** Request to execute a Loop In swap (on-chain -> new inbound channel). */
@@ -28,6 +32,8 @@ export interface LoopInRequest {
   maxMinerFeeSat: number;
   /** Pubkey hex of an existing peer to attach the new channel to. */
   lastHopPubkeyHex?: string;
+  /** User-visible label stored with the swap. */
+  label?: string;
 }
 
 /**

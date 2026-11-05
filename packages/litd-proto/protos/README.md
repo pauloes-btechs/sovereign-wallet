@@ -64,6 +64,11 @@ come from the node's own forwarded-HTLC history.
   [`lightninglabs/lightning-terminal` at tag `v0.17.8`](https://github.com/lightninglabs/lightning-terminal/blob/v0.17.8/litrpc/lit-sessions.proto)
   (`litrpc/lit-sessions.proto`). Self-contained; no imports. Used by the
   LNC mobile mode to create/revoke macaroon-scoped LNC sessions.
+- `lit-status.proto` — the `litrpc.Status` service (SubServerStatus:
+  running / disabled / error per sub-server), vendored **unmodified** from
+  [`lightninglabs/lightning-terminal` at tag `v0.17.8`](https://github.com/lightninglabs/lightning-terminal/blob/v0.17.8/litrpc/lit-status.proto).
+  Self-contained. Backs the bridge's `/services` health view (replaces
+  readiness inferred from error strings).
 
 tapd differs: in integrated mode the tapd sub-server registers its gRPC
 services on litd's own TLS mux (`httpslisten`, default 127.0.0.1:8443) —

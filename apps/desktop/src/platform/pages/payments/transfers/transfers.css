@@ -1,0 +1,249 @@
+/* Transfers & swaps. Tokens and .p-* only; prefix .tf- */
+
+.tf-pickers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+  gap: var(--sovl-space-3);
+  align-items: stretch;
+}
+
+.tf-picker {
+  padding: var(--sovl-space-4);
+}
+
+.tf-picker > .p-panel-head {
+  margin-bottom: var(--sovl-space-3);
+}
+
+.tf-arrow {
+  display: grid;
+  place-items: center;
+  color: var(--sovl-text-faint);
+}
+
+.tf-arrow .p-icon {
+  width: 22px;
+  height: 22px;
+}
+
+@media (max-width: 1100px) {
+  .tf-pickers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tf-arrow {
+    transform: rotate(90deg);
+    height: 24px;
+  }
+}
+
+.tf-opts {
+  display: grid;
+  gap: 6px;
+}
+
+.tf-opt {
+  all: unset;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: var(--sovl-space-3);
+  align-items: center;
+  padding: 8px var(--sovl-space-3);
+  border: 1px solid var(--sovl-border);
+  border-radius: var(--sovl-radius-sm);
+  background: var(--sovl-bg);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.tf-opt:hover {
+  border-color: var(--sovl-border-strong);
+}
+
+.tf-opt:focus-visible {
+  outline: 2px solid var(--sovl-accent);
+  outline-offset: 2px;
+}
+
+.tf-opt[aria-checked='true'] {
+  border-color: var(--sovl-accent);
+  background: var(--sovl-accent-soft);
+}
+
+.tf-opt[data-norail='true'] .tf-opt-label,
+.tf-opt[data-norail='true'] .tf-opt-icon {
+  color: var(--sovl-text-faint);
+}
+
+.tf-opt-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--sovl-radius-xs);
+  background: var(--sovl-surface-raised);
+  color: var(--sovl-text-secondary);
+}
+
+.tf-opt[aria-checked='true'] .tf-opt-icon {
+  color: var(--sovl-accent);
+}
+
+.tf-opt-main {
+  display: grid;
+  min-width: 0;
+}
+
+.tf-opt-label {
+  font-weight: 500;
+  display: flex;
+  gap: var(--sovl-space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.tf-opt-detail {
+  font-size: var(--sovl-text-xs);
+  color: var(--sovl-text-faint);
+}
+
+.tf-norail {
+  font-size: var(--sovl-text-xs);
+  font-weight: 400;
+  color: var(--sovl-text-faint);
+}
+
+.tf-opt-value {
+  display: grid;
+  justify-items: end;
+  font-size: var(--sovl-text-sm);
+  white-space: nowrap;
+}
+
+.tf-opt-foot {
+  font-size: var(--sovl-text-xs);
+  color: var(--sovl-text-faint);
+}
+
+.tf-p {
+  margin: 0;
+  font-size: var(--sovl-text-sm);
+}
+
+.tf-facts {
+  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr);
+}
+
+.tf-facts dd {
+  text-align: left;
+}
+
+.tf-list {
+  margin: 0;
+  padding-left: var(--sovl-space-4);
+  display: grid;
+  gap: 4px;
+  font-size: var(--sovl-text-sm);
+  color: var(--sovl-text-secondary);
+}
+
+
+/* preview */
+.tf-preview {
+  margin: 0;
+  border: 1px solid var(--sovl-border);
+  border-radius: var(--sovl-radius-sm);
+  overflow: hidden;
+}
+
+.tf-preview-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: var(--sovl-space-4);
+  padding: 10px var(--sovl-space-4);
+  border-top: 1px solid var(--sovl-border);
+  font-size: var(--sovl-text-sm);
+}
+
+.tf-preview-row:first-child {
+  border-top: 0;
+}
+
+.tf-preview-row dt {
+  color: var(--sovl-text-secondary);
+}
+
+.tf-preview-row dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.tf-preview-row[data-strong='true'] {
+  background: var(--sovl-bg);
+}
+
+.tf-preview-row[data-strong='true'] dd {
+  font-weight: 600;
+}
+
+.tf-warn {
+  color: var(--sovl-warning);
+}
+
+.tf-decoded {
+  padding: var(--sovl-space-3) var(--sovl-space-4);
+  border: 1px solid var(--sovl-border);
+  border-radius: var(--sovl-radius-sm);
+  background: var(--sovl-bg);
+}
+
+.tf-deposit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sovl-space-5);
+  align-items: start;
+  margin-top: var(--sovl-space-4);
+}
+
+@media (max-width: 1100px) {
+  .tf-deposit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.tf-link {
+  all: unset;
+  cursor: pointer;
+  color: var(--sovl-accent);
+}
+
+.tf-link:focus-visible {
+  outline: 2px solid var(--sovl-accent);
+  outline-offset: 2px;
+}
+
+.tf-picker {
+  display: flex;
+  flex-direction: column;
+}
+
+.tf-funds {
+  margin-top: auto;
+  padding-top: var(--sovl-space-4);
+  display: grid;
+  gap: var(--sovl-space-2);
+}
+
+.tf-funds .p-legend {
+  font-size: var(--sovl-text-xs);
+}
+
+.tf-cand {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.tf-reach {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sovl-space-2);
+}

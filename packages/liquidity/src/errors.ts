@@ -42,7 +42,7 @@ export function isLiquidityProviderError(err: unknown): err is LiquidityProvider
 export function describeProviderFailure(kind: LiquidityProviderFailureKind): string {
   switch (kind) {
     case 'unavailable':
-      return 'The liquidity service is not reachable right now. This can happen while the node is still syncing.';
+      return 'The liquidity service is not reachable right now: the daemon is down, still starting, or its operator server cannot be reached. Check the node\u2019s service status.';
     case 'unauthenticated':
       return 'The wallet is not authorized to use this liquidity service. Check the daemon connection settings.';
     case 'out-of-terms':

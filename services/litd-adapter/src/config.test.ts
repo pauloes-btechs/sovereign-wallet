@@ -228,7 +228,7 @@ describe('assertLoopbackOnly', () => {
     ).toThrow(/lnd\./);
   });
 
-  it('appends sub-server lines with loop./pool. prefixes and rejects others', () => {
+  it('appends sub-server lines with loop./pool./faraday. prefixes and rejects others', () => {
     const pinned = buildLitdConfig({
       ...NEUTRINO_REGTEST,
       extraSubServerArgs: ['loop.server.host=127.0.0.1:1', 'pool.auctionserver=127.0.0.1:1'],
@@ -246,7 +246,10 @@ describe('assertLoopbackOnly', () => {
     expect(modes.confLines).toContain('pool-mode=integrated');
     expect(() =>
       buildLitdConfig({ ...NEUTRINO_REGTEST, extraSubServerArgs: ['lnd.rpclisten=127.0.0.1:1'] }),
-    ).toThrow(/prefixed with "loop\.", "pool\.", "loop-mode=", or "pool-mode="/);
+    ).toThrow(/prefixed with "loop\.", "pool\.", "faraday\.", or a "<loop\|pool\|faraday>-mode=" gate/);
+    // Faraday's data dir must be pinnable (its macaroon DB is per-wallet).
+    const faraday = buildLitdConfig({ ...NEUTRINO_REGTEST, extraSubServerArgs: ['faraday.faradaydir=/w/faraday'] });
+    expect(faraday.confLines).toContain('faraday.faradaydir=/w/faraday');
   });
 });
 

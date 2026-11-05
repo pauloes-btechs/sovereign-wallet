@@ -231,6 +231,36 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     expect(screen.getAllByText(textMatching(/Required for:/)).length).toBeGreaterThan(0);
   }, 20_000);
 
+  it('tab bar: Activity lists the send from the daemon, Pay keeps its draft, More shows live status', async () => {
+    const sim = new MobileFlowSimulatedClient();
+    await createAndBackup(sim);
+
+    // The status line comes from the last successful read, not the render clock.
+    expect(screen.getByText(textMatching(/^Updated \d\d:\d\d:\d\d UTC$/))).toBeTruthy();
+    expect(screen.getByText('regtest · Ark operator reachable')).toBeTruthy();
+
+    click('Activity');
+    expect(await screen.findByText(textMatching(/No activity yet/))).toBeTruthy();
+
+    click('Pay');
+    typeInto('Lightning invoice', 'lnbcrt1-sim-tab-invoice');
+    click('Review payment');
+    await screen.findByText('Service fee');
+    click('Confirm and send');
+    await screen.findByText(textMatching(/Payment in flight/));
+
+    click('Activity');
+    expect(await screen.findByText('Sent · Lightning')).toBeTruthy();
+    expect(screen.getByText('Pending')).toBeTruthy();
+
+    click('More');
+    expect(await screen.findByText('Everyday (Wavelength)')).toBeTruthy();
+    expect(screen.getByText('Reachable')).toBeTruthy();
+
+    click('Home');
+    await screen.findByText('Wallet');
+  }, 20_000);
+
   it('restore rejects a wrong-length phrase with the 12-or-24 rule', async () => {
     const sim = new MobileFlowSimulatedClient();
     render(<ModeAApp client={sim} network="regtest" dataDir="/tmp/sovereign-mobile-test" pollIntervalMs={600_000} />);

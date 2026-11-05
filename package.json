@@ -2,7 +2,7 @@
   "name": "sovereign-wallet",
   "version": "0.1.0",
   "private": true,
-  "description": "Noncustodial Bitcoin & Lightning wallet \u2014 Wavelength everyday mode and litd advanced mode behind one dark, minimalist interface.",
+  "description": "Noncustodial Bitcoin & Lightning wallet — Wavelength everyday mode and litd advanced mode behind one dark, minimalist interface.",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
@@ -25,6 +25,7 @@
     "@eslint/js": "^9.17.0",
     "eslint": "^9.17.0",
     "globals": "^17.13.0",
+    "protobufjs": "7.6.6",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.0",
     "vitest": "^3.0.5"

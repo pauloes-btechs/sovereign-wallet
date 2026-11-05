@@ -11,6 +11,7 @@ signed installers, and CI to build them.
 | Surface | What it is | Where it runs | Cost | Secrets |
 | --- | --- | --- | --- | --- |
 | **Web demo** | Mode A mobile app over react-native-web, simulated Wavelength client, regtest | **Vercel** service `wallet-demo`, public at `/` | Free | None |
+| **Desktop demo (web)** | `apps/desktop` node-mode UI replaying real litd responses recorded on regtest ([UPSTREAM_WATCH](UPSTREAM_WATCH.md)) | **Vercel** service `desktop`, public at `/desktop/` (opens in node mode; `?mode=a` explains everyday mode) | Free | None |
 | **Component catalog** | `packages/ui` Storybook (Mode A presentational components) | **Vercel** service `storybook`, public at `/storybook/` | Free | None |
 | **Desktop app** | Tauri 2 shell + `waved`/`litd` sidecars | User's machine; installers on **GitHub Releases** | Free | Signing certs (later) |
 | **Android** | React Native 0.88 | Device; APK on GitHub Releases or Firebase App Distribution → Play Store later | Free → $25 one-time (Play) | Release keystore (later) |
@@ -43,6 +44,7 @@ one project, one domain, two independently built static frontends.
 | Service | Root | Public path | Build |
 | --- | --- | --- | --- |
 | `wallet-demo` | `apps/mobile` | `/` (catch-all, last rewrite) | workspace deps, then `vite build --config vite.preview.config.ts` → `dist` |
+| `desktop` | `apps/desktop` | `/desktop/` (`/desktop` redirects) | workspace deps, typecheck, then `VITE_SOVEREIGN_DEMO=replay vite build --base=/desktop/ --outDir dist/desktop` → `dist` |
 | `storybook` | `packages/ui` | `/storybook/` (`/storybook` redirects) | workspace deps, then `storybook build -o storybook-static/storybook` → `storybook-static` |
 
 - A service receives the **original** request path, so Storybook is built
@@ -61,13 +63,22 @@ one project, one domain, two independently built static frontends.
   server-side functions. The desktop app's network calls go only to its own
   loopback sidecars (`127.0.0.1`) on the user's machine. That's the
   noncustodial design, so it's not something to route through Vercel.
-- **Not deployed:** `apps/desktop` (its UI is useless without local
-  `waved`/`litd` daemons, and is shipped inside the Tauri binary) and
-  `apps/desktop/src-tauri` (a native desktop binary, not a web server).
+- **`desktop` replays a recorded session.** The real desktop app talks to its
+  `waved`/`litd` sidecars on `127.0.0.1`. The hosted build
+  (`VITE_SOVEREIGN_DEMO=replay`) runs the same `BridgeClient` and screens
+  over real responses recorded from litd on regtest, opens in node mode, and
+  never reads bridge parameters from the URL. Its CSP keeps
+  `connect-src 'self'`. See [UPSTREAM_WATCH](UPSTREAM_WATCH.md) for how the
+  recording is made and refreshed.
+- **Not deployed:** `apps/desktop/src-tauri`, a native desktop binary, not a
+  web server. If a Vercel import auto-detects it as a Rust service, or sets the
+  project's Root Directory to it, the build fails on missing GTK libraries.
+  The Root Directory must be the repo root.
 
 Verified with Vercel CLI 65.9: `vercel build` succeeds for both services, and
-the emitted route table is `/storybook` → 307, `/storybook/(.*)` →
-`storybook`, `/(.*)` → `wallet-demo`.
+the emitted route table is `/desktop` and `/storybook` → 307,
+`/desktop/(.*)` → `desktop`, `/storybook/(.*)` → `storybook`, `/(.*)` →
+`wallet-demo`.
 
 Local: `vercel dev -L` runs both services, but in dev mode Storybook's own
 dev server answers at its root, not `/storybook/`. Use
@@ -93,8 +104,8 @@ env var that a Vite build can read.
 3. Deploy. Every push to `main` then updates production, and every PR gets a
    preview URL that Vercel comments on the PR.
 
-The CI job **Vercel services build (wallet-demo + storybook)** runs both
-services' builds, so a red check means the deploy would fail too.
+The CI job **Vercel services build (wallet-demo + desktop + storybook)** runs all
+three services' builds, so a red check means the deploy would fail too.
 
 ### Alternatives (also free)
 
@@ -125,9 +136,9 @@ Windows (NSIS + MSI) and Linux (best-effort), with install smoke tests
    `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`, plus a Windows code-signing
    cert.
 
-There is no Vercel role for the desktop app. Its UI is bundled into the
-binary and talks only to loopback sidecars (see the Tauri CSP in
-`apps/desktop/src-tauri/tauri.conf.json`).
+Vercel hosts only a preview of the desktop UI at `/desktop/`. The working app
+bundles that UI into the binary, where it talks only to its loopback sidecars
+(see the Tauri CSP in `apps/desktop/src-tauri/tauri.conf.json`).
 
 ## Mobile
 

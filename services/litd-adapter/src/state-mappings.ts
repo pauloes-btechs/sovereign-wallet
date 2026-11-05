@@ -601,6 +601,8 @@ export interface PaymentView {
   readonly feeSat: string;
   readonly creationTimeNs: string;
   readonly failureReason?: string;
+  /** The BOLT-11 request that was paid (empty for keysend); decode it for memo + destination. */
+  readonly paymentRequest: string;
 }
 
 /** Serialize a ListPayments row for the bridge (sats as decimal strings). */
@@ -611,9 +613,11 @@ export function mapPaymentView(payment: {
   readonly fee: bigint;
   readonly creationTimeNs: bigint;
   readonly failureReason: number;
+  readonly paymentRequest?: string;
 }): PaymentView {
   return {
     paymentHash: payment.paymentHash,
+    paymentRequest: payment.paymentRequest ?? '',
     status: PAYMENT_STATUS_LABELS[payment.status] ?? `unknown (${payment.status})`,
     valueSat: payment.valueSat.toString(),
     feeSat: payment.fee.toString(),

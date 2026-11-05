@@ -106,7 +106,7 @@ export interface LightningOps {
   channelBalance(): Promise<{ readonly response: ChannelBalanceResponse }>;
   newAddress(type: 'p2wkh' | 'np2wkh'): Promise<{ readonly address: string }>;
   sendCoins(request: ReturnType<typeof buildSendCoinsRequest>): Promise<{ readonly txid: string }>;
-  estimateFee(targetConf: number): Promise<{ readonly satPerVbyte: bigint; readonly feeSat: bigint }>;
+  estimateFee(targetConf: number, addrToAmount: Readonly<Record<string, bigint>>): Promise<{ readonly satPerVbyte: bigint; readonly feeSat: bigint }>;
   listChannels(): Promise<{ readonly response: ListChannelsResponse }>;
   pendingChannels(): Promise<{ readonly response: PendingChannelsResponse }>;
   closedChannels(): Promise<{ readonly response: ClosedChannelsResponse }>;
@@ -323,13 +323,32 @@ export class LitdBridgeSession {
     return ops.newAddress(type);
   }
 
-  async estimateFee(targetConf: number): Promise<{ readonly satPerVbyte: bigint; readonly feeSat: bigint }> {
+  /**
+   * Fee quote for one output. LND's EstimateFee needs a real output, so with
+   * no destination the quote uses one of this wallet's own addresses (reused
+   * for the session) and a typical 10,000-sat payment: the rate is what
+   * matters there, and it does not depend on where the coins go.
+   */
+  async estimateFee(
+    targetConf: number,
+    output?: { readonly address: string; readonly amountSat: bigint },
+  ): Promise<{ readonly satPerVbyte: bigint; readonly feeSat: bigint }> {
     if (!Number.isInteger(targetConf) || targetConf < 1 || targetConf > 1000) {
       throw new BridgeRequestError(400, 'confirmation target must be between 1 and 1000 blocks');
     }
+    if (output !== undefined && output.amountSat <= 0n) {
+      throw new BridgeRequestError(400, 'amountSat must be positive');
+    }
     const ops = await this.requireReady();
-    return ops.estimateFee(targetConf);
+    let target = output;
+    if (target === undefined) {
+      this.feeProbeAddress ??= (await ops.newAddress('p2wkh')).address;
+      target = { address: this.feeProbeAddress, amountSat: 10_000n };
+    }
+    return ops.estimateFee(targetConf, { [target.address]: target.amountSat });
   }
+
+  private feeProbeAddress: string | undefined;
 
   async sendCoins(input: {
     readonly address: string;
@@ -376,7 +395,12 @@ export class LitdBridgeSession {
     const ops = await this.requireReady();
     const request = buildOpenChannelRequest(input);
     if (input.host !== undefined && input.host.trim()) {
-      await ops.connectPeer(request.nodePubkeyString || input.nodePubkeyHex.trim(), input.host.trim());
+      try {
+        await ops.connectPeer(request.nodePubkeyString || input.nodePubkeyHex.trim(), input.host.trim());
+      } catch (error) {
+        // An existing connection is what we wanted; anything else is a real failure.
+        if (!/already connected/i.test(error instanceof Error ? error.message : String(error))) throw error;
+      }
     }
     const { channelPoint } = await ops.openChannelSync(request);
     return { channelPoint };
@@ -565,7 +589,13 @@ export function sessionJsonReplacer(_key: string, value: unknown): unknown {
 export async function createRealBridgeDeps(options: {
   readonly connectionOptions: LitdConnectionOptions;
   /** Faraday subserver config; integrated litd serves it on the same mux. */
-  readonly faraday?: { readonly rpcPort: number; readonly tlsCertPath: string; readonly macaroonGlobDir: string };
+  readonly faraday?: {
+    readonly rpcPort: number;
+    readonly tlsCertPath: string;
+    readonly macaroonGlobDir: string;
+    /** Preferred credential (litd's super macaroon). Faraday rejects LND's admin macaroon. */
+    readonly macaroonPath?: string;
+  };
 }): Promise<LitdBridgeDeps> {
   const { createLightningClient, createRouterClient, createWalletUnlockerClient } = await import('../client.js');
   const conn = options.connectionOptions;
@@ -625,13 +655,19 @@ export async function createRealBridgeDeps(options: {
           // The faraday subserver validates against its own macaroon when
           // present (faraday.macaroon beside the admin macaroon); the admin
           // macaroon is the fallback for deployments that never minted one.
+          // Credential order: litd's super macaroon (what integrated litd
+          // accepts for frdrpc), then a faraday.macaroon beside the admin
+          // macaroon, then — last resort, known to fail against integrated
+          // litd with "signature mismatch" — LND's admin macaroon.
           let macaroonHex = adminMacaroonHex;
-          try {
-            macaroonHex = (
-              await readFile(join(faradayOptions.macaroonGlobDir, 'faraday.macaroon'))
-            ).toString('hex');
-          } catch {
-            // faraday.macaroon is optional — admin macaroon works too.
+          for (const candidate of [faradayOptions.macaroonPath, join(faradayOptions.macaroonGlobDir, 'faraday.macaroon')]) {
+            if (candidate === undefined) continue;
+            try {
+              macaroonHex = (await readFile(candidate)).toString('hex');
+              break;
+            } catch {
+              // not baked yet / not present — try the next credential
+            }
           }
           const transport = await createLitdTransport({
             rpcHost: '127.0.0.1',
@@ -683,9 +719,9 @@ export function lightningOpsFromClient(clients: { readonly lightning: LightningC
       address: (await lightning.newAddress({ type: addressTypeToProto(type), account: '' })).response.address,
     }),
     sendCoins: async (request) => ({ txid: (await lightning.sendCoins(request)).response.txid }),
-    estimateFee: async (targetConf) => {
+    estimateFee: async (targetConf, addrToAmount) => {
       const req = {
-        addrToAmount: {},
+        addrToAmount: { ...addrToAmount },
         targetConf,
         minConfs: 1,
         spendUnconfirmed: false,
@@ -735,7 +771,7 @@ export function lightningOpsFromClient(clients: { readonly lightning: LightningC
         response.fundingTxid.oneofKind === 'fundingTxidStr'
           ? response.fundingTxid.fundingTxidStr
           : response.fundingTxid.oneofKind === 'fundingTxidBytes'
-            ? Buffer.from(response.fundingTxid.fundingTxidBytes).toString('hex')
+            ? Buffer.from(response.fundingTxid.fundingTxidBytes).reverse().toString('hex')
             : '';
       return { channelPoint: `${txid}:${response.outputIndex}` };
     },

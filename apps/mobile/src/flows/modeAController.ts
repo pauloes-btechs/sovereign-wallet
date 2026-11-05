@@ -15,7 +15,12 @@
  */
 
 import type { PaymentIntent, PaymentKind, RecoveryReport } from '@sovereign/payments';
-import type { BalanceBuckets, WalletCapabilities, WalletProvider } from '@sovereign/wallet-core';
+import type {
+  BalanceBuckets,
+  TransactionRecord,
+  WalletCapabilities,
+  WalletProvider,
+} from '@sovereign/wallet-core';
 import { assertSeedCompatible } from '@sovereign/wallet-core';
 import { CrossProviderRestoreError } from '@sovereign/wallet-core';
 import type {
@@ -48,10 +53,35 @@ export type ModeAScreen =
   | 'onboarding'
   | 'backup'
   | 'home'
+  | 'activity'
   | 'send'
   | 'receive'
   | 'restore'
+  | 'more'
   | 'capabilities';
+
+/** Bottom-tab destinations once a wallet exists (onboarding has no tab bar). */
+export type ModeATab = 'home' | 'activity' | 'pay' | 'more';
+
+/** Which tab a screen belongs to; null for the pre-wallet screens (no tab bar). */
+export function tabForScreen(screen: ModeAScreen): ModeATab | null {
+  switch (screen) {
+    case 'home':
+      return 'home';
+    case 'activity':
+      return 'activity';
+    case 'send':
+    case 'receive':
+      return 'pay';
+    case 'more':
+    case 'capabilities':
+      return 'more';
+    case 'onboarding':
+    case 'backup':
+    case 'restore':
+      return null;
+  }
+}
 
 export interface ModeAState {
   readonly screen: ModeAScreen;
@@ -67,6 +97,16 @@ export interface ModeAState {
   // Home — balances and the VTXO notice, rendered from live provider data.
   readonly balances: BalanceBuckets | null;
   readonly vtxo: VtxoSummary | null;
+  /** When the last successful balance read completed (epoch ms); null before the first. */
+  readonly balancesUpdatedAt: number | null;
+  /** The last refresh's failure, shown next to the (older) values it left on screen. */
+  readonly balancesError: string | null;
+  readonly balancesRefreshing: boolean;
+
+  // Activity — one page of the daemon's activity stream, newest as returned.
+  readonly activity: readonly TransactionRecord[] | null;
+  readonly activityStatus: 'idle' | 'loading' | 'loaded' | 'failed';
+  readonly activityError: string | null;
 
   // Send — a controlled draft; quotes are shown before confirming.
   readonly sendKind: 'lightning' | 'onchain';
@@ -82,6 +122,7 @@ export interface ModeAState {
   readonly onchainAddress: string | null;
   readonly invoice: string | null;
   readonly receiveAmountText: string;
+  readonly receiveError: string | null;
 
   // Restore — words text + password, rebuilt before VTXO batch expiry.
   readonly restoreWordsText: string;
@@ -109,6 +150,8 @@ export interface ModeAProviderPort
     note?: string;
     maxFeeSat?: number;
   }): Promise<QuotedSend & { payload: LightningSendPayload }>;
+  /** One page of wallet activity as provider-partitioned history records. */
+  activityHistory(): Promise<readonly TransactionRecord[]>;
   quoteOnchain(input: {
     onchainAddress: string;
     amountSat?: number;
@@ -247,6 +290,28 @@ export class ModeAController {
 
   navigate(screen: ModeAScreen): void {
     this.set({ screen });
+    if (screen === 'activity') void this.loadActivity();
+  }
+
+  /**
+   * Bottom-tab selection. Home resets the transient send/receive drafts (as
+   * the old back button did); Pay reopens the send flow where it was left.
+   */
+  selectTab(tab: ModeATab): void {
+    switch (tab) {
+      case 'home':
+        this.backToHome();
+        return;
+      case 'activity':
+        this.navigate('activity');
+        return;
+      case 'pay':
+        if (tabForScreen(this.state.screen) !== 'pay') this.navigate('send');
+        return;
+      case 'more':
+        this.navigate('more');
+        return;
+    }
   }
 
   /** Back to Home resets the transient flow state of the screen being left. */
@@ -258,6 +323,7 @@ export class ModeAController {
 
   /** Reads live balances + VTXO classification from the provider. */
   async refreshBalances(): Promise<void> {
+    this.set({ balancesRefreshing: true });
     try {
       const [classified, info] = await Promise.all([
         this.provider.classifyVtxos(),
@@ -267,11 +333,28 @@ export class ModeAController {
       this.set({
         balances,
         vtxo: summarizeVtxos(classified, info.serverConnected),
+        balancesUpdatedAt: Date.now(),
+        balancesError: null,
+        balancesRefreshing: false,
       });
     } catch (error) {
-      // A failed background refresh keeps the last known (labeled) values on
-      // screen; the failure is surfaced, not swallowed.
+      // A failed refresh keeps the last known values on screen, labeled with
+      // the time they were read; the failure is shown next to them.
       console.warn('[mode-a] balance refresh failed:', error);
+      this.set({ balancesError: errorMessage(error), balancesRefreshing: false });
+    }
+  }
+
+  // ——— Activity ———
+
+  /** Reads one page of the daemon's activity stream. Failures land in state. */
+  async loadActivity(): Promise<void> {
+    this.set({ activityStatus: 'loading', activityError: null });
+    try {
+      const activity = await this.provider.activityHistory();
+      this.set({ activity, activityStatus: 'loaded' });
+    } catch (error) {
+      this.set({ activityStatus: 'failed', activityError: errorMessage(error) });
     }
   }
 
@@ -395,22 +478,22 @@ export class ModeAController {
   // ——— Receive ———
 
   setReceiveTab(tab: 'onchain' | 'lightning'): void {
-    this.set({ receiveTab: tab });
+    this.set({ receiveTab: tab, receiveError: null });
   }
 
   setReceiveAmount(text: string): void {
-    this.set({ receiveAmountText: text });
+    this.set({ receiveAmountText: text, receiveError: null });
   }
 
   /** Fresh boarding address for an on-chain deposit into the Ark wallet. */
   async generateAddress(): Promise<void> {
-    this.set({ busy: true });
+    this.set({ busy: true, receiveError: null });
     try {
       const amountHint = parseSats(this.state.receiveAmountText);
       const address = await this.provider.depositOnchain(amountHint);
       this.set({ busy: false, onchainAddress: address });
     } catch (error) {
-      this.set({ busy: false });
+      this.set({ busy: false, receiveError: errorMessage(error) });
       throw error;
     }
   }
@@ -423,14 +506,16 @@ export class ModeAController {
   async generateInvoice(): Promise<void> {
     const amountSat = parseSats(this.state.receiveAmountText);
     if (amountSat === undefined) {
-      throw new Error('Enter an amount in sats first.');
+      const message = 'Enter an amount in sats first.';
+      this.set({ receiveError: message });
+      throw new Error(message);
     }
-    this.set({ busy: true });
+    this.set({ busy: true, receiveError: null });
     try {
       const invoice = await this.provider.receiveLightning(amountSat, 'Sovereign Wallet receive');
       this.set({ busy: false, invoice });
     } catch (error) {
-      this.set({ busy: false });
+      this.set({ busy: false, receiveError: errorMessage(error) });
       throw error;
     }
   }
@@ -548,6 +633,12 @@ const INITIAL_STATE: ModeAState = {
   backupStep: 'show',
   balances: null,
   vtxo: null,
+  balancesUpdatedAt: null,
+  balancesError: null,
+  balancesRefreshing: false,
+  activity: null,
+  activityStatus: 'idle',
+  activityError: null,
   sendKind: 'lightning',
   sendDestination: '',
   sendAmountText: '',
@@ -559,6 +650,7 @@ const INITIAL_STATE: ModeAState = {
   onchainAddress: null,
   invoice: null,
   receiveAmountText: '',
+  receiveError: null,
   restoreWordsText: '',
   restorePassword: '',
   restoreStatus: 'entering',
@@ -582,6 +674,7 @@ const RESET_FLOWS: Partial<ModeAState> = {
   onchainAddress: null,
   invoice: null,
   receiveAmountText: '',
+  receiveError: null,
 };
 
 /** Derives the Home screen's single VTXO summary from the classified inventory. */

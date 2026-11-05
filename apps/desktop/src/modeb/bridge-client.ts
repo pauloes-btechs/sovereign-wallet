@@ -108,6 +108,8 @@ export interface PaymentView {
   readonly feeSat: string;
   readonly creationTimeNs: string;
   readonly failureReason?: string;
+  /** BOLT-11 request that was paid (empty for keysend; absent from older bridges). */
+  readonly paymentRequest?: string;
 }
 
 export interface PaymentOutcomeView {
@@ -186,13 +188,21 @@ export interface DiagnosticsView {
   readonly faraday: FaradayView;
 }
 
+export interface BridgeClientOptions extends BridgeBootstrap {
+  /** Transport override. Defaults to the global fetch; the hosted demo
+   *  injects a replay transport so the SAME client code runs over recorded
+   *  bridge responses. */
+  readonly fetchImpl?: typeof fetch;
+}
+
 export class BridgeClient {
-  constructor(private readonly options: BridgeBootstrap) {}
+  constructor(private readonly options: BridgeClientOptions) {}
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
     let response: Response;
+    const doFetch = this.options.fetchImpl ?? fetch;
     try {
-      response = await fetch(`${this.options.bridgeUrl}${path}`, {
+      response = await doFetch(`${this.options.bridgeUrl}${path}`, {
         method,
         headers: {
           authorization: `Bearer ${this.options.bridgeToken}`,
@@ -209,6 +219,12 @@ export class BridgeClient {
       throw new BridgeHttpError(response.status, payload.error ?? `bridge request failed (${response.status})`);
     }
     return (await response.json()) as T;
+  }
+
+  /** Typed escape hatch for bridge routes without a dedicated method
+   * (the platform API in src/platform/api.ts builds on this). */
+  request<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+    return this.call<T>(method, path, body);
   }
 
   state(): Promise<BridgeStateView> {

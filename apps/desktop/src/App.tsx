@@ -20,6 +20,9 @@ import { WalletSessionProvider } from './wallet/WalletSessionProvider.js';
 import { WalletApp } from './wallet/WalletApp.js';
 import { devGatewayBootstrap, type GatewayBootstrap } from './wallet/session.js';
 import { ModeBApp } from './modeb/ModeBApp.js';
+import { DEMO_REPLAY } from './demo/mode.js';
+import { DemoBanner } from './demo/DemoBanner.js';
+import { useDemoFixture } from './demo/useDemoFixture.js';
 
 /** True only inside the Tauri WebView (vite dev in a plain browser has no
  *  sidecar runtime — show that state honestly instead of failing to spawn). */
@@ -111,24 +114,38 @@ export function App() {
   // bridge process. Packaged-shell mode switching is Tauri-shell work; in
   // dev/e2e the mode is chosen by URL, and both modes are never mounted
   // together — distinct seeds, balances, and identities.
-  const isModeB = new URLSearchParams(window.location.search).get('mode') === 'b';
+  const mode = new URLSearchParams(window.location.search).get('mode');
+  // The hosted demo replays a recorded node-mode session, so it opens there.
+  const isModeB = DEMO_REPLAY ? mode !== 'a' : mode === 'b';
+  const demoFixture = useDemoFixture();
 
   const config = useWavedSidecarConfig();
   const { phase, error } = useWavedSidecar(config);
   const bootstrap = useGatewayBootstrap(config, phase);
 
   if (isModeB) {
+    // Full-window layout: optional demo banner, then the node app (its own
+    // setup/unlock frames, or the platform shell once the node is ready).
     return (
-      <main
-        style={{
-          background: '#0d0d10',
-          color: '#e8e8ea',
-          minHeight: '100vh',
-          fontFamily: 'system-ui',
-        }}
-      >
-        <h1 style={{ textAlign: 'center', paddingTop: 16, margin: 0 }}>Sovereign Wallet — Node mode</h1>
-        <ModeBApp />
+      <div className="p-app-root" style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0b0d12', color: '#f5f7fa' }}>
+        {DEMO_REPLAY ? <DemoBanner meta={demoFixture?.meta ?? null} /> : null}
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+          <ModeBApp />
+        </div>
+      </div>
+    );
+  }
+
+  if (DEMO_REPLAY) {
+    return (
+      <main style={{ background: '#0d0d10', color: '#e8e8ea', minHeight: '100vh', fontFamily: 'system-ui' }}>
+        <DemoBanner meta={demoFixture?.meta ?? null} />
+        <h1 style={{ textAlign: 'center', paddingTop: 16, margin: 0 }}>Sovereign Wallet</h1>
+        <p style={{ textAlign: 'center', color: '#9aa0a6', maxWidth: 560, margin: '16px auto', lineHeight: 1.5 }} data-testid="demo-mode-a">
+          The desktop everyday mode runs the Wavelength daemon on your machine, so it isn&apos;t part of this recording.
+          Try the everyday-mode demo at <a href="/" style={{ color: '#f7931a' }}>/</a>, or the{' '}
+          <a href="?mode=b" style={{ color: '#f7931a' }}>advanced node mode</a> replayed here.
+        </p>
       </main>
     );
   }

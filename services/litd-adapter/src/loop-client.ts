@@ -66,7 +66,7 @@ export function mapOutQuoteToLoopQuote(r: Readonly<Loop.OutQuoteResponse>, amoun
   return {
     direction: 'loop-out',
     amountSat,
-    fees: { swapFeeSat, prepayFeeSat, minerFeeSat, routingFeeSat: 0, totalSat: swapFeeSat + prepayFeeSat + minerFeeSat },
+    fees: { swapFeeSat, prepayFeeSat, minerFeeSat, routingFeeSat: 0, totalSat: swapFeeSat + minerFeeSat },
     cltvDelta: r.cltvDelta,
     confTarget: r.confTarget,
     swapFeePpm: amountSat > 0 ? Math.round((swapFeeSat / amountSat) * 1_000_000) : 0,
@@ -247,7 +247,24 @@ export class LitdLoopPort {
     }
   }
 
-  async executeLoopOut(req: Readonly<{ amountSat: number; destAddress: string; maxSwapFeeSat: number; maxMinerFeeSat: number; sweepConfTarget?: number }>): Promise<{ swapId: string }> {
+  /** The generated loopd client, for surfaces beyond the LoopPort contract
+   * (terms, swap details, static addresses, suggestions). */
+  get swapClient(): LoopClient.SwapClientClient {
+    return this.client;
+  }
+
+  async executeLoopOut(
+    req: Readonly<{
+      amountSat: number;
+      destAddress: string;
+      maxSwapFeeSat: number;
+      maxMinerFeeSat: number;
+      sweepConfTarget?: number;
+      /** Restrict the off-chain payment to these channels (short channel ids). */
+      outgoingChanIds?: readonly string[];
+      label?: string;
+    }>,
+  ): Promise<{ swapId: string }> {
     try {
       const resp = await this.client
         .loopOut(
@@ -257,6 +274,8 @@ export class LitdLoopPort {
             maxSwapFee: BigInt(req.maxSwapFeeSat),
             maxMinerFee: BigInt(req.maxMinerFeeSat),
             sweepConfTarget: req.sweepConfTarget ?? 6,
+            outgoingChanSet: (req.outgoingChanIds ?? []).map((id) => BigInt(id)),
+            label: req.label ?? '',
             initiator: 'sovereign-wallet',
           }),
           // Bounded even though it's a dispatch: a deadline here means the
@@ -271,7 +290,9 @@ export class LitdLoopPort {
     }
   }
 
-  async executeLoopIn(req: Readonly<{ amountSat: number; maxSwapFeeSat: number; maxMinerFeeSat: number; lastHopPubkeyHex?: string }>): Promise<{ swapId: string }> {
+  async executeLoopIn(
+    req: Readonly<{ amountSat: number; maxSwapFeeSat: number; maxMinerFeeSat: number; lastHopPubkeyHex?: string; label?: string }>,
+  ): Promise<{ swapId: string }> {
     try {
       const resp = await this.client
         .loopIn(
@@ -280,6 +301,8 @@ export class LitdLoopPort {
             maxSwapFee: BigInt(req.maxSwapFeeSat),
             maxMinerFee: BigInt(req.maxMinerFeeSat),
             lastHop: req.lastHopPubkeyHex !== undefined ? Buffer.from(req.lastHopPubkeyHex, 'hex') : new Uint8Array(0),
+            label: req.label ?? '',
+            initiator: 'sovereign-wallet',
           }),
           { timeoutMs: RPC_UNARY_TIMEOUT_MS },
         )

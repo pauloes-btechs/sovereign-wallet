@@ -140,6 +140,7 @@ export type ModeBRemoteScreen =
   | 'home'
   | 'send'
   | 'receive'
+  | 'more'
   | 'revoked';
 
 export interface ModeBRemoteState {
@@ -165,6 +166,7 @@ export interface ModeBRemoteState {
   // Receive
   readonly invoiceAmountText: string;
   readonly invoice: string | null;
+  readonly invoiceError: string | null;
 }
 
 const INITIAL_STATE: ModeBRemoteState = {
@@ -182,6 +184,7 @@ const INITIAL_STATE: ModeBRemoteState = {
   sendError: null,
   invoiceAmountText: '',
   invoice: null,
+  invoiceError: null,
 };
 
 export interface ModeBRemoteControllerOptions {
@@ -461,14 +464,23 @@ export class ModeBRemoteController {
   // --- receive -------------------------------------------------------------
 
   editInvoiceAmount(text: string): void {
-    this.set({ invoiceAmountText: text });
+    this.set({ invoiceAmountText: text, invoiceError: null });
   }
 
   async createInvoice(): Promise<void> {
     const sat = parseSats(this.state.invoiceAmountText);
-    if (sat === null) return;
-    const { bolt11 } = await this.port.addInvoice({ valueSat: sat, memo: 'Mode B receive' });
-    this.set({ invoice: bolt11 });
+    if (sat === null) {
+      // Nothing reaches the node; the screen says what is missing.
+      this.set({ invoiceError: 'Enter a whole number of sats to create an invoice.' });
+      return;
+    }
+    try {
+      const { bolt11 } = await this.port.addInvoice({ valueSat: sat, memo: 'Mode B receive' });
+      this.set({ invoice: bolt11, invoiceError: null });
+    } catch (error) {
+      this.set({ invoiceError: describeError(error) });
+      throw error;
+    }
   }
 
   // --- sessions ------------------------------------------------------------

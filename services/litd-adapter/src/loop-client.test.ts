@@ -79,7 +79,7 @@ describe('quote mappings', () => {
       500_000,
     );
     expect(q.direction).toBe('loop-out');
-    expect(q.fees).toEqual({ swapFeeSat: 1_250, prepayFeeSat: 500, minerFeeSat: 300, routingFeeSat: 0, totalSat: 2_050 });
+    expect(q.fees).toEqual({ swapFeeSat: 1_250, prepayFeeSat: 500, minerFeeSat: 300, routingFeeSat: 0, totalSat: 1_550 }); // prepay is part of the swap fee, not on top of it
     expect(q.swapFeePpm).toBe(2_500);
     expect(q.cltvDelta).toBe(80);
   });

@@ -6,7 +6,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import {
   describeDependencyKind,
   describeRequiredFor,
@@ -16,10 +16,11 @@ import {
   satsLabel,
   vtxoStateLabel,
 } from '@sovereign/ui/copy';
+import type { TransactionRecord } from '@sovereign/wallet-core';
 import type { ModeAController, ModeAState } from '../flows/modeAController.js';
 import {
+  MobileBadge,
   MobileBalanceGrid,
-  MobileBalanceStatus,
   MobileButton,
   MobileButtonGroup,
   MobileErrorNote,
@@ -27,9 +28,13 @@ import {
   MobileFlowTabs,
   MobileHeader,
   MobileLabelRow,
+  MobileNavRow,
+  MobilePanel,
   MobileScreen,
   MobileWarningBand,
-  styles,
+  mobilePalette,
+  styles as baseStyles,
+  utcClock,
 } from './Primitives.js';
 
 // ——— Home ———
@@ -46,15 +51,32 @@ export function HomeScreen({
 }): ReactNode {
   const { balances, vtxo } = state;
   const capabilities = controller.capabilities;
+  const operator =
+    vtxo === null
+      ? 'checking Ark operator'
+      : vtxo.operatorReachable
+        ? 'Ark operator reachable'
+        : 'Ark operator unreachable';
 
   return (
     <MobileScreen>
-      <MobileHeader title="Wallet" />
+      <MobileHeader title="Wallet" subtitle={`${network} · ${operator}`} />
       {balances !== null ? (
         <MobileBalanceGrid buckets={balances} />
+      ) : state.balancesError !== null ? (
+        <MobileWarningBand tone="danger">
+          <Text style={styles.bandText}>Balances could not be read: {state.balancesError}</Text>
+        </MobileWarningBand>
       ) : (
         <Text style={styles.dim}>Loading balances…</Text>
       )}
+
+      <BalanceFreshness
+        updatedAt={state.balancesUpdatedAt}
+        error={balances !== null ? state.balancesError : null}
+        refreshing={state.balancesRefreshing}
+        onRefresh={() => void controller.refreshBalances()}
+      />
 
       {vtxo !== null && (
         <VtxoNotice
@@ -65,16 +87,150 @@ export function HomeScreen({
         />
       )}
 
-      <MobileButtonGroup>
+      <MobileButtonGroup row>
         <MobileButton label="Send" onPress={() => controller.navigate('send')} />
         <MobileButton label="Receive" onPress={() => controller.navigate('receive')} />
-        <MobileButton
-          label="How this wallet works"
-          kind="secondary"
-          onPress={() => controller.navigate('capabilities')}
-        />
       </MobileButtonGroup>
-      <MobileBalanceStatus network={network} status="synced" syncedAt={Date.now()} />
+      <MobileNavRow
+        label="How this wallet works"
+        detail="Lightning mechanism, exits, recovery and the services this wallet depends on"
+        onPress={() => controller.navigate('capabilities')}
+      />
+    </MobileScreen>
+  );
+}
+
+/**
+ * When the numbers above were read — from the controller's last successful
+ * refresh, never the render clock — plus a manual refresh.
+ */
+function BalanceFreshness({
+  updatedAt,
+  error,
+  refreshing,
+  onRefresh,
+}: {
+  updatedAt: number | null;
+  error: string | null;
+  refreshing: boolean;
+  onRefresh: () => void;
+}): ReactNode {
+  return (
+    <View style={styles.rowBetween}>
+      <View style={styles.flexShrink}>
+        <Text style={styles.faint}>
+          {refreshing
+            ? 'Refreshing…'
+            : updatedAt !== null
+              ? `Updated ${utcClock(updatedAt)}`
+              : 'Not read yet'}
+        </Text>
+        {error !== null && (
+          <Text style={[styles.faint, { color: mobilePalette.danger }]} accessibilityRole="alert">
+            Last refresh failed: {error}
+          </Text>
+        )}
+      </View>
+      <MobileButton label="Refresh" kind="ghost" compact busy={refreshing} onPress={onRefresh} />
+    </View>
+  );
+}
+
+// ——— Activity ———
+
+const KIND_LABEL: Record<TransactionRecord['kind'], string> = {
+  'lightning-invoice': 'Lightning',
+  onchain: 'On-chain',
+  'ark-vtxo': 'Ark',
+  'asset-transfer': 'Asset',
+};
+
+const STATUS_BADGE: Record<TransactionRecord['status'], { label: string; tone: 'positive' | 'warning' | 'danger' }> = {
+  settled: { label: 'Settled', tone: 'positive' },
+  pending: { label: 'Pending', tone: 'warning' },
+  failed: { label: 'Failed', tone: 'danger' },
+};
+
+/** "2026-10-30 14:02 UTC", or the raw value when the daemon sent something unparseable. */
+function activityTime(at: string): string {
+  const ms = Date.parse(at);
+  if (Number.isNaN(ms)) return at;
+  const iso = new Date(ms).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+}
+
+function shortRef(ref: string): string {
+  return ref.length > 18 ? `${ref.slice(0, 8)}…${ref.slice(-6)}` : ref;
+}
+
+/** One page of the wallet's activity stream, exactly as the daemon reports it. */
+export function ActivityScreen({
+  controller,
+  state,
+}: {
+  controller: ModeAController;
+  state: ModeAState;
+}): ReactNode {
+  const { activity, activityStatus, activityError } = state;
+  return (
+    <MobileScreen>
+      <View style={styles.rowBetween}>
+        <View style={styles.flexShrink}>
+          <MobileHeader title="Activity" subtitle="Payments recorded by this wallet" />
+        </View>
+        <MobileButton
+          label="Refresh"
+          kind="ghost"
+          compact
+          busy={activityStatus === 'loading'}
+          onPress={() => void controller.loadActivity()}
+        />
+      </View>
+
+      {activityStatus === 'failed' && (
+        <MobileWarningBand tone="danger">
+          <Text style={styles.bandText}>Activity could not be read: {activityError}</Text>
+        </MobileWarningBand>
+      )}
+      {activity === null && activityStatus !== 'failed' && (
+        <Text style={styles.dim}>Loading activity…</Text>
+      )}
+      {activity !== null && activity.length === 0 && (
+        <MobilePanel>
+          <Text style={styles.dim}>
+            No activity yet. Payments you send or receive appear here once the wallet records
+            them.
+          </Text>
+        </MobilePanel>
+      )}
+      {activity !== null && activity.length > 0 && (
+        <MobilePanel>
+          {activity.map((record, index) => {
+            const badge = STATUS_BADGE[record.status];
+            return (
+              <View
+                key={`${record.txId}-${index}`}
+                style={[styles.activityRow, index > 0 ? styles.activityRowDivider : null]}
+              >
+                <View style={styles.flexShrink}>
+                  <Text style={styles.value}>
+                    {record.direction === 'out' ? 'Sent' : 'Received'} · {KIND_LABEL[record.kind]}
+                  </Text>
+                  {record.at !== '' && <Text style={styles.faint}>{activityTime(record.at)}</Text>}
+                  <Text style={[styles.faint, styles.mono]}>{shortRef(record.txId)}</Text>
+                </View>
+                <View style={styles.activityAmount}>
+                  <Text style={styles.value}>
+                    {record.amountSat === 0n ? '' : record.direction === 'out' ? '−' : '+'}
+                    {satsLabel(record.amountSat)}
+                  </Text>
+                  <MobileBadge label={badge.label} tone={badge.tone} />
+                </View>
+              </View>
+            );
+          })}
+        </MobilePanel>
+      )}
     </MobileScreen>
   );
 }
@@ -144,19 +300,38 @@ export function SendScreen({
 }): ReactNode {
   const capabilities = controller.capabilities;
   const amountReady = state.sendKind === 'lightning' || /^\d+$/.test(state.sendAmountText.trim());
+  const destinationReady = state.sendDestination.trim().length > 0;
+  const reviewBlocker = !destinationReady
+    ? state.sendKind === 'lightning'
+      ? 'Paste an invoice to review the payment.'
+      : 'Paste an address to review the payment.'
+    : !amountReady
+      ? 'Enter a whole number of sats to review the payment.'
+      : null;
 
   return (
     <MobileScreen>
-      <MobileHeader title="Send" onBack={() => controller.backToHome()} />
-      <MobileFlowTabs
-        tabs={[
-          { id: 'lightning', label: 'Lightning' },
-          { id: 'onchain', label: 'On-chain' },
-        ]}
-        activeId={state.sendKind}
-        onChange={(id) => controller.setSendKind(id === 'onchain' ? 'onchain' : 'lightning')}
-      />
-      <Text style={styles.faint}>{mechanismLabel(capabilities.lightningMechanism)}.</Text>
+      <MobileHeader title="Pay" />
+      <PaySwitch controller={controller} active="send" />
+      {state.sendStatus === 'idle' ? (
+        // The rail is chosen while drafting; once quoted it is fixed for this payment.
+        <MobileFlowTabs
+          tabs={[
+            { id: 'lightning', label: 'Lightning' },
+            { id: 'onchain', label: 'On-chain' },
+          ]}
+          activeId={state.sendKind}
+          onChange={(id) => controller.setSendKind(id === 'onchain' ? 'onchain' : 'lightning')}
+          variant="underline"
+        />
+      ) : (
+        <Text style={styles.overline}>
+          {state.sendKind === 'lightning' ? 'Lightning payment' : 'On-chain payment'}
+        </Text>
+      )}
+      {state.sendKind === 'lightning' && (
+        <Text style={styles.faint}>{mechanismLabel(capabilities.lightningMechanism)}.</Text>
+      )}
 
       {state.sendStatus === 'idle' && (
         <>
@@ -181,27 +356,31 @@ export function SendScreen({
           <MobileButton
             label="Review payment"
             onPress={() => void controller.reviewSend()}
-            disabled={state.busy || (state.sendKind === 'onchain' && !amountReady)}
+            disabled={reviewBlocker !== null}
+            busy={state.busy}
           />
+          {reviewBlocker !== null && <Text style={styles.faint}>{reviewBlocker}</Text>}
         </>
       )}
 
       {state.sendStatus === 'review' && (
         <>
-          <MobileLabelRow
-            label="To"
-            value={
-              state.sendDestination.length > 24
-                ? `${state.sendDestination.slice(0, 24)}…`
-                : state.sendDestination
-            }
-          />
-          {state.sendAmountSat !== null && (
-            <MobileLabelRow label="Amount" value={satsLabel(state.sendAmountSat)} />
-          )}
-          {state.sendFeeSat !== null && (
-            <MobileLabelRow label="Service fee" value={satsLabel(state.sendFeeSat)} />
-          )}
+          <MobilePanel title="Review">
+            <MobileLabelRow
+              label="To"
+              value={
+                state.sendDestination.length > 24
+                  ? `${state.sendDestination.slice(0, 24)}…`
+                  : state.sendDestination
+              }
+            />
+            {state.sendAmountSat !== null && (
+              <MobileLabelRow label="Amount" value={satsLabel(state.sendAmountSat)} mono={false} />
+            )}
+            {state.sendFeeSat !== null && (
+              <MobileLabelRow label="Service fee" value={satsLabel(state.sendFeeSat)} mono={false} />
+            )}
+          </MobilePanel>
           {state.sendKind === 'lightning' && (
             <Text style={styles.faint}>
               {mechanismLabel(capabilities.lightningMechanism)} — the swap service routes this
@@ -212,7 +391,7 @@ export function SendScreen({
             <MobileButton
               label="Confirm and send"
               onPress={() => void controller.confirmSend()}
-              disabled={state.busy}
+              busy={state.busy}
             />
             <MobileButton
               label="Back to edit"
@@ -226,7 +405,11 @@ export function SendScreen({
       {state.sendStatus === 'sending' && (
         <>
           <MobileWarningBand tone="warning">
-            <Text style={styles.dim}>Payment in flight — do not close the app.</Text>
+            <Text style={styles.bandText}>Payment in flight — do not close the app.</Text>
+            <Text style={styles.dim}>
+              The result was not final when the wallet answered. Check its status before trying
+              again — paying twice is the risk of retrying blind.
+            </Text>
           </MobileWarningBand>
           <MobileButton
             label="Check payment status"
@@ -237,8 +420,8 @@ export function SendScreen({
 
       {state.sendStatus === 'settled' && (
         <>
-          <MobileWarningBand tone="info">
-            <Text style={styles.dim}>Payment sent.</Text>
+          <MobileWarningBand tone="positive">
+            <Text style={styles.bandText}>Payment sent.</Text>
           </MobileWarningBand>
           <MobileButtonGroup>
             <MobileButton label="Send another payment" onPress={controller.sendAnother} />
@@ -271,10 +454,12 @@ export function ReceiveScreen({
   state: ModeAState;
 }): ReactNode {
   const capabilities = controller.capabilities;
+  const amountReady = /^\d+$/.test(state.receiveAmountText.trim());
 
   return (
     <MobileScreen>
-      <MobileHeader title="Receive" onBack={() => controller.backToHome()} />
+      <MobileHeader title="Pay" />
+      <PaySwitch controller={controller} active="receive" />
       <MobileFlowTabs
         tabs={[
           { id: 'onchain', label: 'On-chain' },
@@ -282,6 +467,7 @@ export function ReceiveScreen({
         ]}
         activeId={state.receiveTab}
         onChange={(id) => controller.setReceiveTab(id === 'lightning' ? 'lightning' : 'onchain')}
+        variant="underline"
       />
 
       {state.receiveTab === 'onchain' && (
@@ -289,9 +475,16 @@ export function ReceiveScreen({
           <Text style={styles.dim}>
             Deposit Bitcoin on-chain into your wallet. A fresh address is generated each time.
           </Text>
-          <MobileButton label="Generate address" onPress={() => void controller.generateAddress()} disabled={state.busy} />
+          <MobileButton
+            label="Generate address"
+            onPress={() => void controller.generateAddress().catch(() => undefined)}
+            busy={state.busy}
+          />
+          <MobileErrorNote error={state.receiveError} />
           {state.onchainAddress !== null && (
-            <MobileLabelRow label="Your address" value={state.onchainAddress} />
+            <MobilePanel>
+              <MobileLabelRow label="Your address" value={state.onchainAddress} />
+            </MobilePanel>
           )}
         </>
       )}
@@ -310,10 +503,19 @@ export function ReceiveScreen({
           />
           <MobileButton
             label="New invoice"
-            onPress={() => void controller.generateInvoice()}
-            disabled={state.busy || !/^\d+$/.test(state.receiveAmountText.trim())}
+            onPress={() => void controller.generateInvoice().catch(() => undefined)}
+            disabled={!amountReady}
+            busy={state.busy}
           />
-          {state.invoice !== null && <MobileLabelRow label="Your invoice" value={state.invoice} />}
+          {!amountReady && (
+            <Text style={styles.faint}>Enter a whole number of sats to create an invoice.</Text>
+          )}
+          <MobileErrorNote error={state.receiveError} />
+          {state.invoice !== null && (
+            <MobilePanel>
+              <MobileLabelRow label="Your invoice" value={state.invoice} />
+            </MobilePanel>
+          )}
         </>
       )}
     </MobileScreen>
@@ -335,16 +537,24 @@ export function CapabilitiesScreen({
   const capabilities = controller.capabilities;
   return (
     <MobileScreen>
-      <MobileHeader title="How this wallet works" onBack={() => controller.backToHome()} />
-      <MobileLabelRow label="Lightning" value={mechanismLabel(capabilities.lightningMechanism)} />
-      <MobileLabelRow
-        label="Unilateral exit"
-        value={describeUnilateralExit(capabilities.unilateralExit)}
-      />
-      <MobileLabelRow
-        label="Recovery"
-        value={describeSeedType(capabilities.recoveryModel)}
-      />
+      <MobileHeader title="How this wallet works" onBack={() => controller.navigate('more')} />
+      <MobilePanel>
+        <MobileLabelRow
+          label="Lightning"
+          value={mechanismLabel(capabilities.lightningMechanism)}
+          mono={false}
+        />
+        <MobileLabelRow
+          label="Unilateral exit"
+          value={describeUnilateralExit(capabilities.unilateralExit)}
+          mono={false}
+        />
+        <MobileLabelRow
+          label="Recovery"
+          value={describeSeedType(capabilities.recoveryModel)}
+          mono={false}
+        />
+      </MobilePanel>
       <Text style={styles.h3}>Services this wallet depends on</Text>
       {capabilities.operatorDependencies.length === 0 ? (
         <Text style={styles.dim}>No service dependencies beyond the Bitcoin network itself.</Text>
@@ -360,9 +570,104 @@ export function CapabilitiesScreen({
         ))
       )}
       <Text style={styles.faint}>
-        Accepted recovery phrases: {controller.seedCompatibility.join(', ')} — phrases from other
-        wallet apps are refused rather than partially restored.
+        Accepted recovery phrases:{' '}
+        {controller.seedCompatibility
+          .map((seed) =>
+            seed === capabilities.recoveryModel ? describeSeedType(capabilities.recoveryModel) : seed,
+          )
+          .join(', ')}{' '}
+        — phrases from other wallet apps are refused rather than partially restored.
       </Text>
     </MobileScreen>
   );
 }
+
+// ——— Pay switch ———
+
+/** Send / Receive under the Pay tab — both flows keep their own drafts. */
+function PaySwitch({
+  controller,
+  active,
+}: {
+  controller: ModeAController;
+  active: 'send' | 'receive';
+}): ReactNode {
+  return (
+    <MobileFlowTabs
+      tabs={[
+        { id: 'send', label: 'Send' },
+        { id: 'receive', label: 'Receive' },
+      ]}
+      activeId={active}
+      onChange={(id) => controller.navigate(id === 'receive' ? 'receive' : 'send')}
+    />
+  );
+}
+
+// ——— More ———
+
+/**
+ * Wallet status and reference. Every value is read from the controller; the
+ * modes this build does not run say so instead of offering dead controls.
+ */
+export function MoreScreen({
+  controller,
+  state,
+  network,
+}: {
+  controller: ModeAController;
+  state: ModeAState;
+  network: string;
+}): ReactNode {
+  const vtxo = state.vtxo;
+  return (
+    <MobileScreen>
+      <MobileHeader title="More" />
+      <MobilePanel title="This wallet">
+        <MobileLabelRow label="Mode" value="Everyday (Wavelength)" mono={false} />
+        <MobileLabelRow label="Network" value={network} mono={false} />
+        <MobileLabelRow
+          label="Ark operator"
+          value={vtxo === null ? 'Not checked yet' : vtxo.operatorReachable ? 'Reachable' : 'Unreachable'}
+          mono={false}
+        />
+        <MobileLabelRow
+          label="Balances read"
+          value={state.balancesUpdatedAt === null ? 'Not read yet' : utcClock(state.balancesUpdatedAt)}
+          mono={false}
+        />
+      </MobilePanel>
+      <MobileNavRow
+        label="How this wallet works"
+        detail="Lightning mechanism, exits, recovery and service dependencies"
+        onPress={() => controller.navigate('capabilities')}
+      />
+      <MobilePanel title="Not in this build">
+        <Text style={styles.dim}>
+          Channels, liquidity (Loop, Pool) and Taproot Assets need your own Lightning node, and
+          are managed from the desktop app. This everyday wallet has no channels to manage.
+        </Text>
+        <Text style={styles.dim}>
+          Starting a unilateral exit from this screen is not available yet; the exit path is
+          described under How this wallet works.
+        </Text>
+      </MobilePanel>
+    </MobileScreen>
+  );
+}
+
+const styles = {
+  ...baseStyles,
+  ...StyleSheet.create({
+    flexShrink: { flexShrink: 1 },
+    activityRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 12,
+      paddingVertical: 10,
+    },
+    activityRowDivider: { borderTopWidth: 1, borderTopColor: mobilePalette.border },
+    activityAmount: { alignItems: 'flex-end', gap: 4 },
+  }),
+};

@@ -59,7 +59,7 @@ export function OnboardingScreen({ controller }: { controller: ModeAController }
       />
       <MobileErrorNote error={error} />
       <MobileButtonGroup>
-        <MobileButton label="Create a new wallet" onPress={create} disabled={busy || !runtimeReady} />
+        <MobileButton label="Create a new wallet" onPress={create} disabled={!runtimeReady} busy={busy} />
         <MobileButton
           label="I already have a recovery phrase"
           kind="secondary"
@@ -67,6 +67,9 @@ export function OnboardingScreen({ controller }: { controller: ModeAController }
           onPress={() => controller.navigate('restore')}
         />
       </MobileButtonGroup>
+      {!runtimeReady && (
+        <Text style={styles.faint}>Starting the wallet service — these options unlock when it is ready.</Text>
+      )}
     </MobileScreen>
   );
 }

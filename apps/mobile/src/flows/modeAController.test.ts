@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PaymentIntent } from '@sovereign/payments';
-import type { BalanceBuckets, WalletEvent } from '@sovereign/wallet-core';
+import type { BalanceBuckets, TransactionRecord, WalletEvent } from '@sovereign/wallet-core';
 import { CrossProviderRestoreError } from '@sovereign/wallet-core';
 import type {
   CreateWalletResult,
@@ -20,7 +20,7 @@ import type {
   ModeAEnginePort,
   ModeAProviderPort,
 } from './modeAController.js';
-import { ModeAController, parseSats, summarizeVtxos } from './modeAController.js';
+import { ModeAController, parseSats, summarizeVtxos, tabForScreen } from './modeAController.js';
 
 let idSeq = 0;
 const nextId = (prefix: string): string => {
@@ -88,6 +88,10 @@ class FakeProvider implements ModeAProviderPort {
   quoteThrows: Error | undefined;
   createWalletResult: CreateWalletResult = fullCreateWalletResult(['alpha', 'beta'], false, 3);
   createWalletThrows: Error | undefined;
+  activity: TransactionRecord[] = [];
+  activityThrows: Error | undefined;
+  classifyThrows: Error | undefined;
+  depositThrows: Error | undefined;
 
   private listener: ((e: WalletEvent) => void) | undefined;
 
@@ -123,7 +127,12 @@ class FakeProvider implements ModeAProviderPort {
     return nextId('invoice');
   }
   async depositOnchain(): Promise<string> {
+    if (this.depositThrows) throw this.depositThrows;
     return nextId('bcrt1q');
+  }
+  async activityHistory(): Promise<readonly TransactionRecord[]> {
+    if (this.activityThrows) throw this.activityThrows;
+    return this.activity;
   }
   async quoteLightning(): Promise<QuotedSend & { payload: LightningSendPayload }> {
     this.calls.quoteLightningCalls += 1;
@@ -155,6 +164,7 @@ class FakeProvider implements ModeAProviderPort {
   }
   async classifyVtxos(): Promise<readonly VtxoWithState[]> {
     this.calls.classifyCalls += 1;
+    if (this.classifyThrows) throw this.classifyThrows;
     return this.classified;
   }
 }
@@ -420,6 +430,91 @@ describe('ModeAController — receive', () => {
 
   it('refuses invoice generation without a parseable amount', async () => {
     await expect(controller.generateInvoice()).rejects.toThrow('amount');
+    expect(controller.getState().receiveError).toMatch(/amount/);
+  });
+
+  it('keeps a failed address request visible in state, then clears it on the next edit', async () => {
+    provider.depositThrows = new Error('operator unreachable');
+    await expect(controller.generateAddress()).rejects.toThrow('operator unreachable');
+    expect(controller.getState().receiveError).toBe('operator unreachable');
+    expect(controller.getState().busy).toBe(false);
+    controller.setReceiveTab('lightning');
+    expect(controller.getState().receiveError).toBeNull();
+  });
+});
+
+describe('ModeAController — balance status, activity, tabs', () => {
+  let provider: FakeProvider;
+  let controller: ModeAController;
+
+  beforeEach(async () => {
+    provider = new FakeProvider();
+    controller = new ModeAController({
+      provider,
+      engine: new FakeEngine(),
+      network: 'regtest',
+      dataDir: '/tmp/mode-a-unit',
+    });
+    await controller.start();
+  });
+
+  it('stamps a successful refresh and surfaces a failed one without dropping old values', async () => {
+    const first = controller.getState();
+    expect(first.balancesUpdatedAt).not.toBeNull();
+    expect(first.balancesError).toBeNull();
+
+    provider.classifyThrows = new Error('daemon unreachable');
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await controller.refreshBalances();
+    const after = controller.getState();
+    expect(after.balancesError).toBe('daemon unreachable');
+    expect(after.balances).toEqual(first.balances);
+    expect(after.balancesUpdatedAt).toBe(first.balancesUpdatedAt);
+    expect(after.balancesRefreshing).toBe(false);
+  });
+
+  it('loads activity from the provider when the Activity tab opens', async () => {
+    provider.activity = [
+      {
+        txId: 'tx-1',
+        providerId: 'wavelength',
+        direction: 'out',
+        kind: 'lightning-invoice',
+        amountSat: 1_000n,
+        status: 'settled',
+        at: '2026-10-30T00:00:00Z',
+      },
+    ];
+    controller.selectTab('activity');
+    expect(controller.getState().screen).toBe('activity');
+    await vi.waitFor(() => expect(controller.getState().activityStatus).toBe('loaded'));
+    expect(controller.getState().activity).toHaveLength(1);
+  });
+
+  it('reports an activity failure instead of an empty list', async () => {
+    provider.activityThrows = new Error('list failed');
+    await controller.loadActivity();
+    expect(controller.getState().activityStatus).toBe('failed');
+    expect(controller.getState().activityError).toBe('list failed');
+    expect(controller.getState().activity).toBeNull();
+  });
+
+  it('maps screens to tabs and keeps the Pay draft when Pay is re-selected', () => {
+    expect(tabForScreen('onboarding')).toBeNull();
+    expect(tabForScreen('capabilities')).toBe('more');
+    expect(tabForScreen('receive')).toBe('pay');
+
+    controller.selectTab('pay');
+    expect(controller.getState().screen).toBe('send');
+    controller.navigate('receive');
+    controller.setReceiveAmount('5000');
+    controller.selectTab('pay');
+    expect(controller.getState().screen).toBe('receive');
+    expect(controller.getState().receiveAmountText).toBe('5000');
+
+    controller.selectTab('home');
+    expect(controller.getState().screen).toBe('home');
+    expect(controller.getState().receiveAmountText).toBe('');
   });
 });
 
