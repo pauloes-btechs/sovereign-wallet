@@ -110,7 +110,7 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 | Create wallet / unlock | ✅ | Real waved in CI |
 | Restore from mnemonic | 🧪 | Mobile UI over the simulated client only; no desktop UI |
 | Balances | ✅ | Exact buckets from `getWireBalance`: on-chain and boarding no longer shown as Lightning-spendable (was 🟨 mislabel) |
-| VTXO state / expiry | 🟨 | Desktop still hard-codes "fresh" and operator reachable |
+| VTXO state / expiry | ✅ code | Desktop reads live per-VTXO classification and operator reachability (was hard-coded "fresh"); unexercised without an operator |
 | On-chain receive / send, Lightning swaps | 🟨 | Real code + UI; unexercised without an operator |
 | Collaborative / unilateral exit | ⬜ / 🟦 | Exit not wired on desktop |
 | Payment history | 🟦 | Not surfaced |
