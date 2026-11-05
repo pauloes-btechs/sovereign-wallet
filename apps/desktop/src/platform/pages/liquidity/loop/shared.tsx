@@ -157,7 +157,7 @@ export function QuoteBreakdown({ quote }: { quote: LoopQuote }) {
           ? [{ label: 'Of which paid up front', sats: f.prepayFeeSat, note: 'Part of the swap fee above, not added to it. Paid first over Lightning; the server keeps it if the swap is abandoned.' }]
           : []),
         { label: out ? 'Miner fee (your sweep)' : 'Miner fee (your HTLC)', sats: f.minerFeeSat, note: `Estimate at a ${quote.confTarget}-block target; the bridge refuses if it rises above your ceiling` },
-        { label: 'Lightning routing fee', sats: f.routingFeeSat, note: out ? 'Not quoted by Loop; paid at payment time' : 'None: the server pays you' },
+        { label: out ? 'Lightning routing fee, at most' : 'Lightning routing fee', sats: f.routingFeeSat, note: out ? 'Cap on what your node may pay to route the swap and prepayment to the server (Loop\u2019s default: 10 sats + 2% of each). Usually far less, and only what is used is spent' : 'None: the server pays you' },
       ]}
       total={{ label: 'Fee ceiling you authorize', sats: f.totalSat }}
     />

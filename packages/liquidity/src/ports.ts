@@ -17,6 +17,15 @@ export interface LoopOutRequest {
   maxSwapFeeSat: number;
   /** Hard bound on miner fees — authorization is refused without one. */
   maxMinerFeeSat: number;
+  /**
+   * Most the server may ask as prepayment (part of the swap fee). loopd
+   * rejects any swap whose prepay exceeds this, so 0 refuses every swap.
+   */
+  maxPrepayAmtSat: number;
+  /** Routing-fee cap for paying the swap invoice. */
+  maxSwapRoutingFeeSat: number;
+  /** Routing-fee cap for paying the prepay invoice. */
+  maxPrepayRoutingFeeSat: number;
   /** Confirmation target for the sweep (0 = fast/next-block). */
   sweepConfTarget?: number;
   /** Restrict the off-chain leg to these channels (short channel ids). */

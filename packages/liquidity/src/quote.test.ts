@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { LiquidityProviderError } from './errors.js';
 import { classifyPoolMarket } from './pool.js';
-import { assessChannelLiquidity, describeQuote, feePercent, suggestedSwapAmountSat } from './quote.js';
+import { assessChannelLiquidity, describeQuote, feePercent, loopRoutingFeeCapSat, suggestedSwapAmountSat } from './quote.js';
 import type { LoopQuote } from './types.js';
 
 function quote(overrides: Partial<LoopQuote> = {}): LoopQuote {
@@ -117,5 +117,13 @@ describe('classifyPoolMarket', () => {
     const s = classifyPoolMarket({ error: new Error('socket hang up') });
     expect(s.state).toBe('unavailable');
     expect(s.message).toContain('unexpected error');
+  });
+});
+
+describe('loopRoutingFeeCapSat', () => {
+  it('matches loop CLI: 10 sats + 2%, rounded down', () => {
+    expect(loopRoutingFeeCapSat(500_000)).toBe(10_010);
+    expect(loopRoutingFeeCapSat(1_337)).toBe(36); // 10 + floor(26.74)
+    expect(loopRoutingFeeCapSat(0)).toBe(10);
   });
 });

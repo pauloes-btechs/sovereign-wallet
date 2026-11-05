@@ -1,0 +1,101 @@
+name: Loop through the wallet (regtest)
+
+# Real Loop Out and Loop In driven through Sovereign Wallet's own bridge
+# routes (/loop/quote, /loop/out, /loop/in, /loop/swaps) against the
+# source-built regtest swap server. Regtest only: no real funds ever.
+#
+# loop-regtest.yml proves the swap server works with Loop's own client; this
+# job proves the wallet's path: bridge-launched litd, the fee limits it hands
+# loopd, the authorization re-quote, and the swap history the app shows.
+#
+# Swap server source: lightninglabs/loop PR #1222 pinned at its head commit
+# (the published lightninglabs/loopserver image can no longer be pulled).
+# Keep LOOP_REF in step with loop-regtest.yml.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 9 * * 1'
+  pull_request:
+    paths:
+      - '.github/workflows/loop-wallet-path.yml'
+      - 'scripts/ci/loop-wallet-path.sh'
+      - 'services/litd-adapter/**'
+      - 'packages/liquidity/**'
+      - 'packages/litd-proto/**'
+      - 'sidecars.lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loop-wallet-path-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LOOP_PR: '1222'
+  LOOP_REF: 3d10930491713c1ee2f9957316747da9a3813072
+  LOOP_DIR: /tmp/loop-upstream
+
+jobs:
+  wallet-path:
+    name: Loop Out and Loop In through the bridge (isolated regtest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y jq
+          docker compose version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Checksum-verified litd sidecar, the same binary the desktop app ships.
+      - run: pnpm sidecar:fetch
+      - name: Fetch pinned upstream Loop (source-built regtest server)
+        run: |
+          git init -q "$LOOP_DIR"
+          git -C "$LOOP_DIR" remote add origin https://github.com/lightninglabs/loop.git
+          git -C "$LOOP_DIR" fetch -q --depth 1 origin "refs/pull/${LOOP_PR}/head"
+          actual="$(git -C "$LOOP_DIR" rev-parse FETCH_HEAD)"
+          if [ "$actual" != "$LOOP_REF" ]; then
+            echo "::error::loop PR #${LOOP_PR} head is ${actual}, expected the pinned ${LOOP_REF}. Review the new commits, then update LOOP_REF here and in loop-regtest.yml."
+            exit 1
+          fi
+          git -C "$LOOP_DIR" checkout -q "$LOOP_REF"
+      - name: Build images
+        run: docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" build
+      - name: Start the upstream regtest topology
+        run: timeout 25m bash "$LOOP_DIR/regtest/regtest.sh" start
+      - name: Loop Out and Loop In through the wallet's bridge
+        run: bash scripts/ci/loop-wallet-path.sh "$LOOP_DIR/regtest"
+      - name: Capture diagnostics
+        if: always()
+        run: |
+          mkdir -p loop-ci-logs
+          cp "$RUNNER_TEMP"/wallet-path/bridge.log loop-ci-logs/ 2>/dev/null || true
+          find "$RUNNER_TEMP/wallet-path/litd" -name '*.log' -size -20M -exec cp {} loop-ci-logs/ \; 2>/dev/null || true
+          if [ -f "$LOOP_DIR/regtest/docker-compose.yml" ]; then
+            docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" ps > loop-ci-logs/compose-ps.txt 2>&1 || true
+            docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" logs --no-color --tail=400 > loop-ci-logs/compose-logs.txt 2>&1 || true
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: loop-wallet-path-diagnostics
+          path: loop-ci-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Tear down
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/wallet-path/bridge.pid" ] && kill "$(cat "$RUNNER_TEMP/wallet-path/bridge.pid")" 2>/dev/null || true
+          if [ -f "$LOOP_DIR/regtest/docker-compose.yml" ]; then
+            docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" down -v --remove-orphans || true
+          fi

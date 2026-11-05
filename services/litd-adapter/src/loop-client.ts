@@ -9,7 +9,7 @@
  */
 import { status as grpcStatus, type ServiceError } from '@grpc/grpc-js';
 import { Loop, LoopClient } from '@sovereign/litd-proto';
-import { isLiquidityProviderError, LiquidityProviderError } from '@sovereign/liquidity';
+import { isLiquidityProviderError, LiquidityProviderError, loopRoutingFeeCapSat } from '@sovereign/liquidity';
 import type { AutoLoopParams, LoopDirection, LoopQuote, SwapUpdate } from '@sovereign/liquidity';
 import type { GrpcTransport } from '@protobuf-ts/grpc-transport';
 
@@ -63,10 +63,12 @@ export function mapOutQuoteToLoopQuote(r: Readonly<Loop.OutQuoteResponse>, amoun
   const swapFeeSat = Number(r.swapFeeSat);
   const prepayFeeSat = Number(r.prepayAmtSat);
   const minerFeeSat = Number(r.htlcSweepFeeSat);
+  // Caps the node may spend routing the swap and prepay invoices to the server.
+  const routingFeeSat = loopRoutingFeeCapSat(amountSat) + (prepayFeeSat > 0 ? loopRoutingFeeCapSat(prepayFeeSat) : 0);
   return {
     direction: 'loop-out',
     amountSat,
-    fees: { swapFeeSat, prepayFeeSat, minerFeeSat, routingFeeSat: 0, totalSat: swapFeeSat + minerFeeSat },
+    fees: { swapFeeSat, prepayFeeSat, minerFeeSat, routingFeeSat, totalSat: swapFeeSat + minerFeeSat + routingFeeSat },
     cltvDelta: r.cltvDelta,
     confTarget: r.confTarget,
     swapFeePpm: amountSat > 0 ? Math.round((swapFeeSat / amountSat) * 1_000_000) : 0,
@@ -259,6 +261,9 @@ export class LitdLoopPort {
       destAddress: string;
       maxSwapFeeSat: number;
       maxMinerFeeSat: number;
+      maxPrepayAmtSat: number;
+      maxSwapRoutingFeeSat: number;
+      maxPrepayRoutingFeeSat: number;
       sweepConfTarget?: number;
       /** Restrict the off-chain payment to these channels (short channel ids). */
       outgoingChanIds?: readonly string[];
@@ -273,6 +278,11 @@ export class LitdLoopPort {
             dest: req.destAddress,
             maxSwapFee: BigInt(req.maxSwapFeeSat),
             maxMinerFee: BigInt(req.maxMinerFeeSat),
+            // loopd treats an unset limit as 0 and refuses the swap
+            // (ErrPrepayAmountTooHigh) or every route to the server.
+            maxPrepayAmt: BigInt(req.maxPrepayAmtSat),
+            maxSwapRoutingFee: BigInt(req.maxSwapRoutingFeeSat),
+            maxPrepayRoutingFee: BigInt(req.maxPrepayRoutingFeeSat),
             sweepConfTarget: req.sweepConfTarget ?? 6,
             outgoingChanSet: (req.outgoingChanIds ?? []).map((id) => BigInt(id)),
             label: req.label ?? '',
