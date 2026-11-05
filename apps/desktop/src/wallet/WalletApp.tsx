@@ -4,7 +4,7 @@
  * capability disclosure). Every screen consumes the session state machine —
  * the daemon declares what is possible; the UI never assumes.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   BackupConfirmation,
   BalanceSummary,
@@ -20,6 +20,7 @@ import {
 } from '@sovereign/ui';
 import type { QuotedSend } from '@sovereign/wavelength-adapter';
 import { useWalletSession } from './WalletSessionProvider.js';
+import { summarizeVtxos, type VtxoSummary } from './vtxo-summary.js';
 
 function OnboardingScreen(): React.ReactNode {
   const { createWallet } = useWalletSession();
@@ -135,6 +136,7 @@ function ReadyWallet(): React.ReactNode {
   const [sendError, setSendError] = useState<string | null>(null);
 
   const capabilities = provider?.capabilities ?? null;
+  const vtxo = useVtxoStatus(provider, balance);
 
   /** Parses the amount field; null when not a positive integer. */
   const receiveAmountSat = (): number | null => {
@@ -211,12 +213,21 @@ function ReadyWallet(): React.ReactNode {
         onchainConfirmedSat={balance?.onchainConfirmedSat ?? 0n}
         onchainPendingSat={balance?.onchainPendingSat ?? 0n}
         lockedOrExpiringSat={balance?.lockedOrExpiringSat ?? 0n}
-        vtxoState="fresh"
-        operatorReachable={true}
-        hoursToExpiry={null}
+        {...(vtxo.summary === null ? {} : { vtxoState: vtxo.summary.state })}
+        {...(vtxo.operatorReachable === null ? {} : { operatorReachable: vtxo.operatorReachable })}
+        hoursToExpiry={vtxo.summary?.hoursToExpiry ?? null}
         exitEtaHours={null}
         onStartExit={null}
       />
+      {vtxo.error ? (
+        <p role="status" style={{ margin: 0, color: 'var(--sovl-text-secondary)' }}>
+          VTXO state could not be read from the wallet daemon ({vtxo.error}). Balances above are still current.
+        </p>
+      ) : vtxo.summary === null ? (
+        <p role="status" style={{ margin: 0, color: 'var(--sovl-text-secondary)' }}>
+          Checking VTXO state and operator connection…
+        </p>
+      ) : null}
       <TextField label="Amount (sats)" value={receiveAmountText} onChange={setReceiveAmountText} />
       <ReceiveFlow
         lightningMechanism="swaps"
@@ -299,4 +310,41 @@ export function WalletApp(): React.ReactNode {
     default:
       return null;
   }
+}
+
+const VTXO_POLL_MS = 30_000;
+
+/**
+ * Live VTXO state and operator reachability from the provider (re-read when
+ * the balance changes and every 30 s). Null until the first read lands.
+ */
+function useVtxoStatus(
+  provider: ReturnType<typeof useWalletSession>['provider'],
+  balance: unknown,
+): { summary: VtxoSummary | null; operatorReachable: boolean | null; error: string | null } {
+  const [summary, setSummary] = useState<VtxoSummary | null>(null);
+  const [operatorReachable, setOperatorReachable] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (provider === null) return;
+    let live = true;
+    const read = async (): Promise<void> => {
+      try {
+        const [classified, info] = await Promise.all([provider.classifyVtxos(), provider.walletInfo()]);
+        if (!live) return;
+        setSummary(summarizeVtxos(classified));
+        setOperatorReachable(info.serverConnected);
+        setError(null);
+      } catch (err: unknown) {
+        if (live) setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+    void read();
+    const timer = setInterval(() => void read(), VTXO_POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [provider, balance]);
+  return { summary, operatorReachable, error };
 }

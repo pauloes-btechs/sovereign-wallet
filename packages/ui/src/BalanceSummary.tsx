@@ -11,7 +11,8 @@ export interface BalanceSummaryProps {
   onchainConfirmedSat: bigint;
   onchainPendingSat: bigint;
   lockedOrExpiringSat: bigint;
-  vtxoState: VtxoState;
+  /** Omitted while the host is still reading VTXO state: no badge or notice is shown rather than a guess. */
+  vtxoState?: VtxoState;
   operatorReachable?: boolean;
   hoursToExpiry?: number | null;
   exitEtaHours?: number | null;
@@ -50,7 +51,7 @@ export function BalanceSummary({
         <div className="sovl-balance-total" data-testid="balance-total">
           <Amount sats={total} size="xl" />
         </div>
-        <Badge>{vtxoStateLabel(vtxoState)}</Badge>
+        {vtxoState === undefined ? null : <Badge>{vtxoStateLabel(vtxoState)}</Badge>}
       </div>
       <div className="sovl-balance-rows">
         <div className="sovl-balance-row">
@@ -80,13 +81,15 @@ export function BalanceSummary({
           <Amount sats={lockedOrExpiringSat} size="md" />
         </div>
       </div>
-      <VtxoStateNotice
-        state={vtxoState}
-        operatorReachable={operatorReachable}
-        hoursToExpiry={hoursToExpiry}
-        exitEtaHours={exitEtaHours}
-        onStartExit={onStartExit}
-      />
+      {vtxoState === undefined ? null : (
+        <VtxoStateNotice
+          state={vtxoState}
+          operatorReachable={operatorReachable}
+          hoursToExpiry={hoursToExpiry}
+          exitEtaHours={exitEtaHours}
+          onStartExit={onStartExit}
+        />
+      )}
     </section>
   );
 }
