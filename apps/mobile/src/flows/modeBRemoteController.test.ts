@@ -232,9 +232,9 @@ describe('ModeBRemoteController payments', () => {
     await controller.send();
     expect(port.payCalls).toHaveLength(1);
     expect(controller.getState().sendStatus).toBe('failed');
-    // The engine's Attempt shape carries no reason field — the UI shows the
-    // generic failure; the reason lives in the port's backend logs.
-    expect(controller.getState().sendError).toContain('Payment failed');
+    // The engine's intent carries no reason; the dispatcher keeps the node's
+    // reason per intent so the screen can explain it.
+    expect(controller.getState().sendError).toBe('Payment failed: invoice already paid');
   });
 
   it('surfaces needs-recovery instead of re-dispatching on an ambiguous outcome', async () => {
@@ -242,7 +242,16 @@ describe('ModeBRemoteController payments', () => {
     controller.editSendDestination('lnbcrt1m1abc');
     await controller.send();
     expect(port.payCalls).toHaveLength(1); // never blind-retried
-    expect(controller.getState().sendStatus).toBe('failed');
+    // Not "failed": the node may still complete it. The state says so and
+    // offers a status check, never a resend.
+    expect(controller.getState().sendStatus).toBe('in-flight');
+    expect(controller.getState().sendError).toContain('could pay twice');
+
+    // Checking status looks the payment up (the port answers unknown) and
+    // still never dispatches again.
+    await controller.checkPaymentStatus();
+    expect(port.payCalls).toHaveLength(1);
+    expect(controller.getState().sendStatus).toBe('in-flight');
   });
 });
 

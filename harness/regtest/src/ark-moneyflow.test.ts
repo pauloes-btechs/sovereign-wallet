@@ -172,9 +172,10 @@ describe('Ark money flow — VTXO lifecycle and unilateral exit', () => {
     await provider.pollOnce();
     expect(events).toContainEqual({ type: 'operator-unreachable' });
 
-    // Balance buckets: the expiring VTXO is locked, the fresh one spendable.
+    // Balance buckets: the expiring VTXO is locked, the fresh one spendable —
+    // each sat in exactly one bucket.
     const buckets = await provider.balanceBuckets();
-    expect(buckets.lightningSpendableSat).toBe(100_000n);
+    expect(buckets.lightningSpendableSat).toBe(50_000n);
     expect(buckets.lockedOrExpiringSat).toBe(50_000n);
   });
 

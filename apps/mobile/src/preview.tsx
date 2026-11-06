@@ -8,11 +8,13 @@
  * - `?mode=remote-node`: the remote-node screens (Mode B) over a simulated LNC port.
  *
  * Preferences persist in this browser's localStorage (key
- * `sovereign.mobile.preferences`); the only device service is the clipboard.
+ * `sovereign.mobile.preferences`). Device services: the clipboard, and a
+ * browser-storage stand-in for the keystore (app lock; NOT secure).
  */
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App, { ModeAApp } from './App.js';
+import { browserPreviewSecureStorage } from './flows/appLock.js';
 import type { LncRpcPort } from './flows/modeBRemoteController.js';
 import type { PlatformServices } from './flows/platform.js';
 import { createPreferencesStore, webPreferencesBackend } from './flows/preferences.js';
@@ -36,10 +38,21 @@ const preferences = createPreferencesStore(
 );
 
 const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+// App lock + backup record: browser storage, labelled "not secure, preview
+// only" on every security screen. Native builds use the Keychain/Keystore
+// (src/native); the preview never imports that module. No biometric prompt
+// and no screen-capture protection here, so those show as unavailable.
+const secureStorage = browserPreviewSecureStorage(() => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}, remoteNode ? 'remote-node' : 'everyday');
 const platform: PlatformServices =
   clipboard !== undefined && typeof clipboard.writeText === 'function'
-    ? { copyText: (text) => clipboard.writeText(text) }
-    : {};
+    ? { copyText: (text) => clipboard.writeText(text), secureStorage }
+    : { secureStorage };
 
 // Render after preferences load so the first frame uses the saved denomination/privacy.
 await preferences.load();

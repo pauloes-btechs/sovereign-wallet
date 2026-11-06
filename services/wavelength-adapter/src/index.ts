@@ -69,10 +69,12 @@ export {
   entryMatchesOnchainPayload,
   paymentKindOfEntry,
   mapEntryToRecord,
+  mapEntryToActivityDetail,
   isInboundSettled,
   describeEntryFailure,
   isTxid,
 } from './entry-mapping.js';
+export type { WavelengthActivityDetail } from './entry-mapping.js';
 
 // Version pins (the golden test asserts package.json matches these).
 export { SDK_PACKAGE, SDK_PIN, WAVELENGTH_DAEMON_PIN } from './sdk-pin.js';

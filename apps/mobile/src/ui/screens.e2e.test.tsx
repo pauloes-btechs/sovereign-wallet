@@ -15,6 +15,19 @@ import {
   MobileFlowSimulatedClient,
   SIM_WORDS,
 } from '../testing/simulatedWalletClient.js';
+import { encodeSimulatedBolt11, simHashHex, simSegwitAddress } from '../testing/simInvoice.js';
+
+/** A well-formed regtest invoice created now (1 h expiry). */
+function simInvoice(amountMsat: bigint, label: string): string {
+  return encodeSimulatedBolt11({
+    network: 'regtest',
+    amountMsat,
+    paymentHashHex: simHashHex(label),
+    description: label,
+    expirySeconds: 3600,
+    timestamp: Math.floor(Date.now() / 1000),
+  });
+}
 
 /** Minimal DOM shape — the RN program deliberately excludes the DOM lib. */
 interface DomLike {
@@ -126,17 +139,16 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     sim.depositVTXO('sim-vtxo-expiring', 50_000, 10);
     await createAndBackup(sim);
 
-    // providerTotalSat sums every bucket — spendable 200k + locked/expiring 50k.
-    // Known shared-helper overlap: a still-spendable expiring VTXO counts in both.
-    expect(await screen.findByText('250,000')).toBeTruthy(); // provider total (big figure)
+    // Buckets are disjoint: the expiring VTXO moves from spendable into
+    // locked/expiring, so the total is each sat once — 150k + 50k.
+    expect(await screen.findByText('200,000')).toBeTruthy(); // provider total (big figure)
     expect(screen.getByText('Lightning (spendable)')).toBeTruthy();
     expect(screen.getByText('On-chain (confirmed)')).toBeTruthy();
     expect(screen.getByText('Locked / expiring')).toBeTruthy();
-    // Both VTXOs stay spendable until expiry — the expiring one also surfaces
-    // in the locked/expiring bucket as the roll-forward notice amount.
-    expect(screen.getByText('200,000 sats')).toBeTruthy(); // spendable
+    expect(screen.getByText('150,000 sats')).toBeTruthy(); // spendable (fresh VTXO)
     expect(screen.getByText('0 sats')).toBeTruthy(); // on-chain confirmed
-    expect(screen.getByText('50,000 sats')).toBeTruthy(); // locked / expiring
+    expect(screen.getByText('50,000 sats')).toBeTruthy(); // locked / expiring (expiring VTXO)
+    expect(screen.queryByText('250,000')).toBeNull(); // never counted twice
     // The expiring VTXO surfaces the spec's roll-forward state.
     expect(screen.getByText('Expiring soon')).toBeTruthy();
     expect(screen.getByText(textMatching(/Your funds are being rolled forward automatically/))).toBeTruthy();
@@ -167,16 +179,21 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     ).toBeTruthy();
   }, 20_000);
 
-  it('Lightning send: review shows the swap fee, dispatch goes in-flight, reconcile settles it', async () => {
+  it('Lightning send: one input parses the invoice; review shows the swap fee, total and cap; in-flight; reconcile settles it', async () => {
     const sim = new MobileFlowSimulatedClient();
     await createAndBackup(sim);
 
     tab('Send');
-    typeInto('Lightning invoice', 'lnbcrt1-sim-test-invoice');
+    typeInto('Pay to', `lightning:${simInvoice(25_000_000n, 'e2e-ln')}`);
+    // Parsed on the phone before anything is quoted.
+    expect(await screen.findByText('Lightning invoice')).toBeTruthy();
+    expect(screen.getByText(textMatching(/^Maximum Lightning fee: 125 sats \(0.5% of the amount, at least 10 sats\)/))).toBeTruthy();
     click('Review payment');
     expect(await screen.findByText('Service fee')).toBeTruthy();
-    expect(screen.getByText('30 sats')).toBeTruthy(); // sim.swapFeeSat
-    expect(screen.getByText(textMatching(/swap service routes this payment/))).toBeTruthy();
+    expect(screen.getByText('30 sats')).toBeTruthy(); // sim.swapFeeSat, from the live quote
+    expect(screen.getByText('25,030 sats')).toBeTruthy(); // quoted total outflow
+    expect(screen.getByText(textMatching(/Quoted by the swap service that pays the invoice\. Your limit for this payment: 125 sats\./))).toBeTruthy();
+    expect(sim.sendPreparedCalls).toBe(0); // review moves nothing
 
     click('Confirm and send');
     await screen.findByText(textMatching(/Payment in flight/));
@@ -185,18 +202,47 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     sim.settleEntry(sim.entries[sim.entries.length - 1]?.id ?? '');
     click('Check payment status');
     await screen.findByText('Payment sent.');
+    expect(screen.getByText('Receipt')).toBeTruthy();
+    expect(screen.getByText('Payment hash')).toBeTruthy();
+    expect(sim.sendPreparedCalls).toBe(1); // reconcile never re-sends
   }, 20_000);
 
-  it('on-chain send: amount validation, fee review, settlement', async () => {
+  it('a quote above the maximum Lightning fee is refused before anything is sent, in plain language', async () => {
     const sim = new MobileFlowSimulatedClient();
     await createAndBackup(sim);
 
     tab('Send');
-    click('On-chain');
-    typeInto('Recipient address', 'bcrt1q-sim-destination');
+    // 2,000 sats → cap max(0.5%, 10 sats) = 10 sats < the 30-sat swap fee.
+    typeInto('Pay to', simInvoice(2_000_000n, 'e2e-cap'));
+    click('Review payment');
+    expect(await screen.findByText('The fee is higher than your limit')).toBeTruthy();
+    expect(screen.getByText(textMatching(/Raise the maximum Lightning fee/))).toBeTruthy();
+    expect(sim.sendPreparedCalls).toBe(0);
+    expect(screen.getByLabelText('Pay to')).toBeTruthy(); // the draft stays for editing
+  }, 20_000);
+
+  it('on-chain send: address checked, amount validated in the user denomination, fee review, settlement', async () => {
+    const sim = new MobileFlowSimulatedClient();
+    await createAndBackup(sim);
+
+    tab('Send');
+    // Wrong network is refused before quoting.
+    typeInto('Pay to', 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+    expect(await screen.findByText(textMatching(/This is a mainnet address, but this wallet is on regtest/))).toBeTruthy();
+    click('Review payment'); // inert: nothing is quoted
+    expect(sim.preparedQuotes.size).toBe(0);
+
+    typeInto('Pay to', simSegwitAddress('regtest', 'e2e-dest'));
+    expect(await screen.findByText('Bitcoin address')).toBeTruthy();
+    typeInto('Amount (sats)', 'abc');
+    expect(screen.getByText('Enter a whole number of sats.')).toBeTruthy();
+    click('Review payment');
+    expect(sim.preparedQuotes.size).toBe(0);
     typeInto('Amount (sats)', '50000');
     click('Review payment');
-    expect(await screen.findByText('Service fee')).toBeTruthy();
+    expect(await screen.findByText('Fee')).toBeTruthy();
+    expect(screen.getByText('50,030 sats')).toBeTruthy(); // total
+    expect(screen.getByText(textMatching(/On-chain payments can't be reversed/))).toBeTruthy();
 
     click('Confirm and send');
     await screen.findByText(textMatching(/Payment in flight/));
@@ -205,21 +251,38 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     await screen.findByText('Payment sent.');
   }, 20_000);
 
-  it('receive: generates an on-chain address and a swap-based Lightning invoice', async () => {
+  it('receive: fresh on-chain address with the reuse warning; swap-based invoice tracked until paid', async () => {
     const sim = new MobileFlowSimulatedClient();
     await createAndBackup(sim);
 
     tab('Receive');
     click('Generate address');
-    expect(await screen.findByText(textMatching(/bcrt1q-sim-board/))).toBeTruthy();
+    const first = await screen.findByText(textMatching(/^bcrt1q[a-z0-9]{38}$/));
+    expect(screen.getByText(textMatching(/Use this address once/))).toBeTruthy();
+    const firstAddress = (first as unknown as DomLike).textContent;
+    click('New address');
+    await waitFor(() => {
+      expect(screen.queryByText(firstAddress ?? '')).toBeNull();
+    });
 
     click('Lightning');
-    expect(
-      screen.getByText(textMatching(/Lightning via swap service/)),
-    ).toBeTruthy();
+    expect(screen.getByText(textMatching(/Invoices are paid through the swap service and need an amount/))).toBeTruthy();
+    expect(screen.getByText(textMatching(/The wallet sets invoice expiry itself/))).toBeTruthy();
     typeInto('Amount (sats)', '25000');
-    click('New invoice');
-    expect(await screen.findByText(textMatching(/lnbcrt1-sim/))).toBeTruthy();
+    typeInto('Description (optional)', 'Coffee');
+    click('Create invoice');
+    expect(await screen.findByLabelText('QR code for your Lightning invoice')).toBeTruthy();
+    expect(screen.getByText(textMatching(/^lnbcrt250u1/))).toBeTruthy();
+    expect(screen.getByText('Waiting for payment')).toBeTruthy();
+    expect(screen.getByText('Description: Coffee')).toBeTruthy();
+
+    // The swap service pays it; the status comes from the wallet's own record.
+    const receiveEntry = sim.entries.find((e) => e.kind === 'receive');
+    sim.settleEntry(receiveEntry?.id ?? '');
+    tab('Activity');
+    tab('Receive');
+    expect(await screen.findByText('Payment received.')).toBeTruthy();
+    expect(screen.getByText('Paid')).toBeTruthy();
   }, 20_000);
 
   it('capabilities screen renders provider-declared disclosures, never hardcoded parity', async () => {
@@ -264,12 +327,13 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     expect(await screen.findByText(textMatching(/No activity yet/))).toBeTruthy();
 
     tab('Send');
-    typeInto('Lightning invoice', 'lnbcrt1-sim-tab-invoice');
+    const draft = simInvoice(10_000_000n, 'e2e-tab');
+    typeInto('Pay to', draft);
     tab('Receive'); // a draft survives a tab switch
     tab('Send');
     expect(
-      (screen.getByLabelText('Lightning invoice') as unknown as { value: string }).value,
-    ).toBe('lnbcrt1-sim-tab-invoice');
+      (screen.getByLabelText('Pay to') as unknown as { value: string }).value,
+    ).toBe(draft);
     click('Review payment');
     await screen.findByText('Service fee');
     click('Confirm and send');
@@ -277,19 +341,21 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
 
     tab('Activity');
     expect(await screen.findByText('Sent · Lightning')).toBeTruthy();
-    expect(screen.getByText('Pending')).toBeTruthy();
+    expect(screen.getByLabelText(/^Sent · Lightning, .*, pending, /)).toBeTruthy();
 
     tab('Wallet');
-    expect(await screen.findByText('Everyday (Wavelength)')).toBeTruthy();
-    expect(screen.getByText('Reachable')).toBeTruthy();
+    expect(await screen.findByText('Wavelength (Ark)')).toBeTruthy();
+    expect(screen.getByText('Ark operator reachable')).toBeTruthy();
     // Capability rows render from walletCapabilities(), reasons included.
-    expect(screen.getByText(textMatching(/Loop needs your own Lightning node/))).toBeTruthy();
+    click('Wallet management');
+    expect(await screen.findByText(textMatching(/Loop needs your own Lightning node/))).toBeTruthy();
+    click('Back');
 
     // A pushed screen gets a back control that returns to the tab root.
     click('How this wallet works');
     await screen.findByText('Services this wallet depends on');
     click('Back');
-    await screen.findByText('Everyday (Wavelength)');
+    await screen.findByText('Wavelength (Ark)');
 
     tab('Home');
     await screen.findByText('Everyday wallet');

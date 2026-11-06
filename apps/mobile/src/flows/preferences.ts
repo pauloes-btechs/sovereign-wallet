@@ -51,7 +51,24 @@ export interface Preferences {
   readonly lockTimeoutSeconds: LockTimeoutSeconds;
   /** ISO 4217 code for an optional fiat reference value; null = off. */
   readonly fiatCurrency: FiatCurrency | null;
+  /**
+   * Display names the user gave each wallet type on this device (Wallet →
+   * Wallet management). Keyed by backend so an everyday wallet and a
+   * connected node never share a name. A label only — never a secret.
+   */
+  readonly walletNames: WalletNames;
+  /**
+   * Hide the app from screenshots and the app switcher. Applied only when
+   * the host provides `setScreenCaptureProtection`; otherwise the setting is
+   * shown as unavailable with the reason.
+   */
+  readonly screenCaptureProtection: boolean;
 }
+
+export type WalletNameKey = 'wavelength' | 'remote-lnd';
+export type WalletNames = Readonly<Partial<Record<WalletNameKey, string>>>;
+/** Longest wallet display name, in characters (after trimming). */
+export const WALLET_NAME_MAX_LENGTH = 32;
 
 export const LOCK_TIMEOUT_CHOICES = [0, 60, 300, 900, 3600] as const;
 export type LockTimeoutSeconds = (typeof LOCK_TIMEOUT_CHOICES)[number];
@@ -80,6 +97,8 @@ export const DEFAULT_PREFERENCES: Preferences = Object.freeze({
   paymentTimeoutSeconds: 60,
   lockTimeoutSeconds: 300,
   fiatCurrency: null,
+  walletNames: Object.freeze({}),
+  screenCaptureProtection: true,
 });
 
 export type PreferenceKey = keyof Preferences;
@@ -132,7 +151,37 @@ const VALIDATORS: { readonly [K in PreferenceKey]: (value: unknown) => Checked<P
   lockTimeoutSeconds: oneOf<LockTimeoutSeconds>(LOCK_TIMEOUT_CHOICES, 'Lock timeout (seconds)'),
   fiatCurrency: (value) =>
     value === null ? ok(null) : oneOf<FiatCurrency>(FIAT_CURRENCIES, 'Fiat currency')(value),
+  walletNames: checkWalletNames,
+  screenCaptureProtection: bool('Screen capture protection'),
 };
+
+const WALLET_NAME_KEYS: readonly WalletNameKey[] = ['wavelength', 'remote-lnd'];
+
+/** Validates one wallet display name: trimmed, 1–32 characters, no control characters. */
+export function validateWalletName(value: unknown): Checked<string> {
+  if (typeof value !== 'string') return bad('A wallet name must be text.');
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return bad('A wallet name cannot be empty.');
+  if (trimmed.length > WALLET_NAME_MAX_LENGTH) {
+    return bad(`A wallet name can be at most ${WALLET_NAME_MAX_LENGTH} characters.`);
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(trimmed)) return bad('A wallet name cannot contain control characters.');
+  return ok(trimmed);
+}
+
+function checkWalletNames(value: unknown): Checked<WalletNames> {
+  if (!isRecord(value)) return bad('Wallet names must be a map of wallet type to name.');
+  const names: Partial<Record<WalletNameKey, string>> = {};
+  for (const key of Object.keys(value)) {
+    const walletKey = WALLET_NAME_KEYS.find((k) => k === key);
+    if (walletKey === undefined) return bad(`Unknown wallet type '${key}' in wallet names.`);
+    const checked = validateWalletName(value[key]);
+    if (!checked.ok) return bad(checked.message);
+    names[walletKey] = checked.value;
+  }
+  return ok(Object.freeze(names));
+}
 
 /** Every preference key, in schema order. */
 export const PREFERENCE_KEYS: readonly PreferenceKey[] = [
@@ -147,6 +196,8 @@ export const PREFERENCE_KEYS: readonly PreferenceKey[] = [
   'paymentTimeoutSeconds',
   'lockTimeoutSeconds',
   'fiatCurrency',
+  'walletNames',
+  'screenCaptureProtection',
 ];
 
 export function isPreferenceKey(key: string): key is PreferenceKey {
@@ -167,6 +218,8 @@ function buildPreferences(read: <K extends PreferenceKey>(key: K) => Preferences
     paymentTimeoutSeconds: read('paymentTimeoutSeconds'),
     lockTimeoutSeconds: read('lockTimeoutSeconds'),
     fiatCurrency: read('fiatCurrency'),
+    walletNames: read('walletNames'),
+    screenCaptureProtection: read('screenCaptureProtection'),
   });
 }
 

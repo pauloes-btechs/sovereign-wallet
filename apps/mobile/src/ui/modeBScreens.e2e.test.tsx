@@ -50,13 +50,17 @@ describe('Mode B screens over the simulated LNC port', () => {
     tab('Receive');
     fireEvent.change(screen.getByLabelText('Amount (sats)'), { target: { value: '2100' } });
     fireEvent.click(screen.getByLabelText('Create invoice'));
-    expect(await screen.findByLabelText('QR code for your Lightning invoice')).toBeTruthy();
-    expect(screen.getByText('lnbcrt2100n1sim1')).toBeTruthy();
+    // The port's fixed clock is in the past, so the new invoice (1 h expiry
+    // preference) is already expired by the device clock: shown, not payable.
+    expect(await screen.findByText('Expired')).toBeTruthy();
+    expect(screen.getByText(/This invoice expired/)).toBeTruthy();
 
     tab('Activity');
     expect(await screen.findByText('Awaiting payment')).toBeTruthy();
     expect(screen.getByText('2,100 sats')).toBeTruthy();
-    expect(screen.getByText('2026-11-05 12:00 UTC')).toBeTruthy();
+    // Grouped by UTC day: the day header carries the date, the row the time.
+    expect(screen.getByText((text) => text.endsWith('Thu 5 Nov 2026'))).toBeTruthy();
+    expect(screen.getByText('12:00 UTC')).toBeTruthy();
   });
 
   it('Activity without a port method says it is unavailable instead of showing an empty list', async () => {
@@ -81,8 +85,11 @@ describe('Mode B screens over the simulated LNC port', () => {
   it('Wallet lists what this connection cannot do, with reasons', async () => {
     await pairWith(new SimulatedLncPort());
     tab('Wallet');
-    expect(await screen.findByText('sim-node')).toBeTruthy();
-    expect(screen.getByText(/On-chain sending isn't available over this connection yet/)).toBeTruthy();
+    fireEvent.click(await screen.findByLabelText('Wallet management'));
+    expect(await screen.findByText(/On-chain sending isn't available over this connection yet/)).toBeTruthy();
     expect(screen.getByText(/so the fee is known only afterwards/)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Back'));
+    fireEvent.click(await screen.findByLabelText('Network and connection'));
+    expect(await screen.findByText('sim-node')).toBeTruthy();
   });
 });

@@ -31,10 +31,19 @@ export interface PlatformServices {
 
 /** Keychain (iOS) / Keystore-backed storage (Android). Interface only today. */
 export interface SecureStoragePort {
+  /**
+   * Where items actually live, so security screens can say it plainly:
+   * `device-keystore` = iOS Keychain / Android Keystore (src/native);
+   * `browser-preview` = the web preview's localStorage — NOT secure;
+   * `memory` = this session only (tests). Absent = treat as `memory`.
+   */
+  readonly protection?: SecureStorageProtection;
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
   removeItem(key: string): Promise<void>;
 }
+
+export type SecureStorageProtection = 'device-keystore' | 'browser-preview' | 'memory';
 
 /** No device services — what native builds have until a resolver is wired. */
 export const NO_PLATFORM_SERVICES: PlatformServices = Object.freeze({});

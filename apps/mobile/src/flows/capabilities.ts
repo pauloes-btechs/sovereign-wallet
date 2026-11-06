@@ -214,7 +214,7 @@ export function wavelengthCapabilities(input: WavelengthCapabilityInput): Mobile
       backupVerification: yes(),
       lightningFeeLimit: yes('Applied as a maximum fee in sats when each payment is quoted.'),
       onchainFeePreference: no(
-        'The wallet picks the on-chain fee rate itself. The fee is shown before you confirm, and your maximum fee still applies.',
+        'The wallet picks the on-chain fee rate itself. The fee is quoted and shown before you confirm.',
       ),
       invoiceExpiry: no('The wallet sets invoice expiry itself; this app cannot choose it.'),
       paymentTimeout: yes('Applies the next time the wallet starts.'),
@@ -244,6 +244,14 @@ export interface RemotePortSurface {
   readonly listLightningActivity: boolean;
   readonly listSessions: boolean;
   readonly revokeSession: boolean;
+  /** `listChannels` (peer names and reserves). Without it, channel rows come from `getBalances`. */
+  readonly listChannels?: boolean;
+  /** Every Loop method needed to quote and start swaps (terms, quote, Loop Out, Loop In). */
+  readonly loop?: boolean;
+  /** `listSwaps` + `swapStatus`: swaps can be monitored. */
+  readonly loopMonitor?: boolean;
+  /** `listAssets`: Taproot Assets can be read. */
+  readonly assets?: boolean;
 }
 
 export interface RemoteLndCapabilityInput {
@@ -286,15 +294,24 @@ export function remoteLndCapabilities(input: RemoteLndCapabilityInput): MobileWa
       createWallet: no('Your node holds the keys; there is no wallet to create on this phone.'),
       restoreWallet: no("Your node's seed and channel backups are restored on the node, not on this phone."),
       backupVerification: no("Your node's seed and channel backups are managed on the node."),
-      lightningFeeLimit: no('This connection does not send a fee limit with payments yet.'),
+      lightningFeeLimit: yes("Sent with each payment as your node's fee limit; the node won't pay more."),
       onchainFeePreference: no("On-chain sending isn't available over this connection yet."),
-      invoiceExpiry: no("Invoices use your node's default expiry; this connection does not set one yet."),
-      paymentTimeout: no('Fixed at 60 seconds for this connection.'),
+      invoiceExpiry: yes('Set on each new invoice your node creates.'),
+      paymentTimeout: yes('Sent with each payment as its timeout.'),
       exitInformation: no('Ark exits apply only to everyday wallets. Channel closes for your node are done from the desktop app.'),
       unilateralExit: no('Channel safety operations need a live, continuously connected node — do them from the desktop app.'),
       channelSummary: whenConnected(yes('Read-only: channel counts and balances from your node.')),
-      loopSwaps: no(`Loop runs on your node, but this connection does not read it yet. ${desktopNode}`),
-      taprootAssets: no(`Taproot Assets aren't read over this connection yet. ${desktopNode}`),
+      loopSwaps:
+        port.loop === true && port.loopMonitor === true
+          ? whenConnected(
+              foregrounded
+                ? yes('Loop In and Loop Out run on your node; quotes come from its swap server.')
+                : no('Swaps start only while the app is open. Reopen the app to start one.'),
+            )
+          : no(`Loop runs on your node, but this connection does not read it yet. ${desktopNode}`),
+      taprootAssets: port.assets === true
+        ? whenConnected(yes("Read from your node's Taproot Assets daemon. Issuers are not verified."))
+        : no(`Taproot Assets aren't read over this connection yet. ${desktopNode}`),
       sessionList: port.listSessions
         ? whenConnected(yes())
         : no("This connection can't list node sessions. Manage sessions from the desktop app."),

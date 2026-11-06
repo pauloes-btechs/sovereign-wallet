@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bucketsFromWireBalance } from './provider.js';
+import { bucketsFromSdkBalance, bucketsFromWireBalance } from './provider.js';
 import type { WireBalance } from './sdk/gateway-client.js';
 
 const wire = (o: Partial<WireBalance>): WireBalance => ({
@@ -43,5 +43,23 @@ describe('bucketsFromWireBalance', () => {
     const b = bucketsFromWireBalance(wire({ vtxoBalanceSat: 10_000 }), 50_000n);
     expect(b.lightningSpendableSat).toBe(0n);
     expect(b.lockedOrExpiringSat).toBe(10_000n);
+  });
+});
+
+describe('bucketsFromSdkBalance', () => {
+  const balance = { confirmedSat: 100_000, pendingInSat: 1_000, pendingOutSat: 0, creditReservedSat: 0 };
+
+  it('moves locked or expiring VTXOs out of spendable, so the buckets never overlap', () => {
+    const b = bucketsFromSdkBalance(balance, 30_000n);
+    expect(b.lightningSpendableSat).toBe(70_000n);
+    expect(b.lockedOrExpiringSat).toBe(30_000n);
+    expect(b.lightningPendingSat).toBe(1_000n);
+    expect(b.lightningSpendableSat + b.lockedOrExpiringSat).toBe(100_000n);
+  });
+
+  it('clamps an over-reported locked amount to the confirmed balance', () => {
+    const b = bucketsFromSdkBalance(balance, 500_000n);
+    expect(b.lightningSpendableSat).toBe(0n);
+    expect(b.lockedOrExpiringSat).toBe(100_000n);
   });
 });

@@ -589,6 +589,16 @@ describe('ModeAController — restore', () => {
     expect(provider.calls.createWallets[0]?.mnemonic).toHaveLength(12);
   });
 
+  it('drops the typed phrase and password from state once the restore succeeds', async () => {
+    controller.setRestoreWords('w '.repeat(12).trim());
+    controller.setRestorePassword('passphrase-1');
+    await controller.restore();
+    const s = controller.getState();
+    expect(s.restoreStatus).toBe('restored');
+    expect(s.restoreWordsText).toBe('');
+    expect(s.restorePassword).toBe('');
+  });
+
   it('maps a deadline miss to the batch-expired unilateral-exit fallback', async () => {
     provider.createWalletThrows = new WavelengthError(
       'restore missed the VTXO expiry deadline',

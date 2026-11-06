@@ -1,10 +1,11 @@
 /**
- * RN entry point — registered by native shells (iOS/Android) generated in a
- * later task. The scaffold typechecks and is CI-tested; native projects are
- * not committed.
+ * RN entry point — registered by the native shells (apps/mobile/ios,
+ * apps/mobile/android). `NativeRoot` wraps the shared `App` with the device
+ * services implemented in src/native (Keychain/Keystore storage, biometric
+ * prompt). The web preview mounts `App` directly and never loads src/native.
  */
 import { AppRegistry } from 'react-native';
 import { name as appName } from './app.json';
-import App from './src/App';
+import NativeRoot from './src/native/NativeRoot';
 
-AppRegistry.registerComponent(appName, () => App);
+AppRegistry.registerComponent(appName, () => NativeRoot);

@@ -10,12 +10,21 @@
  */
 
 import { SimulatedWavelengthClient } from '@sovereign/harness-regtest/simulated-client';
+import { WavelengthError } from '@sovereign/wavelength-adapter';
 import type {
   CreateWalletRequest,
   CreateWalletResult,
+  DepositRequest,
+  DepositResult,
+  PrepareSendResult,
+  ReceiveRequest,
+  ReceiveResult,
+  SendRequest,
   UnlockWalletRequest,
   UnlockWalletResult,
 } from '@sovereign/wavelength-adapter';
+import { decodeBolt11, invoiceAmountSat, parseOnchainAddress } from '../flows/destination.js';
+import { encodeSimulatedBolt11, simHashHex, simSegwitAddress } from './simInvoice.js';
 
 /** Canonical 12-word BIP39 test vector — valid checksum, never funds. */
 export const SIM_WORDS: readonly string[] = [
@@ -68,6 +77,57 @@ export class MobileFlowSimulatedClient extends SimulatedWavelengthClient {
       recoveredOORReceiveScripts: 0,
       recoveredOORRecipientEvents: 0,
     };
+  }
+
+  /**
+   * The base simulator hands out placeholder strings (`bcrt1q-sim-board-N`,
+   * `lnbcrt1-sim-N`). These overrides return well-formed regtest addresses
+   * and (unsigned) BOLT11 invoices instead, so the Send parser treats them
+   * like real ones, and the receive entry carries the invoice's payment hash
+   * the way the daemon's does.
+   */
+  override async deposit(req?: DepositRequest): Promise<DepositResult> {
+    const result = await super.deposit(req);
+    return { ...result, address: simSegwitAddress('regtest', result.address) };
+  }
+
+  override async receive(req: ReceiveRequest): Promise<ReceiveResult> {
+    const result = await super.receive(req);
+    const paymentHash = simHashHex(`wavelength-receive-${result.entry.id}`);
+    const progress = result.entry.progress;
+    if (progress !== undefined) result.entry.progress = { ...progress, paymentHash };
+    const invoice = encodeSimulatedBolt11({
+      network: 'regtest',
+      amountMsat: BigInt(req.amountSat) * 1000n,
+      paymentHashHex: paymentHash,
+      description: req.memo,
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+    return { ...result, invoice };
+  }
+
+  /**
+   * Quotes like the SDK: the invoice path reads the amount from the invoice
+   * (v1 refuses amountless ones) and unreadable or expired invoices and
+   * addresses are refused before anything is quoted.
+   */
+  override async prepareSend(req: SendRequest): Promise<PrepareSendResult> {
+    if ('invoice' in req && req.invoice !== '') {
+      const decoded = decodeBolt11(req.invoice);
+      if (!decoded.ok) throw new WavelengthError('invalid lightning invoice', 'invalid_argument');
+      if (Math.floor(Date.now() / 1000) >= decoded.invoice.expiresAt) {
+        throw new WavelengthError('invoice expired', 'invalid_argument');
+      }
+      const amount = invoiceAmountSat(decoded.invoice);
+      if (amount === null) {
+        throw new WavelengthError('amountless invoices are not supported: v1 requires an amount-bearing invoice', 'invalid_argument');
+      }
+      return super.prepareSend({ ...req, amountSat: Number(amount) });
+    }
+    if ('onchainAddress' in req && !parseOnchainAddress(req.onchainAddress).ok) {
+      throw new WavelengthError('invalid on-chain address', 'invalid_argument');
+    }
+    return super.prepareSend(req);
   }
 
   override async unlockWallet(_req: UnlockWalletRequest): Promise<UnlockWalletResult> {

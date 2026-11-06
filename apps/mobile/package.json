@@ -13,14 +13,17 @@
     "web:build": "vite build --config vite.preview.config.ts"
   },
   "dependencies": {
+    "@noble/hashes": "1.8.0",
     "@scure/bip39": "1.6.0",
+    "@sovereign/liquidity": "workspace:*",
     "@sovereign/payments": "workspace:*",
     "@sovereign/ui": "workspace:*",
     "@sovereign/wallet-core": "workspace:*",
     "@sovereign/wavelength-adapter": "workspace:*",
     "qrcode-generator": "1.4.4",
     "react": "^19.3.0",
-    "react-native": "0.88.1"
+    "react-native": "0.88.1",
+    "react-native-keychain": "10.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
