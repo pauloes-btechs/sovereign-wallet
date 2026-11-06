@@ -30,6 +30,6 @@
     "@protobuf-ts/protoc": "^2.11.1",
     "@types/node": "^22.10.2",
     "typescript": "^5.7.2",
-    "vitest": "^3.0.5"
+    "vitest": "^5.1.0"
   }
 }
