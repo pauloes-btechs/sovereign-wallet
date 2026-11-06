@@ -123,6 +123,9 @@ importers:
       '@sovereign/wavelength-adapter':
         specifier: workspace:*
         version: link:../../services/wavelength-adapter
+      qrcode-generator:
+        specifier: 1.4.4
+        version: 1.4.4
       react:
         specifier: ^19.3.0
         version: 19.3.1

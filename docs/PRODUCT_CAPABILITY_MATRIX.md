@@ -124,18 +124,19 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 | Pair with a remote node | 🟨 | Screens + controller; native resolver not wired |
 | Pay / create invoice | 🟨 | Pay has no decode/review step before sending |
 | Revoke session | 🟨 | Controller method exists, no button |
+| Lightning activity | 🟨 | Optional `LncRpcPort.listLightningActivity`; the simulated port implements it, no lnc-rn adapter yet. A port without it shows "not available over this connection" |
 
 ## Cross-cutting
 
 | Capability | Status | Evidence / gap |
 | --- | --- | --- |
-| Navigation | ✅ | Mobile: bottom tab bar (Home / Activity / Pay / More). Desktop: sidebar in six groups, breadcrumbs, ⌘K palette, `/` search, `.` privacy toggle, hash deep links (was ⬜) |
+| Navigation | ✅ | Mobile: five-tab bottom bar (Home / Activity / Send / Receive / Wallet) with per-tab stacks, in both modes. Desktop: sidebar in six groups, breadcrumbs, ⌘K palette, `/` search, `.` privacy toggle, hash deep links (was ⬜) |
 | Dashboard | ✅ | Balances from one function (`computeAccounts`), no double counting; insights from real state |
 | Activity / history | ✅ | Payments, invoices, swaps and on-chain transactions merged; search, filters, totals, detail sheets (was ⬜) |
 | Transfers between rails | ✅ | FROM→TO registry offers only real rails; pairs with no rail say why (cross-chain, ERC-20, assets ≠ BTC). 17 tests |
 | Design system | ✅ | One token source (`packages/ui` CSS + TS export, drift-tested) used by desktop and mobile; was three palettes |
 | Settings | ✅ | Denomination, privacy mode, compact sidebar wired; everything else read-only with where it's configured. No unwired toggles |
-| QR codes, copy buttons, payment URIs | ✅ | Receive, requests, assets, static address |
+| QR codes, copy buttons, payment URIs | ✅ | Desktop: receive, requests, assets, static address. Mobile: Receive in both modes (copy only where a clipboard service exists) |
 | Privacy controls | 🟨 | Amount hiding + connections disclosure; Tor not configured for the node |
 | Crash-safe payment intents | 🟨 | Engine is drill-tested; only Wavelength sends use it |
 
@@ -151,7 +152,7 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 3. **Wavelength desktop**: real VTXO state/expiry, operator status, exits,
    history, restore.
 4. **Payments through intents** for advanced mode (crash-safe sends).
-5. Mobile: QR/copy, safe-area insets, real icons, a review total in everyday send, and a decode/review step for remote-node send.
+5. Mobile: see [MOBILE_PARITY_MATRIX](MOBILE_PARITY_MATRIX.md) — native resolvers, a review total in everyday send, a decode/review step for remote-node send, safe-area insets from a native module.
 
 ## Upstream and environment blockers
 

@@ -1,8 +1,10 @@
 /**
- * Wallet screens: Home (balances + VTXO lifecycle), Send (quote → confirm →
- * reconcile), Receive (on-chain boarding + swap-based Lightning), and the
- * Capabilities disclosure screen. Everything shown is derived from live
- * controller state and provider-declared capabilities — no hardcoded parity.
+ * Everyday-wallet (Mode A) screens, one per primary tab — Home (balances +
+ * VTXO lifecycle), Activity, Send (quote → confirm → reconcile), Receive
+ * (on-chain boarding + swap-based Lightning), Wallet (status + capability
+ * summary) — plus the "How this wallet works" screen pushed onto a stack.
+ * Everything shown is derived from live controller state and
+ * `controller.walletCapabilities()` — no hardcoded parity.
  */
 
 import type { ReactNode } from 'react';
@@ -13,12 +15,15 @@ import {
   describeSeedType,
   describeUnilateralExit,
   mechanismLabel,
-  satsLabel,
   vtxoStateLabel,
 } from '@sovereign/ui/copy';
 import type { TransactionRecord } from '@sovereign/wallet-core';
 import type { ModeAController, ModeAState } from '../flows/modeAController.js';
+import type { FeatureId, MobileWalletCapabilities } from '../flows/capabilities.js';
+import { QrCode } from './QrCode.js';
+import { shortenMiddle } from './format.js';
 import {
+  MobileAmount,
   MobileBadge,
   MobileBalanceGrid,
   MobileButton,
@@ -60,7 +65,7 @@ export function HomeScreen({
 
   return (
     <MobileScreen>
-      <MobileHeader title="Wallet" subtitle={`${network} · ${operator}`} />
+      <MobileHeader title="Everyday wallet" subtitle={`${network} · ${operator}`} />
       {balances !== null ? (
         <MobileBalanceGrid buckets={balances} />
       ) : state.balancesError !== null ? (
@@ -160,7 +165,7 @@ function activityTime(at: string): string {
 }
 
 function shortRef(ref: string): string {
-  return ref.length > 18 ? `${ref.slice(0, 8)}…${ref.slice(-6)}` : ref;
+  return shortenMiddle(ref, 8, 6);
 }
 
 /** One page of the wallet's activity stream, exactly as the daemon reports it. */
@@ -220,10 +225,10 @@ export function ActivityScreen({
                   <Text style={[styles.faint, styles.mono]}>{shortRef(record.txId)}</Text>
                 </View>
                 <View style={styles.activityAmount}>
-                  <Text style={styles.value}>
-                    {record.amountSat === 0n ? '' : record.direction === 'out' ? '−' : '+'}
-                    {satsLabel(record.amountSat)}
-                  </Text>
+                  <MobileAmount
+                    sats={record.amountSat}
+                    sign={record.amountSat === 0n ? null : record.direction === 'out' ? '−' : '+'}
+                  />
                   <MobileBadge label={badge.label} tone={badge.tone} />
                 </View>
               </View>
@@ -299,20 +304,24 @@ export function SendScreen({
   state: ModeAState;
 }): ReactNode {
   const capabilities = controller.capabilities;
+  const features = controller.walletCapabilities();
+  const railFeature: FeatureId = state.sendKind === 'lightning' ? 'lightningSend' : 'onchainSend';
+  const railStatus = features.features[railFeature];
   const amountReady = state.sendKind === 'lightning' || /^\d+$/.test(state.sendAmountText.trim());
   const destinationReady = state.sendDestination.trim().length > 0;
-  const reviewBlocker = !destinationReady
-    ? state.sendKind === 'lightning'
-      ? 'Paste an invoice to review the payment.'
-      : 'Paste an address to review the payment.'
-    : !amountReady
-      ? 'Enter a whole number of sats to review the payment.'
-      : null;
+  const reviewBlocker = !railStatus.available
+    ? railStatus.reason
+    : !destinationReady
+      ? state.sendKind === 'lightning'
+        ? 'Paste an invoice to review the payment.'
+        : 'Paste an address to review the payment.'
+      : !amountReady
+        ? 'Enter a whole number of sats to review the payment.'
+        : null;
 
   return (
     <MobileScreen>
-      <MobileHeader title="Pay" />
-      <PaySwitch controller={controller} active="send" />
+      <MobileHeader title="Send" />
       {state.sendStatus === 'idle' ? (
         // The rail is chosen while drafting; once quoted it is fixed for this payment.
         <MobileFlowTabs
@@ -374,12 +383,8 @@ export function SendScreen({
                   : state.sendDestination
               }
             />
-            {state.sendAmountSat !== null && (
-              <MobileLabelRow label="Amount" value={satsLabel(state.sendAmountSat)} mono={false} />
-            )}
-            {state.sendFeeSat !== null && (
-              <MobileLabelRow label="Service fee" value={satsLabel(state.sendFeeSat)} mono={false} />
-            )}
+            {state.sendAmountSat !== null && <AmountRow label="Amount" sats={state.sendAmountSat} />}
+            {state.sendFeeSat !== null && <AmountRow label="Service fee" sats={state.sendFeeSat} />}
           </MobilePanel>
           {state.sendKind === 'lightning' && (
             <Text style={styles.faint}>
@@ -454,12 +459,14 @@ export function ReceiveScreen({
   state: ModeAState;
 }): ReactNode {
   const capabilities = controller.capabilities;
+  const features = controller.walletCapabilities();
   const amountReady = /^\d+$/.test(state.receiveAmountText.trim());
+  const onchain = features.features.onchainReceive;
+  const lightning = features.features.lightningReceive;
 
   return (
     <MobileScreen>
-      <MobileHeader title="Pay" />
-      <PaySwitch controller={controller} active="receive" />
+      <MobileHeader title="Receive" />
       <MobileFlowTabs
         tabs={[
           { id: 'onchain', label: 'On-chain' },
@@ -470,26 +477,38 @@ export function ReceiveScreen({
         variant="underline"
       />
 
-      {state.receiveTab === 'onchain' && (
+      {state.receiveTab === 'onchain' && !onchain.available && (
+        <MobileWarningBand tone="warning">{onchain.reason}</MobileWarningBand>
+      )}
+      {state.receiveTab === 'onchain' && onchain.available && (
         <>
           <Text style={styles.dim}>
             Deposit Bitcoin on-chain into your wallet. A fresh address is generated each time.
           </Text>
           <MobileButton
-            label="Generate address"
+            label={state.onchainAddress === null ? 'Generate address' : 'New address'}
+            kind={state.onchainAddress === null ? 'primary' : 'secondary'}
             onPress={() => void controller.generateAddress().catch(() => undefined)}
             busy={state.busy}
           />
           <MobileErrorNote error={state.receiveError} />
           {state.onchainAddress !== null && (
             <MobilePanel>
-              <MobileLabelRow label="Your address" value={state.onchainAddress} />
+              <QrCode
+                value={`bitcoin:${state.onchainAddress}`}
+                copyValue={state.onchainAddress}
+                label="QR code for your Bitcoin deposit address"
+                textLabel="Your address"
+              />
             </MobilePanel>
           )}
         </>
       )}
 
-      {state.receiveTab === 'lightning' && (
+      {state.receiveTab === 'lightning' && !lightning.available && (
+        <MobileWarningBand tone="warning">{lightning.reason}</MobileWarningBand>
+      )}
+      {state.receiveTab === 'lightning' && lightning.available && (
         <>
           <Text style={styles.dim}>
             {mechanismLabel(capabilities.lightningMechanism)} — this invoice is paid through the
@@ -513,7 +532,12 @@ export function ReceiveScreen({
           <MobileErrorNote error={state.receiveError} />
           {state.invoice !== null && (
             <MobilePanel>
-              <MobileLabelRow label="Your invoice" value={state.invoice} />
+              <QrCode
+                value={`lightning:${state.invoice}`}
+                copyValue={state.invoice}
+                label="QR code for your Lightning invoice"
+                textLabel="Your invoice"
+              />
             </MobilePanel>
           )}
         </>
@@ -537,7 +561,7 @@ export function CapabilitiesScreen({
   const capabilities = controller.capabilities;
   return (
     <MobileScreen>
-      <MobileHeader title="How this wallet works" onBack={() => controller.navigate('more')} />
+      <MobileHeader title="How this wallet works" onBack={() => controller.goBack()} />
       <MobilePanel>
         <MobileLabelRow
           label="Lightning"
@@ -582,35 +606,66 @@ export function CapabilitiesScreen({
   );
 }
 
-// ——— Pay switch ———
+// ——— Wallet ———
 
-/** Send / Receive under the Pay tab — both flows keep their own drafts. */
-function PaySwitch({
-  controller,
-  active,
+/**
+ * The features the Wallet tab summarizes, in display order. Only features
+ * this app already offers, or that are unavailable (with the reason) — a
+ * backend feature with no screen yet (exit, fee settings) is not listed as
+ * "Available" here.
+ */
+const SUMMARY_FEATURES: ReadonlyArray<{ id: FeatureId; label: string }> = [
+  { id: 'lightningSend', label: 'Lightning payments' },
+  { id: 'onchainSend', label: 'On-chain payments' },
+  { id: 'activity', label: 'Payment history' },
+  { id: 'onchainFeePreference', label: 'On-chain fee preference' },
+  { id: 'invoiceExpiry', label: 'Invoice expiry' },
+  { id: 'channelSummary', label: 'Channels' },
+  { id: 'loopSwaps', label: 'Loop swaps' },
+  { id: 'taprootAssets', label: 'Taproot Assets' },
+  { id: 'qrScan', label: 'QR scanning' },
+  { id: 'appLock', label: 'App PIN' },
+  { id: 'biometricUnlock', label: 'Biometric unlock' },
+];
+
+/** One row per feature: available (with its note) or not (with the reason). */
+export function CapabilitySummary({
+  capabilities,
+  features,
 }: {
-  controller: ModeAController;
-  active: 'send' | 'receive';
+  capabilities: MobileWalletCapabilities;
+  features: ReadonlyArray<{ id: FeatureId; label: string }>;
 }): ReactNode {
   return (
-    <MobileFlowTabs
-      tabs={[
-        { id: 'send', label: 'Send' },
-        { id: 'receive', label: 'Receive' },
-      ]}
-      activeId={active}
-      onChange={(id) => controller.navigate(id === 'receive' ? 'receive' : 'send')}
-    />
+    <MobilePanel title="What this wallet can do here">
+      {features.map(({ id, label }, index) => {
+        const status = capabilities.features[id];
+        return (
+          <View key={id} style={[styles.featureRow, index > 0 ? styles.activityRowDivider : null]}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.value}>{label}</Text>
+              <MobileBadge
+                label={status.available ? 'Available' : 'Not available'}
+                tone={status.available ? 'positive' : 'neutral'}
+              />
+            </View>
+            {status.available ? (
+              status.note !== undefined && <Text style={styles.faint}>{status.note}</Text>
+            ) : (
+              <Text style={styles.faint}>{status.reason}</Text>
+            )}
+          </View>
+        );
+      })}
+    </MobilePanel>
   );
 }
 
-// ——— More ———
-
 /**
- * Wallet status and reference. Every value is read from the controller; the
- * modes this build does not run say so instead of offering dead controls.
+ * Wallet tab: status and what this wallet can do, every row read from the
+ * controller and `walletCapabilities()`. Settings sections build on this.
  */
-export function MoreScreen({
+export function WalletScreen({
   controller,
   state,
   network,
@@ -620,9 +675,10 @@ export function MoreScreen({
   network: string;
 }): ReactNode {
   const vtxo = state.vtxo;
+  const capabilities = controller.walletCapabilities();
   return (
     <MobileScreen>
-      <MobileHeader title="More" />
+      <MobileHeader title="Wallet" />
       <MobilePanel title="This wallet">
         <MobileLabelRow label="Mode" value="Everyday (Wavelength)" mono={false} />
         <MobileLabelRow label="Network" value={network} mono={false} />
@@ -642,17 +698,22 @@ export function MoreScreen({
         detail="Lightning mechanism, exits, recovery and service dependencies"
         onPress={() => controller.navigate('capabilities')}
       />
-      <MobilePanel title="Not in this build">
-        <Text style={styles.dim}>
-          Channels, liquidity (Loop, Pool) and Taproot Assets need your own Lightning node, and
-          are managed from the desktop app. This everyday wallet has no channels to manage.
-        </Text>
-        <Text style={styles.dim}>
-          Starting a unilateral exit from this screen is not available yet; the exit path is
-          described under How this wallet works.
-        </Text>
-      </MobilePanel>
+      <CapabilitySummary capabilities={capabilities} features={SUMMARY_FEATURES} />
+      <Text style={styles.faint}>
+        Starting a unilateral exit from the app is not available yet; the exit path is described
+        under How this wallet works.
+      </Text>
     </MobileScreen>
+  );
+}
+
+/** A review-row amount in the user's denomination (masked in privacy mode). */
+function AmountRow({ label, sats }: { label: string; sats: bigint }): ReactNode {
+  return (
+    <View style={styles.labelRow}>
+      <Text style={styles.dim}>{label}</Text>
+      <MobileAmount sats={sats} />
+    </View>
   );
 }
 
@@ -669,5 +730,6 @@ const styles = {
     },
     activityRowDivider: { borderTopWidth: 1, borderTopColor: mobilePalette.border },
     activityAmount: { alignItems: 'flex-end', gap: 4 },
+    featureRow: { gap: 4, paddingVertical: 8 },
   }),
 };

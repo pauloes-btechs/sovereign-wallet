@@ -12,78 +12,69 @@ import { useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
+  MobileAmount,
+  MobileBadge,
   MobileButton,
   MobileButtonGroup,
   MobileErrorNote,
   MobileField,
-  MobileFlowTabs,
   MobileHeader,
   MobileLabelRow,
   MobilePanel,
   MobileSats,
   MobileScreen,
-  MobileTabBar,
   MobileWarningBand,
   mobilePalette,
   styles,
 } from './Primitives.js';
 import type {
   ModeBRemoteController,
-  ModeBRemoteScreen,
   ModeBRemoteState,
+  RemoteActivityRecord,
 } from '../flows/modeBRemoteController.js';
 import {
   DESKTOP_ONLY_DISCLOSURE,
   isDesktopOnly,
 } from '../flows/modeBRemoteController.js';
-
-type ModeBTab = 'home' | 'pay' | 'more';
-
-/** Remote-node destinations. No Activity tab: the LNC port reads no payment history yet. */
-const MODE_B_TABS: ReadonlyArray<{ id: ModeBTab; label: string; glyph: string }> = [
-  { id: 'home', label: 'Home', glyph: '⌂' },
-  { id: 'pay', label: 'Pay', glyph: '⇅' },
-  { id: 'more', label: 'More', glyph: '⋯' },
-];
-
-function tabFor(screen: ModeBRemoteScreen): ModeBTab | null {
-  switch (screen) {
-    case 'home':
-      return 'home';
-    case 'send':
-    case 'receive':
-      return 'pay';
-    case 'more':
-      return 'more';
-    case 'pairing':
-    case 'connecting':
-    case 'revoked':
-      return null;
-  }
-}
+import type { FeatureId } from '../flows/capabilities.js';
+import type { PreferencesStore } from '../flows/preferences.js';
+import { NO_PLATFORM_SERVICES } from '../flows/platform.js';
+import type { PlatformServices } from '../flows/platform.js';
+import { MobileAppProvider, usePreferencesStore } from './appContext.js';
+import { PrimaryTabBar, useHardwareBack } from './navigationUi.js';
+import { QrCode } from './QrCode.js';
+import { shortenMiddle } from './format.js';
+import { CapabilitySummary } from './walletScreens.js';
 
 /** Full Mode B mobile tree — the host supplies a connected-capable port. */
 export function ModeBRemoteApp({
   controller,
   network,
+  preferences: givenPreferences,
+  platform = NO_PLATFORM_SERVICES,
 }: {
   controller: ModeBRemoteController;
   network: string;
+  /** Omitted → in-memory preferences (not persisted). */
+  preferences?: PreferencesStore;
+  platform?: PlatformServices;
 }): ReactNode {
+  const preferences = usePreferencesStore(givenPreferences);
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
-  const tab = tabFor(state.screen);
-  const selectTab = (next: ModeBTab): void => {
-    if (next === 'pay') {
-      if (tab !== 'pay') controller.navigate('send');
-      return;
-    }
-    controller.navigate(next);
-  };
+  useHardwareBack(() => controller.goBack(), state.nav !== null);
   return (
-    <View style={shell.shell}>
-      <ModeBScreenBody controller={controller} state={state} network={network} />
-      {tab !== null && <MobileTabBar tabs={MODE_B_TABS} activeId={tab} onChange={selectTab} />}
-    </View>
+    <MobileAppProvider preferences={preferences} platform={platform}>
+      <View style={shell.shell}>
+        <ModeBScreenBody controller={controller} state={state} network={network} />
+        {state.nav !== null && (
+          <PrimaryTabBar
+            activeTab={state.nav.tab}
+            onSelect={(tab) => controller.selectTab(tab)}
+            bottomInset={platform.bottomInset}
+          />
+        )}
+      </View>
+    </MobileAppProvider>
   );
 }
 
@@ -110,12 +101,14 @@ function ModeBScreenBody({
       );
     case 'home':
       return <ModeBHomeScreen controller={controller} state={state} network={network} />;
+    case 'activity':
+      return <ModeBActivityScreen controller={controller} state={state} />;
     case 'send':
       return <ModeBSendScreen controller={controller} state={state} />;
     case 'receive':
       return <ModeBReceiveScreen controller={controller} state={state} />;
-    case 'more':
-      return <ModeBMoreScreen state={state} network={network} />;
+    case 'wallet':
+      return <ModeBWalletScreen controller={controller} state={state} network={network} />;
     case 'revoked':
       return (
         <MobileScreen>
@@ -233,25 +226,6 @@ function ModeBHomeScreen({
   );
 }
 
-function PaySwitch({
-  controller,
-  active,
-}: {
-  controller: ModeBRemoteController;
-  active: 'send' | 'receive';
-}): ReactNode {
-  return (
-    <MobileFlowTabs
-      tabs={[
-        { id: 'send', label: 'Send' },
-        { id: 'receive', label: 'Receive' },
-      ]}
-      activeId={active}
-      onChange={(id) => controller.navigate(id === 'receive' ? 'receive' : 'send')}
-    />
-  );
-}
-
 /**
  * Send: the foreground rule is visible before it bites — payments only run
  * while the app is open, because the LNC session should not be resumed for
@@ -266,10 +240,13 @@ function ModeBSendScreen({
 }): ReactNode {
   const empty = state.sendBolt11Text.trim().length === 0;
   const sending = state.sendStatus === 'sending';
+  const lightning = controller.walletCapabilities().features.lightningSend;
   return (
     <MobileScreen>
-      <MobileHeader title="Pay" />
-      <PaySwitch controller={controller} active="send" />
+      <MobileHeader title="Send" subtitle="Lightning, paid by your node" />
+      {!lightning.available && state.foregrounded && (
+        <MobileWarningBand tone="warning">{lightning.reason}</MobileWarningBand>
+      )}
       {!state.foregrounded && (
         <MobileWarningBand tone="warning">
           The app is in the background — reopen it to make payments.
@@ -289,7 +266,7 @@ function ModeBSendScreen({
       <MobileButton
         label={sending ? 'Paying…' : 'Pay invoice'}
         kind="primary"
-        disabled={!state.foregrounded || empty}
+        disabled={!lightning.available || empty}
         busy={sending}
         onPress={() => {
           void controller.send().catch(() => undefined);
@@ -312,10 +289,13 @@ function ModeBReceiveScreen({
   state: ModeBRemoteState;
 }): ReactNode {
   const amountReady = /^\d+$/.test(state.invoiceAmountText.trim());
+  const features = controller.walletCapabilities().features;
   return (
     <MobileScreen>
-      <MobileHeader title="Pay" />
-      <PaySwitch controller={controller} active="receive" />
+      <MobileHeader title="Receive" subtitle="Lightning invoice from your node" />
+      {!features.lightningReceive.available && (
+        <MobileWarningBand tone="warning">{features.lightningReceive.reason}</MobileWarningBand>
+      )}
       <MobileField
         label="Amount (sats)"
         value={state.invoiceAmountText}
@@ -336,25 +316,166 @@ function ModeBReceiveScreen({
       <MobileErrorNote error={state.invoiceError} />
       {state.invoice !== null && (
         <MobilePanel>
-          <MobileLabelRow label="Invoice" value={state.invoice} />
+          <QrCode
+            value={`lightning:${state.invoice}`}
+            copyValue={state.invoice}
+            label="QR code for your Lightning invoice"
+            textLabel="Invoice"
+          />
         </MobilePanel>
+      )}
+      {!features.onchainReceive.available && (
+        <Text style={styles.faint}>{features.onchainReceive.reason}</Text>
       )}
     </MobileScreen>
   );
 }
 
-/** Node identity as the node reports it, and what this app leaves to desktop. */
-function ModeBMoreScreen({
+// ——— Activity ———
+
+const REMOTE_STATUS_BADGE: Record<
+  RemoteActivityRecord['status'],
+  { label: string; tone: 'positive' | 'warning' | 'danger' | 'neutral' }
+> = {
+  settled: { label: 'Settled', tone: 'positive' },
+  pending: { label: 'Pending', tone: 'warning' },
+  failed: { label: 'Failed', tone: 'danger' },
+  open: { label: 'Awaiting payment', tone: 'neutral' },
+  canceled: { label: 'Canceled', tone: 'neutral' },
+};
+
+/** "2026-10-30 14:02 UTC", or the raw value when unparseable. */
+function remoteTime(at: string): string {
+  const ms = Date.parse(at);
+  if (Number.isNaN(ms)) return at;
+  const iso = new Date(ms).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+}
+
+/** Lightning payments and invoices read from the node over LNC. */
+function ModeBActivityScreen({
+  controller,
+  state,
+}: {
+  controller: ModeBRemoteController;
+  state: ModeBRemoteState;
+}): ReactNode {
+  const feature = controller.walletCapabilities().features.activity;
+  const { activity, activityStatus, activityError } = state;
+  if (!feature.available || activityStatus === 'unavailable') {
+    return (
+      <MobileScreen>
+        <MobileHeader title="Activity" />
+        <MobilePanel>
+          <Text style={styles.dim}>
+            {feature.available
+              ? "Payment history isn't available over this connection yet."
+              : feature.reason}
+          </Text>
+        </MobilePanel>
+      </MobileScreen>
+    );
+  }
+  return (
+    <MobileScreen>
+      <View style={styles.rowBetween}>
+        <View style={local.flexShrink}>
+          <MobileHeader title="Activity" subtitle="Lightning payments and invoices on your node" />
+        </View>
+        <MobileButton
+          label="Refresh"
+          kind="ghost"
+          compact
+          busy={activityStatus === 'loading'}
+          onPress={() => void controller.loadActivity()}
+        />
+      </View>
+      {activityStatus === 'failed' && (
+        <MobileWarningBand tone="danger">
+          <Text style={styles.bandText}>Activity could not be read: {activityError}</Text>
+        </MobileWarningBand>
+      )}
+      {activity === null && activityStatus !== 'failed' && (
+        <Text style={styles.dim}>Loading activity…</Text>
+      )}
+      {activity !== null && activity.length === 0 && (
+        <MobilePanel>
+          <Text style={styles.dim}>
+            No Lightning payments or invoices on your node yet.
+          </Text>
+        </MobilePanel>
+      )}
+      {activity !== null && activity.length > 0 && (
+        <MobilePanel>
+          {activity.map((record, index) => {
+            const badge = REMOTE_STATUS_BADGE[record.status];
+            const sign = record.status !== 'settled' || record.amountSat === 0n ? null : record.direction === 'out' ? '−' : '+';
+            return (
+              <View
+                key={`${record.paymentHash}-${record.direction}`}
+                style={[local.row, index > 0 ? local.rowDivider : null]}
+              >
+                <View style={local.flexShrink}>
+                  <Text style={styles.value}>
+                    {record.direction === 'out' ? 'Sent' : 'Invoice'} · Lightning
+                  </Text>
+                  <Text style={styles.faint}>{remoteTime(record.createdAt)}</Text>
+                  {record.memo !== null && record.memo !== '' && (
+                    <Text style={styles.faint}>{record.memo}</Text>
+                  )}
+                  <Text style={[styles.faint, styles.mono]}>{shortenMiddle(record.paymentHash)}</Text>
+                </View>
+                <View style={local.amount}>
+                  <MobileAmount sats={record.amountSat} sign={sign} />
+                  {record.feeSat !== null && record.direction === 'out' && record.status === 'settled' && (
+                    <Text style={styles.faint}>
+                      Fee <MobileAmount sats={record.feeSat} style={styles.faint} />
+                    </Text>
+                  )}
+                  <MobileBadge label={badge.label} tone={badge.tone} />
+                </View>
+              </View>
+            );
+          })}
+        </MobilePanel>
+      )}
+      <Text style={styles.faint}>
+        On-chain transactions are not read over this connection.
+      </Text>
+    </MobileScreen>
+  );
+}
+
+// ——— Wallet ———
+
+const REMOTE_SUMMARY: ReadonlyArray<{ id: FeatureId; label: string }> = [
+  { id: 'lightningSend', label: 'Lightning payments' },
+  { id: 'onchainSend', label: 'On-chain payments' },
+  { id: 'activity', label: 'Payment history' },
+  { id: 'channelSummary', label: 'Channels' },
+  { id: 'sendFeeQuote', label: 'Fee shown before paying' },
+  { id: 'lightningFeeLimit', label: 'Lightning fee limit' },
+  { id: 'invoiceExpiry', label: 'Invoice expiry' },
+  { id: 'loopSwaps', label: 'Loop swaps' },
+  { id: 'taprootAssets', label: 'Taproot Assets' },
+  { id: 'qrScan', label: 'QR scanning' },
+  { id: 'appLock', label: 'App PIN' },
+];
+
+/** Node identity as the node reports it, and what this connection can do. */
+function ModeBWalletScreen({
+  controller,
   state,
   network,
 }: {
+  controller: ModeBRemoteController;
   state: ModeBRemoteState;
   network: string;
 }): ReactNode {
   const { node } = state;
   return (
     <MobileScreen>
-      <MobileHeader title="More" />
+      <MobileHeader title="Wallet" />
       <MobilePanel title="Your node">
         <MobileLabelRow label="Connection" value="Lightning Node Connect" mono={false} />
         <MobileLabelRow label="Network" value={network} mono={false} />
@@ -370,15 +491,23 @@ function ModeBMoreScreen({
         )}
       </MobilePanel>
       <MobileWarningBand tone="warning">{DESKTOP_ONLY_DISCLOSURE}</MobileWarningBand>
-      <MobilePanel title="Not in this app yet">
-        <Text style={styles.dim}>
-          Payment history, channel management and liquidity tools (Loop, Pool) are not read
-          over this connection. Use the desktop app connected to the same node.
-        </Text>
-      </MobilePanel>
+      <CapabilitySummary capabilities={controller.walletCapabilities()} features={REMOTE_SUMMARY} />
     </MobileScreen>
   );
 }
+
+const local = StyleSheet.create({
+  flexShrink: { flexShrink: 1 },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  rowDivider: { borderTopWidth: 1, borderTopColor: mobilePalette.border },
+  amount: { alignItems: 'flex-end', gap: 4 },
+});
 
 const shell = StyleSheet.create({
   shell: { flex: 1, backgroundColor: mobilePalette.bg },

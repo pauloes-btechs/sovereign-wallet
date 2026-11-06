@@ -7,9 +7,10 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { WAVELENGTH_DECLARATION } from '@sovereign/wallet-core';
 import { ModeAApp } from '../App.js';
+import { createPreferencesStore, memoryPreferencesBackend } from '../flows/preferences.js';
 import {
   MobileFlowSimulatedClient,
   SIM_WORDS,
@@ -43,6 +44,16 @@ function click(label: string): void {
   fireEvent.click(screen.getByLabelText(label));
 }
 
+/** Reads a DOM attribute (the mobile tsconfig has no DOM lib). */
+function attr(el: unknown, name: string): string | null {
+  return (el as { getAttribute(n: string): string | null }).getAttribute(name);
+}
+
+/** Selects a bottom tab (Home, Activity, Send, Receive, Wallet) by its accessible name. */
+function tab(name: 'Home' | 'Activity' | 'Send' | 'Receive' | 'Wallet'): void {
+  fireEvent.click(screen.getByRole('tab', { name }));
+}
+
 /**
  * Waits until the controller finished starting the provider — the onboarding
  * buttons are disabled until runtimeReady flips, so interactions must follow it.
@@ -70,7 +81,7 @@ async function createAndBackup(sim: MobileFlowSimulatedClient): Promise<void> {
     typeInto(label, SIM_WORDS[i] ?? '');
   }
   click('Confirm backup');
-  await screen.findByText('Wallet');
+  await screen.findByText('Everyday wallet');
 }
 
 describe('Mode A mobile screens (real stack, simulated daemon)', () => {
@@ -100,12 +111,13 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     }
     click('Confirm backup');
     expect(screen.getByText(textMatching(/Word 12 doesn't match/))).toBeTruthy();
-    expect(screen.queryByText('Wallet')).toBeNull();
+    expect(screen.queryByText('Everyday wallet')).toBeNull();
+    expect(screen.queryByRole('tablist')).toBeNull(); // no tabs before the wallet exists
 
     // Fixing the word completes the backup and lands on Home.
     typeInto('Word 12', SIM_WORDS[11] ?? '');
     click('Confirm backup');
-    await screen.findByText('Wallet');
+    await screen.findByText('Everyday wallet');
   }, 20_000);
 
   it('Home renders the three buckets and the expiring VTXO roll-forward notice from live balances', async () => {
@@ -159,7 +171,7 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     const sim = new MobileFlowSimulatedClient();
     await createAndBackup(sim);
 
-    click('Send');
+    tab('Send');
     typeInto('Lightning invoice', 'lnbcrt1-sim-test-invoice');
     click('Review payment');
     expect(await screen.findByText('Service fee')).toBeTruthy();
@@ -179,7 +191,7 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     const sim = new MobileFlowSimulatedClient();
     await createAndBackup(sim);
 
-    click('Send');
+    tab('Send');
     click('On-chain');
     typeInto('Recipient address', 'bcrt1q-sim-destination');
     typeInto('Amount (sats)', '50000');
@@ -197,7 +209,7 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     const sim = new MobileFlowSimulatedClient();
     await createAndBackup(sim);
 
-    click('Receive');
+    tab('Receive');
     click('Generate address');
     expect(await screen.findByText(textMatching(/bcrt1q-sim-board/))).toBeTruthy();
 
@@ -231,34 +243,86 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     expect(screen.getAllByText(textMatching(/Required for:/)).length).toBeGreaterThan(0);
   }, 20_000);
 
-  it('tab bar: Activity lists the send from the daemon, Pay keeps its draft, More shows live status', async () => {
+  it('tab bar: five tabs; Activity lists the send from the daemon, Send keeps its draft, Wallet shows live status', async () => {
     const sim = new MobileFlowSimulatedClient();
     await createAndBackup(sim);
+
+    expect(screen.getAllByRole('tab').map((t) => attr(t, 'aria-label'))).toEqual([
+      'Home',
+      'Activity',
+      'Send',
+      'Receive',
+      'Wallet',
+    ]);
+    expect(attr(screen.getByRole('tab', { name: 'Home' }), 'aria-selected')).toBe('true');
 
     // The status line comes from the last successful read, not the render clock.
     expect(screen.getByText(textMatching(/^Updated \d\d:\d\d:\d\d UTC$/))).toBeTruthy();
     expect(screen.getByText('regtest · Ark operator reachable')).toBeTruthy();
 
-    click('Activity');
+    tab('Activity');
     expect(await screen.findByText(textMatching(/No activity yet/))).toBeTruthy();
 
-    click('Pay');
+    tab('Send');
     typeInto('Lightning invoice', 'lnbcrt1-sim-tab-invoice');
+    tab('Receive'); // a draft survives a tab switch
+    tab('Send');
+    expect(
+      (screen.getByLabelText('Lightning invoice') as unknown as { value: string }).value,
+    ).toBe('lnbcrt1-sim-tab-invoice');
     click('Review payment');
     await screen.findByText('Service fee');
     click('Confirm and send');
     await screen.findByText(textMatching(/Payment in flight/));
 
-    click('Activity');
+    tab('Activity');
     expect(await screen.findByText('Sent · Lightning')).toBeTruthy();
     expect(screen.getByText('Pending')).toBeTruthy();
 
-    click('More');
+    tab('Wallet');
     expect(await screen.findByText('Everyday (Wavelength)')).toBeTruthy();
     expect(screen.getByText('Reachable')).toBeTruthy();
+    // Capability rows render from walletCapabilities(), reasons included.
+    expect(screen.getByText(textMatching(/Loop needs your own Lightning node/))).toBeTruthy();
 
-    click('Home');
-    await screen.findByText('Wallet');
+    // A pushed screen gets a back control that returns to the tab root.
+    click('How this wallet works');
+    await screen.findByText('Services this wallet depends on');
+    click('Back');
+    await screen.findByText('Everyday (Wavelength)');
+
+    tab('Home');
+    await screen.findByText('Everyday wallet');
+  }, 20_000);
+
+  it('privacy mode masks every amount and the BTC denomination formats exactly', async () => {
+    const sim = new MobileFlowSimulatedClient();
+    sim.depositVTXO('sim-vtxo-fresh', 150_000, 100);
+    const preferences = createPreferencesStore(memoryPreferencesBackend());
+    await preferences.load();
+    await preferences.set({ denomination: 'btc' });
+    render(
+      <ModeAApp
+        client={sim}
+        network="regtest"
+        dataDir="/tmp/sovereign-mobile-test"
+        pollIntervalMs={600_000}
+        preferences={preferences}
+      />,
+    );
+    await awaitRuntimeReady();
+    typeInto('Wallet password', 'e2e-password');
+    click('Create a new wallet');
+    await screen.findByText('Back up your wallet');
+    click('I wrote the words down');
+    SIM_WORDS.forEach((word, i) => typeInto(`Word ${String(i + 1).padStart(2, '0')}`, word));
+    click('Confirm backup');
+    expect(await screen.findByText('0.00150000')).toBeTruthy(); // hero total in BTC
+    expect(screen.getByText('0.00150000 BTC')).toBeTruthy(); // Lightning bucket
+
+    await act(() => preferences.set({ hideBalances: true }));
+    expect(screen.queryByText('0.00150000 BTC')).toBeNull();
+    expect(screen.getAllByLabelText('Amount hidden').length).toBeGreaterThan(0);
   }, 20_000);
 
   it('restore rejects a wrong-length phrase with the 12-or-24 rule', async () => {
@@ -291,6 +355,6 @@ describe('Mode A mobile screens (real stack, simulated daemon)', () => {
     expect(sim.restoredFromWords).toEqual([...SIM_WORDS]);
 
     click('Go to your wallet');
-    await screen.findByText('Wallet');
+    await screen.findByText('Everyday wallet');
   }, 20_000);
 });

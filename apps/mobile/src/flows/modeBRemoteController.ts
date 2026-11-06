@@ -23,6 +23,19 @@ import {
 } from '@sovereign/payments';
 import type { DispatchOutcome } from '@sovereign/payments';
 import type { PaymentDispatcher } from '@sovereign/payments';
+import { LNC_REMOTE_DECLARATION } from '@sovereign/wallet-core';
+import { remoteLndCapabilities } from './capabilities.js';
+import type { MobileWalletCapabilities } from './capabilities.js';
+import {
+  createNavigation,
+  currentEntry,
+  handleBack,
+  navigateTo,
+  selectTab as selectNavTab,
+} from './navigation.js';
+import type { NavigationState, PrimaryTab } from './navigation.js';
+import { NO_PLATFORM_SERVICES } from './platform.js';
+import type { PlatformServices } from './platform.js';
 
 /** What the port reports after a successful pairing handshake. */
 export interface RemoteNodeInfo {
@@ -48,6 +61,29 @@ export interface RemoteBalances {
   /** Confirmed on-chain balance of the remote node's wallet, in satoshis. */
   readonly onchainConfirmedSat: bigint;
   readonly channels: readonly RemoteChannelSummary[];
+}
+
+/**
+ * One Lightning payment (outgoing) or invoice (incoming) as the remote node
+ * reports it. Status mapping from LND:
+ * - payments (lnrpc.Payment.status): IN_FLIGHT → pending, SUCCEEDED → settled, FAILED → failed;
+ * - invoices (lnrpc.Invoice.state): OPEN → open, ACCEPTED → pending,
+ *   SETTLED → settled, CANCELED → canceled (cancelled or expired).
+ */
+export interface RemoteActivityRecord {
+  /** Payment hash, hex — LND's identifier for both payments and invoices. */
+  readonly paymentHash: string;
+  readonly direction: 'in' | 'out';
+  /** Amount paid (out) or requested/received (in), in satoshis. */
+  readonly amountSat: bigint;
+  /** Routing fee paid on an outgoing payment; null when not applicable or unknown. */
+  readonly feeSat: bigint | null;
+  readonly status: 'pending' | 'settled' | 'failed' | 'open' | 'canceled';
+  /** ISO-8601 UTC creation time. */
+  readonly createdAt: string;
+  readonly memo: string | null;
+  /** The BOLT11 request when the node returns it. */
+  readonly paymentRequest: string | null;
 }
 
 /** Sessions visible through the current session (if permitted at all). */
@@ -80,6 +116,15 @@ export interface LncRpcPort {
   }>;
   /** Recovery lookup by payment hash — never dispatches (engine contract). */
   lookupPayment(paymentHashHex: string): Promise<ReconcileResult>;
+
+  /**
+   * Lightning payments and invoices, newest first, at most `maxItems`.
+   * Optional: present when the adapter implements it and the session's
+   * macaroon can read them. The lnc-rn adapter merges
+   * `lightning.listPayments({ includeIncomplete: true, reversed: true })`
+   * and `lightning.listInvoices({ reversed: true })`.
+   */
+  listLightningActivity?(request: { readonly maxItems: number }): Promise<readonly RemoteActivityRecord[]>;
 
   /** Present only when the session's macaroon can read litd sessions. */
   listSessions?(): Promise<readonly RemoteSessionSummary[]>;
@@ -134,17 +179,36 @@ export class ModeBRemoteError extends Error {
   }
 }
 
-export type ModeBRemoteScreen =
-  | 'pairing'
-  | 'connecting'
-  | 'home'
-  | 'send'
-  | 'receive'
-  | 'more'
-  | 'revoked';
+/** Screens shown once paired — they live on the tab stacks. */
+export type ModeBRoute = 'home' | 'activity' | 'send' | 'receive' | 'wallet';
+
+/** Connection-phase screens (no tab bar). */
+export type ModeBPhaseScreen = 'pairing' | 'connecting' | 'revoked';
+
+export type ModeBRemoteScreen = ModeBPhaseScreen | ModeBRoute;
+
+export const MODE_B_ROOTS: Readonly<Record<PrimaryTab, ModeBRoute>> = {
+  home: 'home',
+  activity: 'activity',
+  send: 'send',
+  receive: 'receive',
+  wallet: 'wallet',
+};
+
+const MODE_B_PHASES: readonly ModeBPhaseScreen[] = ['pairing', 'connecting', 'revoked'];
+
+export function isModeBPhaseScreen(screen: ModeBRemoteScreen): screen is ModeBPhaseScreen {
+  return MODE_B_PHASES.some((p) => p === screen);
+}
+
+/** How many activity records one read asks the node for. */
+export const REMOTE_ACTIVITY_PAGE = 100;
 
 export interface ModeBRemoteState {
+  /** The visible screen: a phase screen, or the top of the active tab's stack. */
   readonly screen: ModeBRemoteScreen;
+  /** Tab navigation once paired; null on the connection-phase screens. */
+  readonly nav: NavigationState<ModeBRoute> | null;
   readonly busy: boolean;
 
   // Pairing — the 10-word phrase lives only in this field, never persisted.
@@ -167,10 +231,17 @@ export interface ModeBRemoteState {
   readonly invoiceAmountText: string;
   readonly invoice: string | null;
   readonly invoiceError: string | null;
+
+  // Activity — Lightning payments and invoices read from the node.
+  readonly activity: readonly RemoteActivityRecord[] | null;
+  /** 'unavailable' = this port/session cannot read history (see capabilities). */
+  readonly activityStatus: 'idle' | 'loading' | 'loaded' | 'failed' | 'unavailable';
+  readonly activityError: string | null;
 }
 
 const INITIAL_STATE: ModeBRemoteState = {
   screen: 'pairing',
+  nav: null,
   busy: false,
   phraseText: '',
   phraseValidation: null,
@@ -185,12 +256,17 @@ const INITIAL_STATE: ModeBRemoteState = {
   invoiceAmountText: '',
   invoice: null,
   invoiceError: null,
+  activity: null,
+  activityStatus: 'idle',
+  activityError: null,
 };
 
 export interface ModeBRemoteControllerOptions {
   readonly port: LncRpcPort;
   readonly network: 'mainnet' | 'testnet' | 'signet' | 'regtest';
   readonly pollIntervalMs?: number;
+  /** Injected device services; capability derivation reads which exist. */
+  readonly platform?: PlatformServices;
 }
 
 /** Bridge: the shared engine's dispatcher contract onto the LNC port. */
@@ -320,6 +396,7 @@ export class ModeBRemoteController {
   private readonly port: LncRpcPort;
   private readonly engine: PaymentEngine;
   private readonly pollIntervalMs: number;
+  private readonly platform: PlatformServices;
   private readonly listeners = new Set<() => void>();
   private unsubscribeEvents: (() => void) | undefined;
   private pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -329,6 +406,7 @@ export class ModeBRemoteController {
     this.port = options.port;
     this.network = options.network;
     this.pollIntervalMs = options.pollIntervalMs ?? 30_000;
+    this.platform = options.platform ?? NO_PLATFORM_SERVICES;
     this.engine = new PaymentEngine({
       store: new InMemoryPaymentIntentStore(),
       dispatcher: new LncPaymentDispatcher(this.port),
@@ -350,6 +428,31 @@ export class ModeBRemoteController {
       // The phone hosts no node — balances and history live on the user's litd.
       note: 'Connected to your own node over Lightning Node Connect.',
     });
+
+  private capsCache: { state: ModeBRemoteState; caps: MobileWalletCapabilities } | undefined;
+
+  /**
+   * What this connection can do right now — the remote-node declaration,
+   * narrowed to what the LNC port actually implements (feature detection)
+   * and the connection/foreground state. Stable identity per state.
+   */
+  walletCapabilities = (): MobileWalletCapabilities => {
+    const state = this.state;
+    if (this.capsCache?.state === state) return this.capsCache.caps;
+    const caps = remoteLndCapabilities({
+      declared: LNC_REMOTE_DECLARATION.capabilities,
+      connected: state.nav !== null && this.port.isConnected(),
+      foregrounded: state.foregrounded,
+      port: {
+        listLightningActivity: typeof this.port.listLightningActivity === 'function',
+        listSessions: typeof this.port.listSessions === 'function',
+        revokeSession: typeof this.port.revokeSession === 'function',
+      },
+      platform: this.platform,
+    });
+    this.capsCache = { state, caps };
+    return caps;
+  };
 
   /** Starts event + poll loops once paired. Safe to call again on repair. */
   start(): void {
@@ -388,7 +491,8 @@ export class ModeBRemoteController {
       await this.port.connect(this.state.phraseText.trim().split(/\s+/));
       const [node, balances] = await Promise.all([this.port.getInfo(), this.port.getBalances()]);
       // The phrase is consumed the moment RPCs flow — never kept in memory.
-      this.set({ phraseText: '', phraseValidation: null, screen: 'home', busy: false, node, balances });
+      const nav = createNavigation(MODE_B_ROOTS, 'home');
+      this.set({ phraseText: '', phraseValidation: null, nav, screen: 'home', busy: false, node, balances });
       this.start();
     } catch (error) {
       this.set({
@@ -407,14 +511,65 @@ export class ModeBRemoteController {
   async refresh(): Promise<void> {
     if (!this.port.isConnected()) return;
     const [node, balances] = await Promise.all([this.port.getInfo(), this.port.getBalances()]);
-    if (this.state.screen !== 'pairing') {
+    if (this.state.nav !== null) {
       this.set({ node, balances });
     }
   }
 
-  navigate(screen: ModeBRemoteScreen): void {
-    if (screen === 'home') void this.refresh().catch(() => undefined);
-    this.set({ screen });
+  /**
+   * Goes to a screen. Phase screens leave the tabs; a tab's root switches to
+   * that tab (keeping its stack); other screens push onto the active tab.
+   */
+  navigate(screen: ModeBRemoteScreen, params?: Readonly<Record<string, string>>): void {
+    if (isModeBPhaseScreen(screen)) {
+      this.set({ screen, nav: null });
+      return;
+    }
+    const nav = this.state.nav ?? createNavigation(MODE_B_ROOTS, 'home');
+    this.setNav(navigateTo(nav, MODE_B_ROOTS, screen, params));
+  }
+
+  /** Tab-bar selection (re-tapping the active tab pops it to its root). */
+  selectTab(tab: PrimaryTab): void {
+    if (this.state.nav === null) return;
+    this.setNav(selectNavTab(this.state.nav, tab));
+  }
+
+  /** Back control and Android hardware back. False = nothing to go back to. */
+  goBack(): boolean {
+    if (this.state.nav === null) return false;
+    const { nav, handled } = handleBack(this.state.nav);
+    if (handled) this.setNav(nav);
+    return handled;
+  }
+
+  private setNav(nav: NavigationState<ModeBRoute>): void {
+    const screen = currentEntry(nav).route;
+    const entering = screen !== this.state.screen;
+    this.set({ nav, screen });
+    if (entering && screen === 'home') void this.refresh().catch(() => undefined);
+    if (entering && screen === 'activity') void this.loadActivity();
+  }
+
+  // --- activity ------------------------------------------------------------
+
+  /**
+   * Reads Lightning payments and invoices from the node. A port without
+   * `listLightningActivity` is reported as unavailable — never as "no activity".
+   */
+  async loadActivity(): Promise<void> {
+    const list = this.port.listLightningActivity;
+    if (list === undefined) {
+      this.set({ activityStatus: 'unavailable', activityError: null });
+      return;
+    }
+    this.set({ activityStatus: 'loading', activityError: null });
+    try {
+      const activity = await list.call(this.port, { maxItems: REMOTE_ACTIVITY_PAGE });
+      this.set({ activity, activityStatus: 'loaded' });
+    } catch (error) {
+      this.set({ activityStatus: 'failed', activityError: describeError(error) });
+    }
   }
 
   // --- foreground rule -----------------------------------------------------
@@ -454,7 +609,10 @@ export class ModeBRemoteController {
         sendBolt11Text: settled.state === 'settled' ? '' : this.state.sendBolt11Text,
         sendError: settled.state === 'settled' ? null : `Payment failed (${settled.state}).`,
       });
-      if (settled.state === 'settled') void this.refresh().catch(() => undefined);
+      if (settled.state === 'settled') {
+        void this.refresh().catch(() => undefined);
+        if (this.state.activityStatus === 'loaded') void this.loadActivity();
+      }
     } catch (error) {
       this.set({ sendStatus: 'failed', sendError: describeError(error) });
       throw error;
@@ -477,6 +635,7 @@ export class ModeBRemoteController {
     try {
       const { bolt11 } = await this.port.addInvoice({ valueSat: sat, memo: 'Mode B receive' });
       this.set({ invoice: bolt11, invoiceError: null });
+      if (this.state.activityStatus === 'loaded') void this.loadActivity();
     } catch (error) {
       this.set({ invoiceError: describeError(error) });
       throw error;
@@ -503,7 +662,15 @@ export class ModeBRemoteController {
     } catch {
       // the transport may already be gone — the state change is what matters
     }
-    this.set({ screen: 'revoked', node: null, balances: null });
+    this.set({
+      screen: 'revoked',
+      nav: null,
+      node: null,
+      balances: null,
+      activity: null,
+      activityStatus: 'idle',
+      activityError: null,
+    });
   }
 
   private set(partial: Partial<ModeBRemoteState>): void {

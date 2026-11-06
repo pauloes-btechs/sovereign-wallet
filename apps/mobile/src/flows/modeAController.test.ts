@@ -20,7 +20,7 @@ import type {
   ModeAEnginePort,
   ModeAProviderPort,
 } from './modeAController.js';
-import { ModeAController, parseSats, summarizeVtxos, tabForScreen } from './modeAController.js';
+import { ModeAController, isModeAPhaseScreen, parseSats, summarizeVtxos } from './modeAController.js';
 
 let idSeq = 0;
 const nextId = (prefix: string): string => {
@@ -499,22 +499,52 @@ describe('ModeAController — balance status, activity, tabs', () => {
     expect(controller.getState().activity).toBeNull();
   });
 
-  it('maps screens to tabs and keeps the Pay draft when Pay is re-selected', () => {
-    expect(tabForScreen('onboarding')).toBeNull();
-    expect(tabForScreen('capabilities')).toBe('more');
-    expect(tabForScreen('receive')).toBe('pay');
+  it('five tabs: Send and Receive are separate tabs, each keeps its draft across tab switches', () => {
+    expect(isModeAPhaseScreen('onboarding')).toBe(true);
+    expect(isModeAPhaseScreen('wallet')).toBe(false);
+    expect(controller.getState().nav).toBeNull(); // no tabs before a wallet exists
 
-    controller.selectTab('pay');
+    controller.selectTab('send');
     expect(controller.getState().screen).toBe('send');
-    controller.navigate('receive');
-    controller.setReceiveAmount('5000');
-    controller.selectTab('pay');
+    controller.selectTab('receive');
     expect(controller.getState().screen).toBe('receive');
+    controller.setReceiveAmount('5000');
+    controller.selectTab('send');
+    controller.selectTab('receive');
     expect(controller.getState().receiveAmountText).toBe('5000');
 
-    controller.selectTab('home');
+    controller.selectTab('wallet');
+    expect(controller.getState().screen).toBe('wallet');
+    controller.navigate('capabilities'); // pushed onto the Wallet stack
+    expect(controller.getState().screen).toBe('capabilities');
+    expect(controller.getState().nav?.tab).toBe('wallet');
+    expect(controller.goBack()).toBe(true);
+    expect(controller.getState().screen).toBe('wallet');
+    expect(controller.goBack()).toBe(true); // tab root → Home
+    expect(controller.getState().screen).toBe('home');
+    expect(controller.goBack()).toBe(false); // Home root: the OS decides
+
+    // "Done" after a payment clears the drafts and lands on Home.
+    controller.selectTab('receive');
+    controller.backToHome();
     expect(controller.getState().screen).toBe('home');
     expect(controller.getState().receiveAmountText).toBe('');
+  });
+
+  it('re-tapping the active tab pops its stack to the root', () => {
+    controller.selectTab('home');
+    controller.navigate('capabilities');
+    expect(controller.getState().screen).toBe('capabilities');
+    controller.selectTab('home');
+    expect(controller.getState().screen).toBe('home');
+  });
+
+  it('walletCapabilities reflects the live operator state with a reason', async () => {
+    await controller.start();
+    controller.confirmBackup();
+    expect(controller.walletCapabilities().features.lightningSend.available).toBe(true);
+    expect(controller.walletCapabilities()).toBe(controller.walletCapabilities()); // stable per state
+    expect(controller.walletCapabilities().features.loopSwaps.available).toBe(false);
   });
 });
 

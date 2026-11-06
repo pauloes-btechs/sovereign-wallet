@@ -312,3 +312,99 @@ describe('ModeBRemoteController receive + revocation', () => {
     expect(controller.getState().screen).toBe('revoked');
   });
 });
+
+describe('ModeBRemoteController tabs, activity and capabilities', () => {
+  let port: ReturnType<typeof makePort>;
+  let controller: ModeBRemoteController;
+
+  beforeEach(async () => {
+    port = makePort();
+    controller = new ModeBRemoteController({ port, network: 'regtest', pollIntervalMs: 600_000 });
+    controller.enterPairingPhrase(TEN_WORDS);
+    await controller.pair();
+  });
+
+  afterEach(() => {
+    controller.stop();
+  });
+
+  it('pairing opens the five-tab navigation on Home; revocation leaves it', async () => {
+    expect(controller.getState().nav?.tab).toBe('home');
+    controller.selectTab('wallet');
+    expect(controller.getState().screen).toBe('wallet');
+    controller.selectTab('send');
+    expect(controller.getState().screen).toBe('send');
+    expect(controller.goBack()).toBe(true); // tab root → Home
+    expect(controller.getState().screen).toBe('home');
+    expect(controller.goBack()).toBe(false);
+
+    port.emit({ type: 'revoked' });
+    await vi.waitFor(() => expect(controller.getState().screen).toBe('revoked'));
+    expect(controller.getState().nav).toBeNull();
+  });
+
+  it('a port without listLightningActivity reports activity as unavailable, not empty', async () => {
+    controller.selectTab('activity');
+    await vi.waitFor(() => expect(controller.getState().activityStatus).toBe('unavailable'));
+    expect(controller.getState().activity).toBeNull();
+    const caps = controller.walletCapabilities();
+    expect(caps.features.activity.available).toBe(false);
+  });
+
+  it('reads Lightning activity from the port when it implements the method', async () => {
+    const records = [
+      {
+        paymentHash: 'ab'.repeat(32),
+        direction: 'out' as const,
+        amountSat: 1_000n,
+        feeSat: 1n,
+        status: 'settled' as const,
+        createdAt: '2026-11-05T10:00:00.000Z',
+        memo: null,
+        paymentRequest: 'lnbcrt10u1x',
+      },
+    ];
+    const requests: number[] = [];
+    const withActivity = Object.assign(port, {
+      async listLightningActivity(request: { maxItems: number }) {
+        requests.push(request.maxItems);
+        return records;
+      },
+    });
+    const c = new ModeBRemoteController({ port: withActivity, network: 'regtest', pollIntervalMs: 600_000 });
+    c.enterPairingPhrase(TEN_WORDS);
+    await c.pair();
+    expect(c.walletCapabilities().features.activity.available).toBe(true);
+    c.selectTab('activity');
+    await vi.waitFor(() => expect(c.getState().activityStatus).toBe('loaded'));
+    expect(c.getState().activity).toEqual(records);
+    expect(requests).toEqual([100]);
+    c.stop();
+  });
+
+  it('an activity read failure is shown as a failure', async () => {
+    const failing = Object.assign(port, {
+      async listLightningActivity(): Promise<never> {
+        throw new Error('permission denied: offchain read');
+      },
+    });
+    const c = new ModeBRemoteController({ port: failing, network: 'regtest', pollIntervalMs: 600_000 });
+    c.enterPairingPhrase(TEN_WORDS);
+    await c.pair();
+    await c.loadActivity();
+    expect(c.getState().activityStatus).toBe('failed');
+    expect(c.getState().activityError).toMatch(/permission denied/);
+    c.stop();
+  });
+
+  it('capabilities never claim on-chain or fee quotes over LNC, and track the foreground rule', () => {
+    const caps = controller.walletCapabilities();
+    expect(caps.backend).toBe('remote-lnd');
+    expect(caps.features.onchainSend.available).toBe(false);
+    expect(caps.features.sendFeeQuote.available).toBe(false);
+    expect(caps.features.lightningSend.available).toBe(true);
+    expect(caps.features.sessionRevoke.available).toBe(false); // fake port has no revokeSession
+    controller.setForegrounded(false);
+    expect(controller.walletCapabilities().features.lightningSend.available).toBe(false);
+  });
+});

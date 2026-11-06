@@ -34,6 +34,20 @@ import type {
 } from '@sovereign/wavelength-adapter';
 import { WavelengthError } from '@sovereign/wavelength-adapter';
 import { hasAtRisk, hasExpiring } from '@sovereign/wavelength-adapter';
+import { wavelengthCapabilities } from './capabilities.js';
+import type { MobileWalletCapabilities } from './capabilities.js';
+import {
+  createNavigation,
+  currentEntry,
+  handleBack,
+  navigateTo,
+  popToRoot,
+  selectTab as selectNavTab,
+  switchTab,
+} from './navigation.js';
+import type { NavigationState, PrimaryTab } from './navigation.js';
+import { NO_PLATFORM_SERVICES } from './platform.js';
+import type { PlatformServices } from './platform.js';
 
 /** VTXO summary derived from the live classification — what Home renders. */
 export interface VtxoSummary {
@@ -49,42 +63,34 @@ export interface RestoreRejection {
   message: string;
 }
 
-export type ModeAScreen =
-  | 'onboarding'
-  | 'backup'
-  | 'home'
-  | 'activity'
-  | 'send'
-  | 'receive'
-  | 'restore'
-  | 'more'
-  | 'capabilities';
+/** Screens shown once a wallet exists — they live on the tab stacks. */
+export type ModeARoute = 'home' | 'activity' | 'send' | 'receive' | 'wallet' | 'capabilities';
 
-/** Bottom-tab destinations once a wallet exists (onboarding has no tab bar). */
-export type ModeATab = 'home' | 'activity' | 'pay' | 'more';
+/** Pre-wallet screens (no tab bar). */
+export type ModeAPhaseScreen = 'onboarding' | 'backup' | 'restore';
 
-/** Which tab a screen belongs to; null for the pre-wallet screens (no tab bar). */
-export function tabForScreen(screen: ModeAScreen): ModeATab | null {
-  switch (screen) {
-    case 'home':
-      return 'home';
-    case 'activity':
-      return 'activity';
-    case 'send':
-    case 'receive':
-      return 'pay';
-    case 'more':
-    case 'capabilities':
-      return 'more';
-    case 'onboarding':
-    case 'backup':
-    case 'restore':
-      return null;
-  }
+export type ModeAScreen = ModeAPhaseScreen | ModeARoute;
+
+/** Each primary tab's root screen. */
+export const MODE_A_ROOTS: Readonly<Record<PrimaryTab, ModeARoute>> = {
+  home: 'home',
+  activity: 'activity',
+  send: 'send',
+  receive: 'receive',
+  wallet: 'wallet',
+};
+
+const PHASE_SCREENS: readonly ModeAPhaseScreen[] = ['onboarding', 'backup', 'restore'];
+
+export function isModeAPhaseScreen(screen: ModeAScreen): screen is ModeAPhaseScreen {
+  return PHASE_SCREENS.some((p) => p === screen);
 }
 
 export interface ModeAState {
+  /** The visible screen: a phase screen, or the top of the active tab's stack. */
   readonly screen: ModeAScreen;
+  /** Tab navigation once a wallet exists; null on the pre-wallet screens. */
+  readonly nav: NavigationState<ModeARoute> | null;
   readonly busy: boolean;
   /** True once the provider runtime finished starting; onboarding gates on it. */
   readonly runtimeReady: boolean;
@@ -174,6 +180,8 @@ export interface ModeAControllerPorts {
   readonly engine: ModeAEnginePort;
   readonly network: 'mainnet' | 'testnet' | 'signet' | 'regtest';
   readonly dataDir: string;
+  /** Injected device services; capability derivation reads which exist. */
+  readonly platform?: PlatformServices;
 }
 
 export class ModeAController {
@@ -181,6 +189,7 @@ export class ModeAController {
   private readonly engine: ModeAEnginePort;
   private readonly network: ModeAControllerPorts['network'];
   private readonly dataDir: string;
+  private readonly platform: PlatformServices;
 
   private readonly listeners = new Set<() => void>();
   private unsubscribeEvents: (() => void) | undefined;
@@ -197,6 +206,7 @@ export class ModeAController {
     this.engine = ports.engine;
     this.network = ports.network;
     this.dataDir = ports.dataDir;
+    this.platform = ports.platform ?? NO_PLATFORM_SERVICES;
   }
 
   // ——— React binding ———
@@ -219,6 +229,26 @@ export class ModeAController {
   get seedCompatibility(): readonly string[] {
     return this.provider.seedCompatibility;
   }
+
+  private capsCache: { state: ModeAState; caps: MobileWalletCapabilities } | undefined;
+
+  /**
+   * What this wallet can do right now on this device — declared Wavelength
+   * capabilities + live operator reachability + injected device services.
+   * Stable identity while the state is unchanged.
+   */
+  walletCapabilities = (): MobileWalletCapabilities => {
+    const state = this.state;
+    if (this.capsCache?.state === state) return this.capsCache.caps;
+    const caps = wavelengthCapabilities({
+      declared: this.provider.capabilities,
+      walletReady: state.runtimeReady && state.nav !== null,
+      operatorReachable: state.vtxo === null ? null : state.vtxo.operatorReachable,
+      platform: this.platform,
+    });
+    this.capsCache = { state, caps };
+    return caps;
+  };
 
   // ——— Lifecycle ———
 
@@ -283,40 +313,55 @@ export class ModeAController {
 
   /** Finishes the backup flow: words leave memory, the wallet lands on Home. */
   confirmBackup(): void {
-    this.set({ words: null, backupStep: 'done', screen: 'home' });
+    this.set({ words: null, backupStep: 'done' });
+    this.setNav(createNavigation(MODE_A_ROOTS, 'home'));
   }
 
   // ——— Navigation ———
 
-  navigate(screen: ModeAScreen): void {
-    this.set({ screen });
-    if (screen === 'activity') void this.loadActivity();
+  /**
+   * Goes to a screen. Phase screens (onboarding, backup, restore) leave the
+   * tabs; a tab's root switches to that tab (keeping its stack); any other
+   * wallet screen is pushed onto the active tab's stack.
+   */
+  navigate(screen: ModeAScreen, params?: Readonly<Record<string, string>>): void {
+    if (isModeAPhaseScreen(screen)) {
+      this.set({ screen, nav: null });
+      return;
+    }
+    const nav = this.state.nav ?? createNavigation(MODE_A_ROOTS, 'home');
+    this.setNav(navigateTo(nav, MODE_A_ROOTS, screen, params));
   }
 
   /**
-   * Bottom-tab selection. Home resets the transient send/receive drafts (as
-   * the old back button did); Pay reopens the send flow where it was left.
+   * Tab-bar selection. Each tab keeps its stack and its draft (a half-typed
+   * send survives a trip to Activity); re-tapping the active tab pops it to
+   * its root. Activity re-reads the daemon whenever it is shown.
    */
-  selectTab(tab: ModeATab): void {
-    switch (tab) {
-      case 'home':
-        this.backToHome();
-        return;
-      case 'activity':
-        this.navigate('activity');
-        return;
-      case 'pay':
-        if (tabForScreen(this.state.screen) !== 'pay') this.navigate('send');
-        return;
-      case 'more':
-        this.navigate('more');
-        return;
-    }
+  selectTab(tab: PrimaryTab): void {
+    this.setNav(selectNavTab(this.state.nav ?? createNavigation(MODE_A_ROOTS, 'home'), tab));
   }
 
-  /** Back to Home resets the transient flow state of the screen being left. */
+  /** Back control and Android hardware back. False = nothing to go back to. */
+  goBack(): boolean {
+    if (this.state.nav === null) return false;
+    const { nav, handled } = handleBack(this.state.nav);
+    if (handled) this.setNav(nav);
+    return handled;
+  }
+
+  /** "Done" after a payment: clears the send/receive drafts and shows Home. */
   backToHome(): void {
-    this.set({ ...RESET_FLOWS, screen: 'home' });
+    const nav = this.state.nav ?? createNavigation(MODE_A_ROOTS, 'home');
+    this.set({ ...RESET_FLOWS });
+    this.setNav(switchTab(nav, 'home'));
+  }
+
+  private setNav(nav: NavigationState<ModeARoute>): void {
+    const screen = currentEntry(nav).route;
+    const enteringActivity = screen === 'activity' && this.state.screen !== 'activity';
+    this.set({ nav, screen });
+    if (enteringActivity) void this.loadActivity();
   }
 
   // ——— Home ———
@@ -472,7 +517,9 @@ export class ModeAController {
     this.pendingIntentId = undefined;
     this.pendingPayload = undefined;
     this.pendingMaxFeeSat = undefined;
-    this.set({ ...RESET_SEND, screen: 'send' });
+    this.set({ ...RESET_SEND });
+    const nav = this.state.nav ?? createNavigation(MODE_A_ROOTS, 'send');
+    this.setNav(popToRoot(switchTab(nav, 'send')));
   }
 
   // ——— Receive ———
@@ -627,6 +674,7 @@ export class ModeAController {
 
 const INITIAL_STATE: ModeAState = {
   screen: 'onboarding',
+  nav: null,
   busy: false,
   runtimeReady: false,
   words: null,
