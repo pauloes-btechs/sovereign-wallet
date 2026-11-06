@@ -226,11 +226,15 @@ export function AssetReceiveScreen({ controller, assetId }: { controller: ModeBR
       <MobileHeader title={`Receive ${asset.name}`} subtitle="A Taproot Assets address for a fixed amount" onBack={() => controller.goBack()} />
       <SimulatedBanner show={controller.isSimulated()} what="the address" />
       <MobileField
-        label="Amount (units)"
+        label={`Amount (${asset.name})`}
         value={receive.amountText}
         onChangeText={(t) => controller.assets.editReceiveAmount(t)}
-        placeholder="100"
-        hint="The sender pays exactly this amount of this asset."
+        placeholder={asset.decimalDisplay !== null && asset.decimalDisplay > 0 ? '1.5' : '100'}
+        hint={
+          asset.decimalDisplay !== null && asset.decimalDisplay > 0
+            ? `The sender pays exactly this amount. Up to ${asset.decimalDisplay} decimals, as the issuer declared.`
+            : 'The sender pays exactly this amount of this asset.'
+        }
       />
       <MobileErrorNote error={receive.error} />
       <MobileButton
@@ -240,6 +244,11 @@ export function AssetReceiveScreen({ controller, assetId }: { controller: ModeBR
       />
       {receive.address !== null && (
         <MobilePanel>
+          {receive.addressUnits !== undefined && receive.addressUnits !== null && (
+            <Text style={styles.h3}>
+              {formatAssetUnits(receive.addressUnits, asset.decimalDisplay)} {asset.name}
+            </Text>
+          )}
           <QrCode value={receive.address} label={`QR code for a ${asset.name} address`} textLabel="Taproot Assets address" />
           <Text style={styles.faint}>
             Only this asset, in exactly this amount, can be sent to this address. Your node's Taproot Assets daemon must be online to

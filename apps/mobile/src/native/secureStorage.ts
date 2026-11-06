@@ -8,15 +8,20 @@
  * - Items: one Keychain (iOS) / Keystore-encrypted (Android) entry per key,
  *   service `sovereign.secure.<key>`, accessible only while the device is
  *   unlocked and never migrated to another device or backup.
- * - Biometric prompt: there is no bare "authenticate" call in the keychain
+ * - Biometric gate: there is no bare "authenticate" call in the keychain
  *   module, so a random token is kept in a separate entry whose access
  *   control requires the currently enrolled biometrics; reading it shows the
- *   system prompt. Success = the token comes back. If enrollment changes, iOS
- *   invalidates that entry: the read finds nothing, the entry is recreated,
- *   and the prompt is shown once more.
+ *   system prompt. Success = the token comes back.
+ * - The gate is created ONLY by `BiometricGate.create`, which the app lock
+ *   calls after the app PIN was entered (turning biometric unlock on). A
+ *   prompt never re-creates it: if biometric enrollment changes, iOS
+ *   invalidates the entry and `verify` reports `gate-missing`; the app lock
+ *   then turns biometric unlock off and asks for the PIN. Re-creating the
+ *   entry on the fly would let a newly enrolled finger or face — anyone who
+ *   can add one to the phone — unlock the wallet without the PIN.
  */
 
-import type { SecureStoragePort } from '../flows/platform.js';
+import type { BiometricCheck, BiometricGate, SecureStoragePort } from '../flows/platform.js';
 
 export const NATIVE_SERVICE_PREFIX = 'sovereign.secure.';
 export const BIOMETRIC_GATE_SERVICE = 'sovereign.biometric-gate';
@@ -54,27 +59,52 @@ function gateToken(random: (n: number) => Uint8Array): string {
 }
 
 /**
- * The biometric prompt for `PlatformServices.authenticateBiometric`.
- * Resolves false (never throws) on cancel, failure or no biometrics.
+ * The biometric gate for `PlatformServices.biometricGate`. Never throws:
+ * cancel, failure and missing biometrics are results.
  */
-export function createNativeBiometricPrompt(
+export function createNativeBiometricGate(
   adapter: KeychainAdapter,
   random: (n: number) => Uint8Array,
-): (reason: string) => Promise<boolean> {
-  return async (reason) => {
+): BiometricGate {
+  const verify = async (reason: string): Promise<BiometricCheck> => {
     try {
-      if ((await adapter.biometryType()) === null) return false;
-      let value = await adapter.getBiometricItem(BIOMETRIC_GATE_SERVICE, reason);
-      if (value === null) {
-        // First use, or iOS invalidated the entry after an enrollment change.
+      if ((await adapter.biometryType()) === null) return 'failed';
+      const value = await adapter.getBiometricItem(BIOMETRIC_GATE_SERVICE, reason);
+      // Absent: never created, or invalidated by an enrollment change. Not re-created here.
+      if (value === null) return 'gate-missing';
+      return value.length > 0 ? 'passed' : 'failed';
+    } catch {
+      return 'failed';
+    }
+  };
+  return {
+    create: async (reason) => {
+      try {
+        if ((await adapter.biometryType()) === null) return false;
         await adapter.removeItem(BIOMETRIC_GATE_SERVICE);
         const created = await adapter.setBiometricItem(BIOMETRIC_GATE_SERVICE, gateToken(random), reason);
         if (!created) return false;
-        value = await adapter.getBiometricItem(BIOMETRIC_GATE_SERVICE, reason);
+        return (await verify(reason)) === 'passed';
+      } catch {
+        return false;
       }
-      return value !== null && value.length > 0;
-    } catch {
-      return false;
-    }
+    },
+    verify,
+    remove: async () => {
+      try {
+        await adapter.removeItem(BIOMETRIC_GATE_SERVICE);
+      } catch {
+        // Nothing to undo: a leftover gate is unusable without the lock record saying so.
+      }
+    },
   };
+}
+
+/**
+ * The plain biometric prompt for `PlatformServices.authenticateBiometric`
+ * (e.g. authorizing a transfer): passes only against an existing gate and
+ * never creates one. Resolves false (never throws) otherwise.
+ */
+export function createNativeBiometricPrompt(gate: BiometricGate): (reason: string) => Promise<boolean> {
+  return async (reason) => (await gate.verify(reason)) === 'passed';
 }

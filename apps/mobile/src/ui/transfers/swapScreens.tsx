@@ -23,7 +23,7 @@ import {
 } from '../Primitives.js';
 import type { ModeBRemoteController, ModeBRemoteState } from '../../flows/modeBRemoteController.js';
 import type { ChannelLiquidity } from '../../flows/liquidity.js';
-import type { LoopDirection, RemoteSwap, SwapFunds } from '../../flows/transfers.js';
+import type { LoopDirection, RemoteSwap, SwapDraft, SwapFunds } from '../../flows/transfers.js';
 import {
   DIRECTION_LABEL,
   SWAP_STATE_LABEL,
@@ -118,6 +118,10 @@ export function SwapFlowScreen({
     );
   }
 
+  if (draft.stage === 'uncertain') {
+    return <UncertainStart controller={controller} />;
+  }
+
   const reviewing = draft.stage === 'review' || draft.stage === 'confirming';
   return (
     <MobileScreen>
@@ -196,6 +200,50 @@ export function SwapFlowScreen({
   );
 }
 
+/** A start whose reply was lost: the swap may exist. Nothing else starts until it is checked. */
+function UncertainStart({ controller }: { controller: ModeBRemoteController }): ReactNode {
+  const swaps = useSyncExternalStore(controller.swaps.subscribe, controller.swaps.getState);
+  const [checking, setChecking] = useState(false);
+  const draft = swaps.draft;
+  const pending = draft?.pendingStart ?? null;
+  if (draft === null || pending === null) return null;
+  const label = DIRECTION_LABEL[pending.direction];
+  return (
+    <MobileScreen>
+      <MobileHeader title={label} onBack={() => controller.goBack()} />
+      <MobileWarningBand tone="warning">
+        <Text style={styles.h3}>The {label} may have started</Text>
+        <Text style={styles.dim}>{draft.error}</Text>
+      </MobileWarningBand>
+      <MobilePanel title="What was sent to your node">
+        <AmountFact label="Amount" sats={pending.amountSat} />
+        <Fact label="Label">{pending.label}</Fact>
+      </MobilePanel>
+      <Text style={styles.faint}>
+        Starting another swap stays blocked until this one is found in your node&apos;s swap list or the list shows it
+        isn&apos;t there.
+      </Text>
+      <MobileButtonGroup>
+        <MobileButton
+          label="Check my swaps"
+          busy={checking}
+          onPress={() => {
+            setChecking(true);
+            void controller.swaps.checkUncertainStart().then((id) => {
+              setChecking(false);
+              if (id !== null) {
+                controller.goBack();
+                controller.navigate('swap', { id });
+              }
+            });
+          }}
+        />
+        <MobileButton label="Back" kind="ghost" disabled={checking} onPress={() => controller.goBack()} />
+      </MobileButtonGroup>
+    </MobileScreen>
+  );
+}
+
 function SwapReview({
   controller,
   direction,
@@ -205,7 +253,7 @@ function SwapReview({
 }: {
   controller: ModeBRemoteController;
   direction: LoopDirection;
-  stage: 'edit' | 'quoting' | 'review' | 'confirming';
+  stage: SwapDraft['stage'];
   error: string | null;
   destination: string;
 }): ReactNode {

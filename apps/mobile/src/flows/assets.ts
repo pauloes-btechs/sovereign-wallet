@@ -120,10 +120,43 @@ export function formatAssetUnits(units: bigint, decimalDisplay: number | null): 
 
 /** Whole units from input; null when invalid or zero. */
 export function parseAssetUnits(text: string): bigint | null {
-  const s = text.replace(/[,_\s]/g, '');
-  if (!/^\d+$/.test(s)) return null;
-  const n = BigInt(s);
-  return n > 0n ? n : null;
+  const parsed = parseAssetAmount(text, null);
+  return parsed.ok ? parsed.units : null;
+}
+
+/**
+ * An amount typed in the asset's display units (its declared
+ * `decimalDisplay`), converted exactly — string arithmetic, no floats — to
+ * the integer base units the node works in. "1.5" of a 2-decimal asset is
+ * 150 units. A dot is the decimal mark; commas only group thousands in the
+ * whole part ("1,000.25"). More decimals than the asset has is refused.
+ */
+export function parseAssetAmount(
+  text: string,
+  decimalDisplay: number | null,
+): { readonly ok: true; readonly units: bigint } | { readonly ok: false; readonly error: string } {
+  const decimals = decimalDisplay === null || decimalDisplay <= 0 ? 0 : decimalDisplay;
+  const compact = text.replace(/[\s_]/g, '');
+  if (compact === '') return { ok: false, error: 'Enter an amount.' };
+  const dot = compact.indexOf('.');
+  const wholeRaw = dot === -1 ? compact : compact.slice(0, dot);
+  const fracRaw = dot === -1 ? '' : compact.slice(dot + 1);
+  if (fracRaw.includes(',') || (wholeRaw.includes(',') && !/^[1-9]\d{0,2}(?:,\d{3})+$/.test(wholeRaw))) {
+    return { ok: false, error: 'Use a dot for decimals, like 1.5. Commas can only separate thousands, like 1,000.' };
+  }
+  const whole = wholeRaw.replace(/,/g, '');
+  if (!/^\d*$/.test(whole) || !/^\d*$/.test(fracRaw) || (whole === '' && fracRaw === '')) {
+    return { ok: false, error: decimals === 0 ? 'Enter a whole number.' : `Enter a number with up to ${decimals} decimals.` };
+  }
+  if (fracRaw.length > decimals) {
+    return {
+      ok: false,
+      error: decimals === 0 ? 'This asset has no decimals; enter a whole number.' : `This asset has at most ${decimals} decimals.`,
+    };
+  }
+  const units = BigInt(whole === '' ? '0' : whole) * 10n ** BigInt(decimals) + BigInt(fracRaw.padEnd(decimals, '0') || '0');
+  if (units <= 0n) return { ok: false, error: 'Enter an amount above zero.' };
+  return { ok: true, units };
 }
 
 // ——— addresses ———
@@ -184,8 +217,11 @@ export interface AssetSendDraft {
 
 export interface AssetReceiveDraft {
   readonly assetIdHex: string;
+  /** Typed in display units (the asset's `decimalDisplay`). */
   readonly amountText: string;
   readonly address: string | null;
+  /** Base units the address asks for (set with `address`). */
+  readonly addressUnits?: bigint | null;
   readonly busy: boolean;
   readonly error: string | null;
 }
@@ -285,7 +321,7 @@ export class RemoteAssetStore {
   editReceiveAmount(text: string): void {
     const r = this.state.receive;
     if (r === null) return;
-    this.set({ receive: { ...r, amountText: text, address: null, error: null } });
+    this.set({ receive: { ...r, amountText: text, address: null, addressUnits: null, error: null } });
   }
 
   async createReceiveAddress(): Promise<void> {
@@ -296,15 +332,21 @@ export class RemoteAssetStore {
       this.set({ receive: { ...r, error: "Creating asset addresses isn't available over this connection." } });
       return;
     }
-    const amount = parseAssetUnits(r.amountText);
-    if (amount === null) {
-      this.set({ receive: { ...r, error: 'Enter a whole number of units. A Taproot Assets address always asks for a fixed amount.' } });
+    const asset = this.asset(r.assetIdHex);
+    if (asset === null) {
+      this.set({ receive: { ...r, error: "This asset isn't in your node's list, so its units can't be read." } });
       return;
     }
+    const parsed = parseAssetAmount(r.amountText, asset.decimalDisplay);
+    if (!parsed.ok) {
+      this.set({ receive: { ...r, error: `${parsed.error} A Taproot Assets address always asks for a fixed amount.` } });
+      return;
+    }
+    const amount = parsed.units;
     this.set({ receive: { ...r, busy: true, error: null } });
     try {
       const { address } = await create.call(this.options.port, { assetIdHex: r.assetIdHex, amount });
-      this.set({ receive: { ...r, busy: false, address } });
+      this.set({ receive: { ...r, busy: false, address, addressUnits: amount } });
     } catch (error) {
       this.set({ receive: { ...r, busy: false, error: describe(error) } });
     }

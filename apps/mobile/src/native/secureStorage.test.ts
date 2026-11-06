@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { APP_LOCK_STORAGE_KEY, AppLock } from '../flows/appLock.js';
 import {
   BIOMETRIC_GATE_SERVICE,
   NATIVE_SERVICE_PREFIX,
+  createNativeBiometricGate,
   createNativeBiometricPrompt,
   createNativeSecureStorage,
 } from './secureStorage.js';
@@ -67,32 +69,115 @@ describe('native secure storage', () => {
   });
 });
 
-describe('native biometric prompt', () => {
-  it('returns false without enrolled biometrics, never prompting', async () => {
+describe('native biometric gate', () => {
+  it('fails without enrolled biometrics, never prompting', async () => {
     const keychain = new FakeKeychain();
     keychain.biometry = null;
-    expect(await createNativeBiometricPrompt(keychain, random)('Unlock')).toBe(false);
+    const gate = createNativeBiometricGate(keychain, random);
+    expect(await gate.create('Turn on biometric unlock')).toBe(false);
+    expect(await gate.verify('Unlock')).toBe('failed');
+    expect(await createNativeBiometricPrompt(gate)('Unlock')).toBe(false);
     expect(keychain.promptReasons).toEqual([]);
   });
 
-  it('creates the gate on first use, then passes or fails with the prompt', async () => {
+  it('create makes the gate and checks it once; verify then passes or fails with the prompt', async () => {
     const keychain = new FakeKeychain();
-    const prompt = createNativeBiometricPrompt(keychain, random);
+    const gate = createNativeBiometricGate(keychain, random);
     keychain.prompts.push(true);
-    expect(await prompt('Turn on biometric unlock')).toBe(true);
+    expect(await gate.create('Turn on biometric unlock')).toBe(true);
     expect(keychain.biometric.has(BIOMETRIC_GATE_SERVICE)).toBe(true);
     keychain.prompts.push(false);
-    expect(await prompt('Unlock Sovereign Wallet')).toBe(false);
-    expect(keychain.promptReasons).toEqual(['Turn on biometric unlock', 'Unlock Sovereign Wallet']);
+    expect(await gate.verify('Unlock Sovereign Wallet')).toBe('failed');
+    keychain.prompts.push(true);
+    expect(await createNativeBiometricPrompt(gate)('Authorize')).toBe(true);
+    expect(keychain.promptReasons).toEqual(['Turn on biometric unlock', 'Unlock Sovereign Wallet', 'Authorize']);
   });
 
-  it('recreates an invalidated gate (enrollment changed) and prompts again', async () => {
+  it('never re-creates an invalidated gate: a changed enrollment reports gate-missing (no PIN bypass)', async () => {
     const keychain = new FakeKeychain();
-    const prompt = createNativeBiometricPrompt(keychain, random);
+    const gate = createNativeBiometricGate(keychain, random);
     keychain.prompts.push(true);
-    await prompt('first');
+    await gate.create('first');
     keychain.biometric.clear(); // iOS drops BIOMETRY_CURRENT_SET items on re-enrollment
+    keychain.prompts.push(true, true); // a newly enrolled finger would pass any prompt
+    expect(await gate.verify('again')).toBe('gate-missing');
+    expect(await createNativeBiometricPrompt(gate)('authorize')).toBe(false);
+    expect(keychain.biometric.has(BIOMETRIC_GATE_SERVICE)).toBe(false);
+  });
+
+  it('a prompt on a never-created gate does not create one', async () => {
+    const keychain = new FakeKeychain();
+    const gate = createNativeBiometricGate(keychain, random);
     keychain.prompts.push(true);
-    expect(await prompt('again')).toBe(true);
+    expect(await createNativeBiometricPrompt(gate)('Unlock')).toBe(false);
+    expect(keychain.biometric.size).toBe(0);
+  });
+
+  it('remove deletes the gate', async () => {
+    const keychain = new FakeKeychain();
+    const gate = createNativeBiometricGate(keychain, random);
+    keychain.prompts.push(true);
+    await gate.create('on');
+    await gate.remove();
+    expect(keychain.biometric.size).toBe(0);
+  });
+});
+
+describe('app lock over the native gate', () => {
+  const FAST_KDF = { algorithm: 'scrypt' as const, N: 16, r: 1, p: 1, dkLen: 32 };
+
+  it('an enrollment change turns biometric unlock off (persisted) and requires the PIN', async () => {
+    const keychain = new FakeKeychain();
+    const storage = createNativeSecureStorage(keychain);
+    const make = (): AppLock =>
+      new AppLock({
+        storage,
+        biometricGate: createNativeBiometricGate(keychain, random),
+        lockTimeoutSeconds: () => 0,
+        kdf: FAST_KDF,
+      });
+    const lock = make();
+    await lock.load();
+    await lock.setPin('482913');
+    expect(await lock.setBiometricEnabled(true)).toMatchObject({ ok: false, reason: 'invalid-pin' });
+    keychain.prompts.push(true);
+    expect(await lock.setBiometricEnabled(true, '482913')).toEqual({ ok: true });
+    expect(JSON.parse((await storage.getItem(APP_LOCK_STORAGE_KEY)) ?? '{}')).toMatchObject({ biometric: true, biometricGate: true });
+
+    lock.lockNow();
+    keychain.prompts.push(true);
+    expect(await lock.unlockWithBiometric()).toBe(true);
+
+    // Someone adds their finger: the OS invalidates the gate.
+    lock.lockNow();
+    keychain.biometric.clear();
+    keychain.prompts.push(true, true);
+    expect(await lock.unlockWithBiometric()).toBe(false);
+    expect(lock.getSnapshot()).toMatchObject({ status: 'locked', biometricEnabled: false });
+    expect(lock.getSnapshot().error).toMatch(/turned off/);
+    expect(keychain.biometric.has(BIOMETRIC_GATE_SERVICE)).toBe(false); // not re-created
+    expect(JSON.parse((await storage.getItem(APP_LOCK_STORAGE_KEY)) ?? '{}')).toMatchObject({ biometric: false, biometricGate: false });
+
+    // A restart keeps it off; the PIN unlocks.
+    const restarted = make();
+    await restarted.load();
+    expect(await restarted.unlockWithBiometric()).toBe(false);
+    expect(keychain.biometric.size).toBe(0);
+    expect(await restarted.unlockWithPin('482913')).toEqual({ ok: true });
+  });
+
+  it('a record that says biometric is on without a created gate needs it turned on again', async () => {
+    const keychain = new FakeKeychain();
+    const storage = createNativeSecureStorage(keychain);
+    const plain = new AppLock({ storage, lockTimeoutSeconds: () => 0, kdf: FAST_KDF, authenticateBiometric: () => Promise.resolve(true) });
+    await plain.load();
+    await plain.setPin('482913');
+    await plain.setBiometricEnabled(true, '482913'); // record: biometric on, no gate
+    const native = new AppLock({ storage, biometricGate: createNativeBiometricGate(keychain, random), lockTimeoutSeconds: () => 0, kdf: FAST_KDF });
+    await native.load();
+    keychain.prompts.push(true);
+    expect(await native.unlockWithBiometric()).toBe(false);
+    expect(native.getSnapshot().biometricEnabled).toBe(false);
+    expect(keychain.biometric.size).toBe(0);
   });
 });

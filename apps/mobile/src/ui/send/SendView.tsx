@@ -17,19 +17,20 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import type { MobileWalletCapabilities } from '../../flows/capabilities.js';
 import type { BitcoinNetwork, ParsedDestination } from '../../flows/destination.js';
-import { ADDRESS_TYPE_LABEL, parseDestination } from '../../flows/destination.js';
-import type { RailOption, RailRules, SendRail } from '../../flows/sendFlow.js';
+import { ADDRESS_TYPE_LABEL, parseDestination, unknownNetworkReason } from '../../flows/destination.js';
+import type { RailOption, RailRules, SendErrorStage, SendRail } from '../../flows/sendFlow.js';
 import {
   RAIL_LABEL,
   clockTime,
   defaultRail,
   explainSendFailure,
   fixedAmountSat,
+  isUnconfirmedNotice,
   railOptions,
   relativeDuration,
 } from '../../flows/sendFlow.js';
 import { useAmountFormatter, usePlatformServices } from '../appContext.js';
-import { parseAmountInput, shortenMiddle, unitLabel } from '../format.js';
+import { amountInputProblem, parseAmountInput, shortenMiddle, unitLabel } from '../format.js';
 import {
   MobileAmount,
   MobileBadge,
@@ -90,7 +91,10 @@ export type SendViewStatus = 'compose' | 'review' | 'sending' | 'in-flight' | 's
 export interface SendViewModel {
   readonly title: string;
   readonly subtitle?: string;
-  readonly network: BitcoinNetwork;
+  /** The wallet's network; null when its name isn't one this app recognizes (sending refused). */
+  readonly network: BitcoinNetwork | null;
+  /** The network name as the backend reported it (for the refusal reason). */
+  readonly networkName: string;
   readonly capabilities: MobileWalletCapabilities;
   readonly rules: RailRules;
   readonly status: SendViewStatus;
@@ -129,6 +133,9 @@ function nowSec(): number {
 export function SendView({ model }: { model: SendViewModel }): ReactNode {
   const platform = usePlatformServices();
   const [confirming, setConfirming] = useState(false);
+  // Synchronous in-flight latch: state updates are async, so a fast double
+  // tap could call onConfirm twice before `confirming` re-renders the button.
+  const confirmInFlight = useRef(false);
   const wasSettled = useRef(false);
 
   useEffect(() => {
@@ -137,8 +144,13 @@ export function SendView({ model }: { model: SendViewModel }): ReactNode {
   }, [model.status, model.hapticsEnabled, platform]);
 
   const confirm = (): void => {
+    if (confirmInFlight.current || model.status !== 'review') return;
+    confirmInFlight.current = true;
     setConfirming(true);
-    model.onConfirm().finally(() => setConfirming(false));
+    model.onConfirm().finally(() => {
+      confirmInFlight.current = false;
+      setConfirming(false);
+    });
   };
 
   // While the confirm call runs, the review stays behind the progress sheet.
@@ -148,7 +160,13 @@ export function SendView({ model }: { model: SendViewModel }): ReactNode {
       <MobileHeader title={model.title} subtitle={model.subtitle} />
       {shown === 'compose' && <ComposeStep model={model} />}
       {shown === 'review' && model.review !== null && (
-        <ReviewStep review={model.review} onConfirm={confirm} onEdit={model.onEdit} busy={confirming} />
+        <ReviewStep
+          review={model.review}
+          extraNotices={reviewAmountWarning(model)}
+          onConfirm={confirm}
+          onEdit={model.onEdit}
+          busy={confirming}
+        />
       )}
       {shown === 'in-flight' && <InFlightStep model={model} />}
       {shown === 'settled' && <ReceiptStep model={model} />}
@@ -184,9 +202,10 @@ function ComposeStep({ model }: { model: SendViewModel }): ReactNode {
   const [chosenRail, setChosenRail] = useState<SendRail | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
 
+  const network = model.network;
   const parsed = useMemo(
-    () => (model.draftText.trim() === '' ? null : parseDestination(model.draftText, model.network)),
-    [model.draftText, model.network],
+    () => (model.draftText.trim() === '' || network === null ? null : parseDestination(model.draftText, network)),
+    [model.draftText, network],
   );
   const destination = parsed !== null && parsed.ok ? parsed.destination : null;
   const options: readonly RailOption[] =
@@ -202,7 +221,9 @@ function ComposeStep({ model }: { model: SendViewModel }): ReactNode {
   const overSpendable = amountSat !== null && spendable !== null && amountSat > spendable;
 
   const blocker =
-    model.draftText.trim() === ''
+    network === null
+      ? unknownNetworkReason(model.networkName)
+      : model.draftText.trim() === ''
       ? 'Paste an invoice or a Bitcoin address to start.'
       : parsed !== null && !parsed.ok
         ? 'Fix the payment details above to continue.'
@@ -277,13 +298,7 @@ function ComposeStep({ model }: { model: SendViewModel }): ReactNode {
           value={amountText}
           onChangeText={setAmountText}
           placeholder={denomination === 'btc' ? '0.0005' : '50000'}
-          hint={
-            amountText.trim() !== '' && typedAmount === null
-              ? denomination === 'btc'
-                ? 'Enter BTC with up to 8 decimals.'
-                : 'Enter a whole number of sats.'
-              : undefined
-          }
+          hint={amountInputProblem(amountText, denomination) ?? undefined}
         />
       )}
       {option?.available === true && spendable !== null && (
@@ -298,7 +313,7 @@ function ComposeStep({ model }: { model: SendViewModel }): ReactNode {
 
       {model.error !== null && (
         <MobileWarningBand tone="danger">
-          <FailureText raw={model.error} />
+          <FailureText raw={model.error} stage="before-dispatch" />
         </MobileWarningBand>
       )}
 
@@ -364,6 +379,11 @@ function DestinationSummary({ destination }: { destination: ParsedDestination })
           Requested amount: <MobileAmount sats={destination.onchainAmountSat} style={base.faint} />
         </Text>
       )}
+      {destination.amountWarning !== undefined && destination.amountWarning !== null && (
+        <MobileWarningBand tone="warning">
+          <Text style={base.bandText}>{destination.amountWarning}</Text>
+        </MobileWarningBand>
+      )}
       {destination.label !== null && <Text style={base.faint}>Label: {destination.label}</Text>}
       {destination.message !== null && <Text style={base.faint}>Message: {destination.message}</Text>}
     </MobilePanel>
@@ -390,13 +410,24 @@ function ReviewRow({ label, children, stacked = false }: { label: string; childr
   );
 }
 
+/** A BIP21 link whose two amounts disagree: said again on the review, not silently resolved. */
+function reviewAmountWarning(model: SendViewModel): readonly string[] {
+  if (model.network === null || model.draftText.trim() === '') return [];
+  const parsed = parseDestination(model.draftText, model.network);
+  if (!parsed.ok) return [];
+  const warning = parsed.destination.amountWarning;
+  return warning === undefined || warning === null ? [] : [warning];
+}
+
 function ReviewStep({
   review,
+  extraNotices,
   onConfirm,
   onEdit,
   busy,
 }: {
   review: SendReviewModel;
+  extraNotices: readonly string[];
   onConfirm: () => void;
   onEdit: () => void;
   busy: boolean;
@@ -460,7 +491,7 @@ function ReviewStep({
           </ReviewRow>
         )}
       </MobilePanel>
-      {review.notices.map((notice) => (
+      {[...extraNotices, ...review.notices].map((notice) => (
         <MobileWarningBand key={notice} tone="warning">
           <Text style={base.bandText}>{notice}</Text>
         </MobileWarningBand>
@@ -484,6 +515,9 @@ function InFlightStep({ model }: { model: SendViewModel }): ReactNode {
           The wallet sent the payment but hasn&apos;t confirmed the outcome. Check its status before
           trying again — paying again now could pay twice.
         </Text>
+        {model.error !== null && !isUnconfirmedNotice(model.error) && (
+          <Text style={base.faint}>Wallet message: {model.error}</Text>
+        )}
       </MobileWarningBand>
       {model.review !== null && (
         <MobilePanel>
@@ -561,8 +595,8 @@ function ReceiptStep({ model }: { model: SendViewModel }): ReactNode {
   );
 }
 
-function FailureText({ raw }: { raw: string }): ReactNode {
-  const explained = explainSendFailure(raw);
+function FailureText({ raw, stage }: { raw: string; stage: SendErrorStage }): ReactNode {
+  const explained = explainSendFailure(raw, stage);
   return (
     <>
       <Text style={base.h3}>{explained.title}</Text>
@@ -577,11 +611,14 @@ function FailureText({ raw }: { raw: string }): ReactNode {
 
 function FailureStep({ model }: { model: SendViewModel }): ReactNode {
   const raw = model.error ?? 'The payment failed.';
-  const explained = explainSendFailure(raw);
+  // The controllers keep any error thrown after dispatch in the in-flight
+  // state, so a failure shown here was raised before dispatch or is a
+  // terminal failure the backend reported.
+  const explained = explainSendFailure(raw, 'before-dispatch');
   return (
     <>
       <MobileWarningBand tone={explained.unknownOutcome === true ? 'warning' : 'danger'}>
-        <FailureText raw={raw} />
+        <FailureText raw={raw} stage="before-dispatch" />
       </MobileWarningBand>
       <MobileButtonGroup>
         {explained.safeToRetry ? (

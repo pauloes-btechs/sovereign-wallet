@@ -145,17 +145,25 @@ interface FailureRule {
   readonly explain: (raw: string) => FailureExplanation;
 }
 
+/** The controllers' own "result not known" wording. */
+const NOT_CONFIRMED_RULE: FailureRule = {
+  match: /could pay twice|could not be confirmed|needs.?recovery/i,
+  explain: () => ({
+    title: "The payment's result isn't known yet",
+    detail: 'The wallet sent the payment but has not confirmed whether it completed.',
+    nextStep: 'Check Activity for this payment before trying again — paying again now could pay twice.',
+    safeToRetry: false,
+    unknownOutcome: true,
+  }),
+};
+
+/** True for the wallet's own "result not known yet, could pay twice" notice (not a backend error). */
+export function isUnconfirmedNotice(text: string): boolean {
+  return NOT_CONFIRMED_RULE.match.test(text);
+}
+
 const RULES: readonly FailureRule[] = [
-  {
-    match: /could pay twice|could not be confirmed|needs.?recovery/i,
-    explain: () => ({
-      title: "The payment's result isn't known yet",
-      detail: 'The wallet sent the payment but has not confirmed whether it completed.',
-      nextStep: 'Check Activity for this payment before trying again — paying again now could pay twice.',
-      safeToRetry: false,
-      unknownOutcome: true,
-    }),
-  },
+  NOT_CONFIRMED_RULE,
   {
     match: /exceeds the spend policy budget|fee.*(above|exceeds).*(budget|limit|cap)|max.?fee/i,
     explain: () => ({
@@ -258,12 +266,49 @@ const RULES: readonly FailureRule[] = [
 ];
 
 /**
- * Maps a backend or controller error message to plain language. Unknown
- * messages keep the backend's own text and assume the worst: check status
- * before retrying.
+ * When an error was raised, relative to handing the payment to the backend:
+ * - `before-dispatch`: refused before submit/execute could hand anything to
+ *   the backend (quote errors, validation, foreground rule), or a terminal
+ *   failure the backend itself reported. "Nothing was sent" can be true.
+ * - `after-dispatch`: thrown once the payment was submitted/dispatched — the
+ *   request may have reached the backend, so the outcome is unknown until a
+ *   status lookup says otherwise. Never "failed", never "nothing was sent".
  */
-export function explainSendFailure(raw: string | null): FailureExplanation {
+export type SendErrorStage = 'before-dispatch' | 'after-dispatch';
+
+/**
+ * Errors that by their nature mean the request left the wallet and the
+ * answer was lost — e.g. the Wavelength dispatcher's own timeout
+ * ("Dispatch for send X exceeded Nms"). Unknown outcome at any stage.
+ */
+const DISPATCHED_THEN_LOST = /Dispatch for .* exceeded \d+\s*ms/i;
+
+function unknownOutcome(raw: string): FailureExplanation {
+  return {
+    title: "The payment's result isn't known yet",
+    detail:
+      raw === ''
+        ? 'The wallet handed the payment off, then lost track of it. It may still complete.'
+        : `The wallet handed the payment off, then reported: ${raw}. It may still complete.`,
+    nextStep: 'Check the payment status or Activity before trying again — paying again now could pay twice.',
+    safeToRetry: false,
+    unknownOutcome: true,
+  };
+}
+
+/**
+ * Maps a backend or controller error message to plain language. `stage`
+ * says whether the error came before anything was dispatched; after
+ * dispatch every error is an unknown outcome (the "nothing was sent, safe to
+ * retry" rules apply only before dispatch). Unknown messages keep the
+ * backend's own text and assume the worst: check status before retrying.
+ */
+export function explainSendFailure(raw: string | null, stage: SendErrorStage): FailureExplanation {
   const text = raw ?? '';
+  if (stage === 'after-dispatch' || DISPATCHED_THEN_LOST.test(text)) {
+    // The controllers' own "could pay twice" wording is already an explanation.
+    return NOT_CONFIRMED_RULE.match.test(text) ? NOT_CONFIRMED_RULE.explain(text) : unknownOutcome(text);
+  }
   const rule = RULES.find((r) => r.match.test(text));
   if (rule !== undefined) return rule.explain(text);
   return {

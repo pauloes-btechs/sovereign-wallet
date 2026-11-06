@@ -18,7 +18,7 @@ import { invoiceAmountSat } from '../../flows/destination.js';
 import type { ReceiveStatus, SendRail } from '../../flows/sendFlow.js';
 import { RAIL_LABEL, RECEIVE_STATUS_LABEL, clockTime, relativeDuration } from '../../flows/sendFlow.js';
 import { useAmountFormatter, usePlatformServices } from '../appContext.js';
-import { parseAmountInput, unitLabel } from '../format.js';
+import { amountInputProblem, parseAmountInput, unitLabel } from '../format.js';
 import {
   MobileAmount,
   MobileBadge,
@@ -168,13 +168,7 @@ export function ReceiveView({ model }: { model: ReceiveViewModel }): ReactNode {
             value={model.amountText}
             onChangeText={model.onAmountText}
             placeholder={required ? 'Required' : 'Optional — the payer can choose'}
-            hint={
-              amountInvalid
-                ? denomination === 'btc'
-                  ? 'Enter BTC with up to 8 decimals.'
-                  : 'Enter a whole number of sats.'
-                : undefined
-            }
+            hint={amountInvalid ? (amountInputProblem(model.amountText, denomination) ?? undefined) : undefined}
           />
           <MobileField
             label={model.rail === 'lightning' ? 'Description (optional)' : 'Label (optional)'}

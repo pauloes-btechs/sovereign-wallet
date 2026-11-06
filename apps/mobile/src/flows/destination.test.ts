@@ -5,10 +5,11 @@ import {
   formatBip21Amount,
   invoiceAmountSat,
   parseBtcAmount,
+  knownBitcoinNetwork,
   parseDestination,
   parseOnchainAddress,
 } from './destination.js';
-import { base58CheckDecode, bech32Decode, sha256, utf8Encode } from './bitcoinEncoding.js';
+import { base58CheckDecode, bech32Decode, bech32Encode, convertBits, sha256, utf8Decode, utf8Encode } from './bitcoinEncoding.js';
 import { encodeSimulatedBolt11, simHashHex, simSegwitAddress } from '../testing/simInvoice.js';
 
 /** BOLT11 spec test vector: 2500u, "1 cup coffee", expiry 60 (no payment secret, pre-2021 format). */
@@ -261,5 +262,110 @@ describe('parseDestination', () => {
     const damaged = `${invoice.slice(0, -1)}${invoice.endsWith('q') ? 'p' : 'q'}`;
     expect(parseDestination(damaged, 'regtest')).toMatchObject({ ok: false, error: { code: 'checksum' } });
     expect(parseDestination('lnbcrt1-sim-test-invoice', 'regtest')).toMatchObject({ ok: false, error: { code: 'checksum' } });
+  });
+});
+
+describe('UTF-8 decoding and never-throwing parsers', () => {
+  const bytes = (...b: number[]): Uint8Array => Uint8Array.from(b);
+
+  it('decodes valid UTF-8 and replaces each ill-formed sequence with U+FFFD', () => {
+    expect(utf8Decode(utf8Encode('Café ☕ 𝄞'))).toBe('Café ☕ 𝄞');
+    expect(utf8Decode(bytes(0xf4, 0x8f, 0xbf, 0xbf))).toBe('\u{10FFFF}');
+    // Above U+10FFFF: F4 90+ is ill-formed (one U+FFFD per maximal subpart).
+    expect(utf8Decode(bytes(0xf4, 0xbf, 0xbf, 0xbf))).toBe('\ufffd\ufffd\ufffd\ufffd');
+    expect(utf8Decode(bytes(0xf5, 0x80, 0x80, 0x80))).toBe('\ufffd\ufffd\ufffd\ufffd');
+    // Overlongs.
+    expect(utf8Decode(bytes(0xc0, 0xaf))).toBe('\ufffd\ufffd');
+    expect(utf8Decode(bytes(0xe0, 0x80, 0xaf))).toBe('\ufffd\ufffd\ufffd');
+    expect(utf8Decode(bytes(0xf0, 0x80, 0x80, 0xaf))).toBe('\ufffd\ufffd\ufffd\ufffd');
+    // Surrogates.
+    expect(utf8Decode(bytes(0xed, 0xa0, 0x80))).toBe('\ufffd\ufffd\ufffd');
+    // Bad or missing continuation bytes.
+    expect(utf8Decode(bytes(0xc3, 0x41))).toBe('\ufffdA');
+    expect(utf8Decode(bytes(0xe2, 0x98))).toBe('\ufffd');
+    expect(utf8Decode(bytes(0x80))).toBe('\ufffd');
+  });
+
+  function words(n: number, len: number): number[] {
+    const out: number[] = [];
+    for (let i = len - 1; i >= 0; i--) out.push(Math.floor(n / 32 ** i) % 32);
+    return out;
+  }
+  function tag(type: number, data: number[]): number[] {
+    return [type, Math.floor(data.length / 32), data.length % 32, ...data];
+  }
+  function rawInvoice(hrp: string, description: number[]): string {
+    const ph = convertBits(new Array<number>(32).fill(7), 8, 5, true) ?? [];
+    const d = convertBits(description, 8, 5, true) ?? [];
+    return bech32Encode(hrp, [...words(1_700_000_000, 7), ...tag(1, ph), ...tag(13, d), ...new Array<number>(104).fill(0)], 'bech32');
+  }
+
+  it('an invoice description with bytes above U+10FFFF decodes with U+FFFD instead of throwing', () => {
+    const text = rawInvoice('lnbc10u', [0xf4, 0xbf, 0xbf, 0xbf]);
+    const decoded = decodeBolt11(text);
+    expect(decoded.ok).toBe(true);
+    if (decoded.ok) expect(decoded.invoice.description).toBe('\ufffd\ufffd\ufffd\ufffd');
+    expect(() => parseDestination(text, 'mainnet')).not.toThrow();
+    expect(parseDestination(text, 'mainnet').ok).toBe(true);
+  });
+
+  it('never throws on arbitrary input (fuzz)', () => {
+    let seed = 0x5eed;
+    const next = (): number => {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      return seed;
+    };
+    const alphabet = 'qpzry9x8gf2tvdw0s3jn54khce6mua7lQPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L1lnbcrtbitcoin:?&=.%#/ \u0000\uffff\ud800é';
+    const prefixes = ['', 'ln', 'lnbc', 'lnbcrt1', 'lnbc10u1', 'bitcoin:', 'lightning:', 'bc1', 'bcrt1q', 'tb1p', '1', '3', 'm'];
+    for (let n = 0; n < 2000; n++) {
+      const length = next() % 120;
+      let text = prefixes[next() % prefixes.length] ?? '';
+      for (let i = 0; i < length; i++) text += alphabet[next() % alphabet.length] ?? '';
+      for (const network of ['mainnet', 'testnet', 'signet', 'regtest'] as const) {
+        expect(() => parseDestination(text, network)).not.toThrow();
+      }
+      expect(() => decodeBolt11(text)).not.toThrow();
+      expect(() => parseOnchainAddress(text)).not.toThrow();
+    }
+    // Valid-checksum invoices with random data parts.
+    for (let n = 0; n < 500; n++) {
+      const data = Array.from({ length: 7 + (next() % 200) }, () => next() % 32);
+      const text = bech32Encode(['lnbc', 'lnbc1p', 'lnbcrt25m', 'lntb'][next() % 4] ?? 'lnbc', data, 'bech32');
+      expect(() => decodeBolt11(text)).not.toThrow();
+      expect(() => parseDestination(text, 'mainnet')).not.toThrow();
+    }
+  });
+});
+
+describe('network names', () => {
+  it('maps known names and leaves anything else unknown (never mainnet)', () => {
+    expect(knownBitcoinNetwork('mainnet')).toBe('mainnet');
+    expect(knownBitcoinNetwork('bitcoin')).toBe('mainnet');
+    expect(knownBitcoinNetwork('testnet')).toBe('testnet');
+    expect(knownBitcoinNetwork('testnet4')).toBe('testnet');
+    expect(knownBitcoinNetwork('signet')).toBe('signet');
+    expect(knownBitcoinNetwork('regtest')).toBe('regtest');
+    expect(knownBitcoinNetwork('liquidv1')).toBeNull();
+    expect(knownBitcoinNetwork('')).toBeNull();
+  });
+});
+
+describe('BIP21 amount disagreement', () => {
+  it('warns when the link amount and the invoice amount differ, and says which rail pays which', () => {
+    const address = simSegwitAddress('regtest', 'bip21-mismatch');
+    const inv = encodeSimulatedBolt11({
+      network: 'regtest',
+      amountMsat: 2_100_000n,
+      paymentHashHex: simHashHex('bip21-mismatch'),
+      description: 'x',
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+    const mismatch = parseDestination(`bitcoin:${address}?amount=0.0001&lightning=${inv}`, 'regtest');
+    expect(mismatch.ok).toBe(true);
+    if (mismatch.ok) {
+      expect(mismatch.destination.amountWarning).toMatch(/10,000 sats on-chain, but its Lightning invoice is for 2,100 sats/);
+    }
+    const agree = parseDestination(`bitcoin:${address}?amount=0.000021&lightning=${inv}`, 'regtest');
+    expect(agree.ok && agree.destination.amountWarning).toBeNull();
   });
 });

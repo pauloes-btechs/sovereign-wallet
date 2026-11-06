@@ -41,6 +41,37 @@ export const NETWORK_LABEL: Readonly<Record<BitcoinNetwork, string>> = {
   regtest: 'regtest',
 };
 
+/**
+ * Maps a backend's network name to the address/invoice family this app
+ * checks against. Known names only: `mainnet`/`bitcoin`, `testnet`/
+ * `testnet3`/`testnet4` (same prefixes), `signet`, `regtest`.
+ * Anything else is null — an unknown network, never silently mainnet.
+ */
+export function knownBitcoinNetwork(name: string): BitcoinNetwork | null {
+  switch (name.trim().toLowerCase()) {
+    case 'mainnet':
+    case 'bitcoin':
+    case 'main':
+      return 'mainnet';
+    case 'testnet':
+    case 'testnet3':
+    case 'testnet4':
+    case 'test':
+      return 'testnet';
+    case 'signet':
+      return 'signet';
+    case 'regtest':
+      return 'regtest';
+    default:
+      return null;
+  }
+}
+
+/** Why sends are refused on a network this app doesn't recognize. */
+export function unknownNetworkReason(name: string): string {
+  return `This wallet reports the network "${name}", which this app doesn't recognize, so it can't check that addresses and invoices belong to it. Sending is turned off.`;
+}
+
 // ——— BOLT11 ———
 
 /** BOLT11 currency prefixes, longest first so `bcrt` wins over `bc`. */
@@ -101,8 +132,19 @@ function hrpAmountMsat(amount: string): bigint | null | 'none' {
   }
 }
 
-/** Decodes a BOLT11 invoice. The signature is not verified (see file header). */
+/**
+ * Decodes a BOLT11 invoice. The signature is not verified (see file
+ * header). Never throws: anything unexpected while decoding is `malformed`.
+ */
 export function decodeBolt11(text: string): { ok: true; invoice: Bolt11Invoice } | { ok: false; failure: Bolt11Failure } {
+  try {
+    return decodeBolt11Unchecked(text);
+  } catch {
+    return { ok: false, failure: 'malformed' };
+  }
+}
+
+function decodeBolt11Unchecked(text: string): { ok: true; invoice: Bolt11Invoice } | { ok: false; failure: Bolt11Failure } {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
   if (!lower.startsWith('ln')) return { ok: false, failure: 'not-bolt11' };
@@ -202,6 +244,14 @@ const SEGWIT_HRPS: ReadonlyArray<{ hrp: string; networks: readonly BitcoinNetwor
 export type AddressFailure = 'not-address' | 'checksum' | 'malformed';
 
 export function parseOnchainAddress(text: string): { ok: true; address: OnchainAddress } | { ok: false; failure: AddressFailure } {
+  try {
+    return parseOnchainAddressUnchecked(text);
+  } catch {
+    return { ok: false, failure: 'malformed' };
+  }
+}
+
+function parseOnchainAddressUnchecked(text: string): { ok: true; address: OnchainAddress } | { ok: false; failure: AddressFailure } {
   const trimmed = text.trim();
   const lower = trimmed.toLowerCase();
   const segwitHrp = SEGWIT_HRPS.find((s) => lower.startsWith(`${s.hrp}1`));
@@ -319,6 +369,12 @@ export interface ParsedDestination {
   readonly onchainAmountSat: bigint | null;
   readonly label: string | null;
   readonly message: string | null;
+  /**
+   * BIP21 only: the link's `amount` and its Lightning invoice's amount
+   * disagree. Each rail pays its own amount; the review shows this so the
+   * user can check with the recipient. Absent/null = no disagreement.
+   */
+  readonly amountWarning?: string | null;
 }
 
 export type DestinationResult =
@@ -392,6 +448,15 @@ function unsupportedFormat(lower: string): DestinationResult | null {
  * Whitespace around the text is ignored; schemes are case-insensitive.
  */
 export function parseDestination(raw: string, network: BitcoinNetwork): DestinationResult {
+  try {
+    return parseDestinationUnchecked(raw, network);
+  } catch {
+    // Whatever was pasted or scanned, the screen gets an explanation, not a crash.
+    return fail('malformed', "This payment request couldn't be read. Check that it was copied completely, or ask for a new one.");
+  }
+}
+
+function parseDestinationUnchecked(raw: string, network: BitcoinNetwork): DestinationResult {
   const text = raw.trim();
   if (text === '') return fail('empty', 'Paste an invoice or a Bitcoin address.');
   const lower = text.toLowerCase();
@@ -499,7 +564,20 @@ function parseBip21(text: string, network: BitcoinNetwork): DestinationResult {
   if (onchain === null && lightning === null) {
     return fail('unrecognized', 'This payment link has no address or invoice in it.');
   }
-  return { ok: true, destination: { source: 'bip21', onchain, lightning, onchainAmountSat: amountSat, label, message } };
+  const invoiceSat = lightning === null ? null : invoiceAmountSat(lightning);
+  const amountWarning =
+    amountSat !== null && invoiceSat !== null && invoiceSat !== amountSat
+      ? `This payment link asks for ${formatSatsPlain(amountSat)} on-chain, but its Lightning invoice is for ${formatSatsPlain(invoiceSat)}. Paying with Lightning sends the invoice's ${formatSatsPlain(invoiceSat)}; paying on-chain sends ${formatSatsPlain(amountSat)}. Check with the recipient which amount is right.`
+      : null;
+  return {
+    ok: true,
+    destination: { source: 'bip21', onchain, lightning, onchainAmountSat: amountSat, label, message, amountWarning },
+  };
+}
+
+/** "12,345 sats" — plain text for messages built in this file. */
+function formatSatsPlain(sats: bigint): string {
+  return `${sats.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')} sats`;
 }
 
 /** For tests and simulators: a valid segwit v0 address with a given 20/32-byte program. */

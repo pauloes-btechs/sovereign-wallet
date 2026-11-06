@@ -21,6 +21,7 @@ import type {
   ModeAProviderPort,
 } from './modeAController.js';
 import { ModeAController, isModeAPhaseScreen, parseSats, summarizeVtxos } from './modeAController.js';
+import { explainSendFailure } from './sendFlow.js';
 
 let idSeq = 0;
 const nextId = (prefix: string): string => {
@@ -196,12 +197,18 @@ class FakeEngine implements ModeAEnginePort {
     needsRecovery: [],
   };
 
+  /** Driver-set: submit()/execute() throw this instead of returning. */
+  submitThrows: Error | undefined;
+  executeThrows: Error | undefined;
+
   async submit(kind: 'lightning-invoice' | 'onchain', payload: unknown): Promise<PaymentIntent> {
+    if (this.submitThrows) throw this.submitThrows;
     this.submitted.push({ kind, payload });
     return { intentId: nextId('intent'), kind, payload, state: 'authorized', attempts: [] };
   }
   async execute(intentId: string): Promise<PaymentIntent> {
     this.executed.push(intentId);
+    if (this.executeThrows) throw this.executeThrows;
     return {
       intentId,
       kind: 'lightning-invoice',
@@ -386,6 +393,89 @@ describe('ModeAController — send', () => {
     const s = controller.getState();
     expect(s.sendStatus).toBe('failed');
     expect(s.sendError).toContain('could pay twice');
+  });
+
+  it('two concurrent confirms submit and execute the payment once; a confirm after it settled submits nothing', async () => {
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await Promise.all([controller.confirmSend(), controller.confirmSend()]);
+    expect(engine.submitted).toHaveLength(1);
+    expect(engine.executed).toHaveLength(1);
+    expect(controller.getState().sendStatus).toBe('settled');
+
+    await controller.confirmSend();
+    expect(engine.submitted).toHaveLength(1);
+    expect(controller.getState().sendStatus).toBe('settled');
+  });
+
+  it('a second confirm while the first is in flight does not overwrite the in-flight state', async () => {
+    engine.executeOutcome = 'in-flight';
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await controller.confirmSend();
+    await controller.confirmSend();
+    expect(engine.submitted).toHaveLength(1);
+    expect(controller.getState().sendStatus).toBe('sending');
+    expect(controller.getState().sendError).toBeNull();
+    // Editing a handed-off payment back into a draft is refused too.
+    controller.editSend();
+    expect(controller.getState().sendStatus).toBe('sending');
+  });
+
+  it('an error thrown after the intent was submitted keeps the payment in flight (check status), never "failed"', async () => {
+    engine.executeThrows = new WavelengthError('Dispatch for send ph-1 exceeded 30000ms', 'wavelength_error');
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await controller.confirmSend();
+    const s = controller.getState();
+    expect(engine.executed).toHaveLength(1);
+    expect(s.sendStatus).toBe('sending'); // the in-flight view, with "Check payment status"
+    expect(s.sendError).toBe('Dispatch for send ph-1 exceeded 30000ms');
+    const explained = explainSendFailure(s.sendError, 'after-dispatch');
+    expect(explained).toMatchObject({ unknownOutcome: true, safeToRetry: false });
+    expect(explained.detail).not.toMatch(/Nothing was sent/);
+
+    // "Check status" reconciles it — and never re-dispatches.
+    engine.recoverReport = { reconciled: [engine.executed[0] ?? ''], needsRecovery: [] };
+    await controller.reconcilePending();
+    expect(controller.getState().sendStatus).toBe('settled');
+    expect(engine.executed).toHaveLength(1);
+  });
+
+  it('even a "service unavailable" thrown after submit is in flight, not "nothing was sent"', async () => {
+    engine.executeThrows = new Error('rpc error: code = Unavailable desc = transport is closing');
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await controller.confirmSend();
+    expect(controller.getState().sendStatus).toBe('sending');
+  });
+
+  it('an error from submit (before anything is dispatched) is a plain failure', async () => {
+    engine.submitThrows = new Error('rpc error: code = Unavailable desc = transport is closing');
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await controller.confirmSend();
+    const s = controller.getState();
+    expect(s.sendStatus).toBe('failed');
+    expect(engine.executed).toHaveLength(0);
+    expect(explainSendFailure(s.sendError, 'before-dispatch')).toMatchObject({ detail: 'Nothing was sent.', safeToRetry: true });
+  });
+
+  it('a throw from execute while the store still has the intent as authorized is a plain failure', async () => {
+    class StatefulEngine extends FakeEngine {
+      async intentState(): Promise<PaymentIntent['state']> {
+        return 'authorized';
+      }
+    }
+    const stateful = new StatefulEngine();
+    stateful.executeThrows = new Error('store write failed');
+    const c = new ModeAController({ provider, engine: stateful, network: 'regtest', dataDir: '/tmp/mode-a-unit' });
+    await c.start();
+    c.setSendDestination('lnbcrt1-invoice');
+    await c.reviewSend(100);
+    await c.confirmSend();
+    expect(c.getState().sendStatus).toBe('failed');
+    expect(c.getState().sendError).toBe('store write failed');
   });
 
   it('sendAnother resets the draft and clears pending intent state', async () => {

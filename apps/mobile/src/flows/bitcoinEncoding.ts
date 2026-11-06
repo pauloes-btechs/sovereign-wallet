@@ -147,32 +147,64 @@ export function hexToBytes(hex: string): Uint8Array | null {
   return out;
 }
 
-/** Strict UTF-8 decode; invalid sequences become U+FFFD. */
+/**
+ * Strict UTF-8 decode (WHATWG / Unicode "maximal subpart" rules); never
+ * throws. Each ill-formed sequence becomes one U+FFFD: bad continuation
+ * bytes, overlong forms (C0, C1, E0 80–9F, F0 80–8F), UTF-16 surrogates
+ * (ED A0–BF) and anything above U+10FFFF (F4 90+, F5–FF).
+ */
 export function utf8Decode(bytes: Uint8Array): string {
   let out = '';
   let i = 0;
   while (i < bytes.length) {
     const b0 = bytes[i] ?? 0;
-    let cp = 0xfffd;
-    let size = 1;
     if (b0 < 0x80) {
-      cp = b0;
-    } else if (b0 >= 0xc2 && b0 < 0xe0 && i + 1 < bytes.length) {
-      cp = ((b0 & 0x1f) << 6) | ((bytes[i + 1] ?? 0) & 0x3f);
-      size = 2;
-    } else if (b0 >= 0xe0 && b0 < 0xf0 && i + 2 < bytes.length) {
-      cp = ((b0 & 0x0f) << 12) | (((bytes[i + 1] ?? 0) & 0x3f) << 6) | ((bytes[i + 2] ?? 0) & 0x3f);
-      size = 3;
-    } else if (b0 >= 0xf0 && b0 < 0xf5 && i + 3 < bytes.length) {
-      cp =
-        ((b0 & 0x07) << 18) |
-        (((bytes[i + 1] ?? 0) & 0x3f) << 12) |
-        (((bytes[i + 2] ?? 0) & 0x3f) << 6) |
-        ((bytes[i + 3] ?? 0) & 0x3f);
-      size = 4;
+      out += String.fromCharCode(b0);
+      i += 1;
+      continue;
+    }
+    let need: number;
+    let cp: number;
+    let lower = 0x80;
+    let upper = 0xbf;
+    if (b0 >= 0xc2 && b0 <= 0xdf) {
+      need = 1;
+      cp = b0 & 0x1f;
+    } else if (b0 >= 0xe0 && b0 <= 0xef) {
+      need = 2;
+      cp = b0 & 0x0f;
+      if (b0 === 0xe0) lower = 0xa0; // overlong
+      if (b0 === 0xed) upper = 0x9f; // surrogates
+    } else if (b0 >= 0xf0 && b0 <= 0xf4) {
+      need = 3;
+      cp = b0 & 0x07;
+      if (b0 === 0xf0) lower = 0x90; // overlong
+      if (b0 === 0xf4) upper = 0x8f; // above U+10FFFF
+    } else {
+      out += '\ufffd';
+      i += 1;
+      continue;
+    }
+    let consumed = 1;
+    let valid = true;
+    for (let k = 1; k <= need; k++) {
+      const b = bytes[i + k];
+      if (b === undefined || b < lower || b > upper) {
+        valid = false;
+        break;
+      }
+      lower = 0x80;
+      upper = 0xbf;
+      cp = (cp << 6) | (b & 0x3f);
+      consumed += 1;
+    }
+    if (!valid) {
+      out += '\ufffd';
+      i += consumed;
+      continue;
     }
     out += String.fromCodePoint(cp);
-    i += size;
+    i += consumed;
   }
   return out;
 }

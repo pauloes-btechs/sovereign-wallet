@@ -18,8 +18,18 @@ export interface PlatformServices {
   readonly hapticConfirm?: () => void;
   /** Platform keystore / keychain for secrets (PIN hash, session material). */
   readonly secureStorage?: SecureStoragePort;
-  /** Biometric prompt; resolves true on success. */
+  /**
+   * Biometric prompt; resolves true on success. Must never enroll anything:
+   * where it is backed by a keystore gate it passes only against a gate the
+   * app lock created (`biometricGate.create`).
+   */
   readonly authenticateBiometric?: (reason: string) => Promise<boolean>;
+  /**
+   * Keystore-bound biometric gate (native). The app lock creates it only
+   * when biometric unlock is turned on with the PIN, and treats a missing
+   * gate (biometric enrollment changed) as "biometric unlock is off".
+   */
+  readonly biometricGate?: BiometricGate;
   /** Hides window contents from screenshots and the app switcher. */
   readonly setScreenCaptureProtection?: (enabled: boolean) => Promise<void>;
   /**
@@ -47,3 +57,20 @@ export type SecureStorageProtection = 'device-keystore' | 'browser-preview' | 'm
 
 /** No device services — what native builds have until a resolver is wired. */
 export const NO_PLATFORM_SERVICES: PlatformServices = Object.freeze({});
+
+/** Result of a biometric check against the keystore gate. */
+export type BiometricCheck =
+  | 'passed'
+  /** Cancelled, failed, or no biometrics enrolled. */
+  | 'failed'
+  /** The gate does not exist: never created, or invalidated by an enrollment change. */
+  | 'gate-missing';
+
+export interface BiometricGate {
+  /** (Re)creates the gate bound to the enrolled biometrics and checks it once. Only after the PIN was entered. */
+  create(reason: string): Promise<boolean>;
+  /** Prompts against the existing gate. Never creates it. */
+  verify(reason: string): Promise<BiometricCheck>;
+  /** Deletes the gate (biometric unlock turned off). */
+  remove(): Promise<void>;
+}

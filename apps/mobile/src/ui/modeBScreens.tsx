@@ -59,7 +59,7 @@ export function ModeBRemoteApp({
   const preferences = usePreferencesStore(givenPreferences);
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   useHardwareBack(() => controller.goBack(), state.nav !== null);
-  const security = useWalletSecurity(platform, preferences);
+  const security = useWalletSecurity(platform, preferences, 'remote-lnd');
   return (
     <MobileAppProvider preferences={preferences} platform={platform}>
       <WalletSecurityBoundary security={security}>

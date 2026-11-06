@@ -205,6 +205,19 @@ describe('Loop quote and fee limits', () => {
     expect(bitcoinAddressError('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', 'regtest')).toMatch(/regtest/);
   });
 
+  it('address checks use the full parser: checksum, network and unknown networks', () => {
+    // A bech32 typo (last character changed) passed the old prefix/charset check.
+    expect(bitcoinAddressError('bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt081', 'regtest')).toMatch(/doesn't check out/);
+    expect(bitcoinAddressError('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', 'mainnet')).toBeNull();
+    expect(bitcoinAddressError('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', 'bitcoin')).toBeNull();
+    // A testnet base58 address on mainnet was accepted by the old regex.
+    expect(bitcoinAddressError('mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn', 'mainnet')).toMatch(/testnet.*mainnet/);
+    expect(bitcoinAddressError('mipcBbFg9gMiCh81Kj8tqqdgoZub1ZJRfn', 'testnet4')).toBeNull();
+    expect(bitcoinAddressError('1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN3', 'mainnet')).toMatch(/doesn't check out/);
+    expect(bitcoinAddressError('hello', 'regtest')).toMatch(/isn't a Bitcoin address/);
+    expect(bitcoinAddressError('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', 'liquidv1')).toMatch(/doesn't recognize/);
+  });
+
   it('failure explanations say what happened and what to do', () => {
     expect(explainSwapFailure('loop-out', 'offchain').what).toMatch(/could not pay the swap server/);
     expect(explainSwapFailure('loop-in', 'timeout').next).toMatch(/takes the funds back/);
@@ -296,6 +309,81 @@ describe('RemoteSwapStore over the simulated node', () => {
     await store.review(funds);
     expect(await store.confirm()).toBeNull();
     expect(store.getState().draft?.error).toMatch(/only while the app is open/);
+  });
+
+  it('a start whose reply is lost says "may have started", blocks a re-confirm, and finds the swap by its label', async () => {
+    const { node, store, port } = setup();
+    const spy = vi.spyOn(node, 'loopOut');
+    port.loopOut = async (r) => {
+      await node.loopOut(r); // loopd started it…
+      throw new Error('rpc error: code = Unavailable desc = transport is closing'); // …and the reply was lost
+    };
+    let lists = 0;
+    const list = port.listSwaps;
+    port.listSwaps = async () => {
+      lists += 1;
+      if (lists === 1) throw new Error('connection reset');
+      return list === undefined ? [] : list();
+    };
+    await store.loadTerms();
+    store.beginDraft('loop-out', 300_000n);
+    await store.review(funds);
+    expect(await store.confirm()).toBeNull();
+    const draft = store.getState().draft;
+    expect(draft?.stage).toBe('uncertain');
+    expect(draft?.error).toMatch(/may have started/);
+    expect(draft?.error).not.toMatch(/did not start/);
+    expect(draft?.pendingStart?.amountSat).toBe(300_000n);
+
+    // Blocked until the list is checked: no second start, no new draft.
+    expect(await store.confirm()).toBeNull();
+    store.backToEdit();
+    store.beginDraft('loop-in', 200_000n);
+    store.discardDraft();
+    expect(store.getState().draft?.stage).toBe('uncertain');
+    expect(spy).toHaveBeenCalledTimes(1);
+
+    // The list read succeeds: the swap is found by the label this attempt set.
+    const id = await store.checkUncertainStart();
+    expect(id).not.toBeNull();
+    const swap = (await node.listSwaps()).find((s) => s.id === id);
+    expect(swap?.label).toBe(spy.mock.calls[0]?.[0].label);
+    expect(swap?.label).toMatch(/^mobile loop-out /);
+    expect(store.getState().draft).toBeNull();
+    expect(store.getState().watchedId).toBe(id);
+    expect(spy).toHaveBeenCalledTimes(1);
+    store.stop();
+  });
+
+  it('a lost reply for a swap that is not in the list goes back to review only after the list was read', async () => {
+    const { node, store, port } = setup();
+    port.loopIn = async () => {
+      throw new Error('stream closed');
+    };
+    await store.loadTerms();
+    store.beginDraft('loop-in', 200_000n);
+    await store.review(funds);
+    expect(await store.confirm()).toBeNull();
+    // The check ran right away and the list had no such swap.
+    const draft = store.getState().draft;
+    expect(draft?.stage).toBe('review');
+    expect(draft?.error).toMatch(/no swap from that attempt/);
+    expect(draft?.error).not.toMatch(/did not start/);
+    expect(await node.listSwaps()).toHaveLength(0);
+  });
+
+  it('each start attempt carries its own label', async () => {
+    const { node, store } = setup();
+    const spy = vi.spyOn(node, 'loopOut');
+    await store.loadTerms();
+    for (let i = 0; i < 2; i++) {
+      store.beginDraft('loop-out', 300_000n);
+      await store.review(funds);
+      await store.confirm();
+    }
+    const [a, b] = spy.mock.calls.map((c) => c[0].label);
+    expect(a).not.toBe(b);
+    store.stop();
   });
 
   it('a port without Loop is reported unavailable, not as an error', async () => {

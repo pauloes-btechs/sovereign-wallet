@@ -18,8 +18,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ModeAController, ModeAState } from '../../flows/modeAController.js';
 import type { ModeBRemoteController, ModeBRemoteState } from '../../flows/modeBRemoteController.js';
-import type { BitcoinNetwork } from '../../flows/destination.js';
-import { decodeBolt11 } from '../../flows/destination.js';
+import { decodeBolt11, knownBitcoinNetwork } from '../../flows/destination.js';
 import { lightningFeeCapSat } from '../../flows/preferences.js';
 import type { Preferences } from '../../flows/preferences.js';
 import {
@@ -33,9 +32,6 @@ import { formatAmount } from '../format.js';
 import { SendView } from './SendView.js';
 import type { SendReceiptModel, SendReviewModel, SendViewModel, SendViewStatus } from './SendView.js';
 
-function asNetwork(network: string): BitcoinNetwork {
-  return network === 'testnet' || network === 'signet' || network === 'regtest' ? network : 'mainnet';
-}
 
 /** "Maximum Lightning fee: 125 sats (0.5% of the amount, at least 10 sats) — from your payment preferences." */
 export function lightningFeePolicyText(
@@ -138,7 +134,9 @@ export function ModeASendScreen({
   const model: SendViewModel = {
     title: 'Send',
     subtitle: 'From your everyday wallet',
-    network: asNetwork(network),
+    // An unrecognized network is never treated as mainnet: Send says why it is off.
+    network: knownBitcoinNetwork(network),
+    networkName: network,
     capabilities,
     rules: WAVELENGTH_RAIL_RULES,
     status,
@@ -241,7 +239,9 @@ export function ModeBSendScreen({
   const model: SendViewModel = {
     title: 'Send',
     subtitle: 'Paid by your node',
-    network: asNetwork(network),
+    // An unrecognized network is never treated as mainnet: Send says why it is off.
+    network: knownBitcoinNetwork(network),
+    networkName: network,
     capabilities,
     rules: REMOTE_LND_RAIL_RULES,
     status,

@@ -111,7 +111,7 @@ export function ModeAApp(ports: ModeAAppPorts): ReactNode {
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
   const platform = ports.platform ?? NO_PLATFORM_SERVICES;
   useHardwareBack(() => controller.goBack(), state.nav !== null);
-  const security = useWalletSecurity(platform, preferences);
+  const security = useWalletSecurity(platform, preferences, 'wavelength');
   useBackupRecorder(security.backup, state);
 
   useEffect(() => {

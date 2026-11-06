@@ -67,13 +67,47 @@ export function unitLabel(denomination: Denomination): string {
 }
 
 /**
+ * Commas are only thousands separators, and only in the whole-number part:
+ * "1,000.5" is fine, "0,001" and "1,5" are refused rather than read as 1
+ * and 15 (in many locales the comma is the decimal mark, so guessing could
+ * send 1,000× the intended amount).
+ */
+const GROUPED_WHOLE = /^[1-9]\d{0,2}(?:,\d{3})+$/;
+
+const COMMA_PROBLEM = 'Use a dot for decimals, like 0.001. Commas can only separate thousands, like 1,000.5.';
+
+/**
+ * Why what the user typed can't be read as an amount in this denomination;
+ * null when it can (or the field is empty).
+ */
+export function amountInputProblem(text: string, denomination: Denomination): string | null {
+  const compact = text.replace(/[\s_]/g, '');
+  if (compact === '') return null;
+  if (compact.includes(',')) {
+    const dot = compact.indexOf('.');
+    const whole = dot === -1 ? compact : compact.slice(0, dot);
+    const frac = dot === -1 ? '' : compact.slice(dot + 1);
+    if (frac.includes(',') || !GROUPED_WHOLE.test(whole)) return COMMA_PROBLEM;
+  }
+  if (parseAmountInput(text, denomination) !== null) return null;
+  return denomination === 'btc' ? 'Enter BTC with up to 8 decimals.' : 'Enter a whole number of sats.';
+}
+
+/**
  * Parses what the user typed in the current denomination into sats.
- * sats: digits only (commas and spaces allowed as grouping).
- * BTC: up to 8 decimals. Returns null for empty, malformed, zero or negative.
+ * sats: digits only (spaces and thousands commas allowed as grouping).
+ * BTC: up to 8 decimals, a dot as the decimal mark. Returns null for empty,
+ * malformed (including commas that aren't thousands groups), zero or negative.
  */
 export function parseAmountInput(text: string, denomination: Denomination): bigint | null {
-  const cleaned = text.replace(/[\s,_]/g, '');
-  if (cleaned === '') return null;
+  const compact = text.replace(/[\s_]/g, '');
+  if (compact === '') return null;
+  const dot = compact.indexOf('.');
+  const wholeRaw = dot === -1 ? compact : compact.slice(0, dot);
+  const fracRaw = dot === -1 ? null : compact.slice(dot + 1);
+  if (fracRaw !== null && fracRaw.includes(',')) return null;
+  if (wholeRaw.includes(',') && !GROUPED_WHOLE.test(wholeRaw)) return null;
+  const cleaned = wholeRaw.replace(/,/g, '') + (fracRaw === null ? '' : `.${fracRaw}`);
   if (denomination === 'sats') {
     if (!/^\d+$/.test(cleaned)) return null;
     const value = BigInt(cleaned);

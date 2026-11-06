@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import { AppState, StyleSheet, Text, View } from 'react-native';
 import { sovlSpace } from '@sovereign/ui/tokens';
 import { AppLock, BackupRecordStore, memorySecureStorage } from '../../flows/appLock.js';
+import type { BackupWalletType } from '../../flows/appLock.js';
 import type { AppLockSnapshot, BackupStoreSnapshot } from '../../flows/appLock.js';
 import type { ModeAState } from '../../flows/modeAController.js';
 import type { PlatformServices } from '../../flows/platform.js';
@@ -39,16 +40,21 @@ export interface WalletSecurity {
 }
 
 /** Builds (once) and loads the lock and backup record for an app root. */
-export function useWalletSecurity(platform: PlatformServices, preferences: PreferencesStore): WalletSecurity {
+export function useWalletSecurity(
+  platform: PlatformServices,
+  preferences: PreferencesStore,
+  walletType: BackupWalletType,
+): WalletSecurity {
   const [security] = useState<WalletSecurity>(() => {
     const storage = platform.secureStorage ?? memorySecureStorage('memory');
     return {
       lock: new AppLock({
         storage,
         authenticateBiometric: platform.authenticateBiometric,
+        biometricGate: platform.biometricGate,
         lockTimeoutSeconds: () => preferences.get().lockTimeoutSeconds,
       }),
-      backup: new BackupRecordStore({ storage }),
+      backup: new BackupRecordStore({ storage, walletType }),
       hasSecureStorage: platform.secureStorage !== undefined,
     };
   });
@@ -360,6 +366,8 @@ export function useBackupRecorder(backup: BackupRecordStore, state: ModeAState):
     const before = previous.current;
     previous.current = state;
     if (before === null) return;
+    // A new wallet was just created: the old record belongs to the old wallet.
+    if (before.words === null && state.words !== null) void backup.clear();
     if (before.backupStep === 'verify' && before.words !== null && state.backupStep === 'done') {
       void backup.record('verified-at-creation', before.words);
     }

@@ -36,8 +36,8 @@ import {
 import type { NavigationState, PrimaryTab } from './navigation.js';
 import { NO_PLATFORM_SERVICES } from './platform.js';
 import type { PlatformServices } from './platform.js';
-import { decodeBolt11, invoiceAmountSat, parseDestination } from './destination.js';
-import type { Bolt11Invoice } from './destination.js';
+import { decodeBolt11, invoiceAmountSat, knownBitcoinNetwork, parseDestination, unknownNetworkReason } from './destination.js';
+import type { BitcoinNetwork, Bolt11Invoice } from './destination.js';
 import { lightningFeeCapSat } from './preferences.js';
 import type { Preferences } from './preferences.js';
 import { RemoteAssetStore, assetsSurface } from './assets.js';
@@ -136,6 +136,8 @@ export interface LncRpcPort extends ChannelPortExtension, LoopPortExtension, Ass
    * Adapters pass `timeoutSeconds` and `feeLimitSat` to routerrpc
    * SendPaymentV2 (`timeout_seconds`, `fee_limit_sat`); the node refuses
    * routes above the fee limit. Omitted `feeLimitSat` = the node's default.
+   * Throw `PaymentNotDispatchedError` only for a refusal before anything
+   * was sent; any other throw keeps the payment in-flight (ambiguous).
    */
   payInvoice(request: { bolt11: string; timeoutSeconds: number; feeLimitSat?: number }): Promise<{
     outcome: DispatchOutcome;
@@ -187,6 +189,19 @@ export const DESKTOP_ONLY_DISCLOSURE =
 export function validatePairingPhrase(text: string): 'ok' | 'wrong-word-count' {
   const words = text.trim().split(/\s+/).filter((w) => w.length > 0);
   return words.length === 10 ? 'ok' : 'wrong-word-count';
+}
+
+/**
+ * Thrown by an `LncRpcPort.payInvoice` adapter ONLY when it refused the
+ * payment before sending anything to the node (not connected, request
+ * rejected on the phone). The dispatcher treats it as a definitive failure;
+ * any other throw is treated as ambiguous (the node may be paying).
+ */
+export class PaymentNotDispatchedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PaymentNotDispatchedError';
+  }
 }
 
 export class ModeBRemoteError extends Error {
@@ -315,7 +330,12 @@ const INITIAL_STATE: ModeBRemoteState = {
 
 export interface ModeBRemoteControllerOptions {
   readonly port: LncRpcPort;
-  readonly network: 'mainnet' | 'testnet' | 'signet' | 'regtest';
+  /**
+   * The node's network name. Known names (mainnet/bitcoin, testnet/
+   * testnet4, signet, regtest) are mapped by `knownBitcoinNetwork`; any
+   * other name is an explicit unknown and sending is refused with the reason.
+   */
+  readonly network: string;
   readonly pollIntervalMs?: number;
   /** Injected device services; capability derivation reads which exist. */
   readonly platform?: PlatformServices;
@@ -361,6 +381,8 @@ interface RemoteInvoicePayload {
 export class LncPaymentDispatcher implements PaymentDispatcher {
   /** Definitive failure reasons by intent id — the engine's intent carries none. */
   private readonly failures = new Map<string, string>();
+  /** Errors thrown after the request may have reached the node, by intent id. */
+  private readonly uncertain = new Map<string, string>();
 
   constructor(private readonly port: LncRpcPort) {}
 
@@ -373,7 +395,15 @@ export class LncPaymentDispatcher implements PaymentDispatcher {
     intent: Readonly<PaymentIntent>,
     _backendRef: string,
   ): Promise<DispatchOutcome> {
-    const payload = readInvoicePayload(intent);
+    let payload: RemoteInvoicePayload;
+    try {
+      payload = readInvoicePayload(intent);
+    } catch (error) {
+      // Validation on the phone, before any RPC: nothing was sent.
+      const reason = describeError(error);
+      this.failures.set(intent.intentId, reason);
+      return { status: 'definitive-failure', reason };
+    }
     try {
       const { outcome } = await this.port.payInvoice({
         bolt11: payload.bolt11,
@@ -384,14 +414,28 @@ export class LncPaymentDispatcher implements PaymentDispatcher {
       return outcome;
     } catch (error) {
       const reason = describeError(error);
-      this.failures.set(intent.intentId, reason);
-      return { status: 'definitive-failure', reason };
+      if (error instanceof PaymentNotDispatchedError) {
+        // The port says the request never left the phone.
+        this.failures.set(intent.intentId, reason);
+        return { status: 'definitive-failure', reason };
+      }
+      // Anything else (dropped connection, transport timeout, a stream that
+      // closed mid-payment) may have reached the node, which keeps paying on
+      // its own. Ambiguous: the intent stays in-flight and is reconciled by
+      // `lookupPayment` — never failed, never re-dispatched.
+      this.uncertain.set(intent.intentId, reason);
+      return { status: 'timeout' };
     }
   }
 
   /** Why the node refused this intent's payment; null when it did not say (or did not fail). */
   failureReason(intentId: string): string | null {
     return this.failures.get(intentId) ?? null;
+  }
+
+  /** The error that left this intent's outcome unknown; null when none. */
+  uncertainReason(intentId: string): string | null {
+    return this.uncertain.get(intentId) ?? null;
   }
 
   async lookup(intent: Readonly<PaymentIntent>) {
@@ -750,7 +794,12 @@ export class ModeBRemoteController {
     preferences: Preferences,
     nowSec: number = Math.floor(Date.now() / 1000),
   ): void {
-    const parsed = parseDestination(this.state.sendBolt11Text, this.networkId());
+    const network = this.networkId();
+    if (network === null) {
+      this.set({ sendStatus: 'idle', sendError: unknownNetworkReason(this.network), sendReview: null });
+      return;
+    }
+    const parsed = parseDestination(this.state.sendBolt11Text, network);
     if (!parsed.ok) {
       this.set({ sendStatus: 'idle', sendError: parsed.error.message, sendReview: null });
       return;
@@ -793,6 +842,8 @@ export class ModeBRemoteController {
 
   /** "Back to edit" from Review. */
   editSend(): void {
+    // A payment that was handed to the node can't be edited back into a draft.
+    if (this.state.sendStatus === 'sending' || this.state.sendStatus === 'in-flight') return;
     this.set({ sendStatus: 'idle', sendReview: null, sendError: null });
   }
 
@@ -805,7 +856,11 @@ export class ModeBRemoteController {
   /** Confirms the reviewed payment — the fee limit and timeout ride in the persisted intent. */
   async confirmSend(): Promise<void> {
     const review = this.state.sendReview;
-    if (this.state.sendStatus !== 'review' || review === null) {
+    // Only a payment on Review can be confirmed. A second tap while one is
+    // sending (or after it finished) is ignored: it must not dispatch again
+    // nor overwrite the in-flight state with "failed".
+    if (this.state.sendStatus !== 'review') return;
+    if (review === null) {
       this.set({ sendStatus: 'failed', sendError: 'No reviewed payment to send.' });
       return;
     }
@@ -833,16 +888,32 @@ export class ModeBRemoteController {
       throw error;
     }
     this.set({ sendStatus: 'sending', sendError: null });
+    this.pendingIntentId = undefined;
+    let intentId: string | undefined;
     try {
       // Persist-before-dispatch: submit authorizes and persists the intent;
       // execute dispatches exactly once and reconciles on any ambiguity.
       const intent = await this.engine.submit('lightning-invoice', payload, payload.feeLimitSat);
-      this.pendingIntentId = intent.intentId;
-      const executed = await this.engine.execute(intent.intentId);
-      await this.applyPaymentState(executed.state, intent.intentId, review);
+      intentId = intent.intentId;
+      this.pendingIntentId = intentId;
+      const executed = await this.engine.execute(intentId);
+      await this.applyPaymentState(executed.state, intentId, review);
     } catch (error) {
-      this.set({ sendStatus: 'failed', sendError: describeError(error) });
-      throw error;
+      if (intentId === undefined) {
+        // submit refused it: nothing was persisted for dispatch.
+        this.set({ sendStatus: 'failed', sendError: describeError(error) });
+        throw error;
+      }
+      // Thrown once the intent existed: the request may have reached the
+      // node. Go by what the intent store recorded; anything past
+      // `authorized` stays in-flight for "Check status".
+      const persisted = await this.intents.get(intentId).catch(() => undefined);
+      if (persisted?.state === 'authorized') {
+        this.pendingIntentId = undefined;
+        this.set({ sendStatus: 'failed', sendError: describeError(error) });
+        throw error;
+      }
+      this.set({ sendStatus: 'in-flight', sendError: unconfirmedMessage(describeError(error)) });
     }
   }
 
@@ -882,11 +953,7 @@ export class ModeBRemoteController {
       return;
     }
     // in-flight / needs-recovery: the node may still complete it.
-    this.set({
-      sendStatus: 'in-flight',
-      sendError:
-        "The payment's result isn't known yet — your node may still complete it. Check its status before trying again; paying again now could pay twice.",
-    });
+    this.set({ sendStatus: 'in-flight', sendError: unconfirmedMessage(this.dispatcher.uncertainReason(intentId)) });
   }
 
   /** Receipt fee from the node's own payment record, when history can be read. */
@@ -911,9 +978,9 @@ export class ModeBRemoteController {
     }
   }
 
-  private networkId(): 'mainnet' | 'testnet' | 'signet' | 'regtest' {
-    const n = this.network;
-    return n === 'testnet' || n === 'signet' || n === 'regtest' ? n : 'mainnet';
+  /** The configured network; null when the name isn't recognized (never assumed to be mainnet). */
+  private networkId(): BitcoinNetwork | null {
+    return knownBitcoinNetwork(this.network);
   }
 
   // --- receive -------------------------------------------------------------
@@ -1059,6 +1126,13 @@ export function parseSats(text: string): bigint | null {
   if (trimmed === '' || !/^\d+$/.test(trimmed)) return null;
   const value = BigInt(trimmed);
   return value > 0n ? value : null;
+}
+
+/** The in-flight notice, with the connection's own error when one left the outcome unknown. */
+function unconfirmedMessage(reason: string | null): string {
+  const base =
+    "The payment's result isn't known yet — your node may still complete it. Check its status before trying again; paying again now could pay twice.";
+  return reason === null ? base : `${base} (Connection reported: ${reason})`;
 }
 
 function describeError(error: unknown): string {

@@ -6,6 +6,7 @@ import {
   assetTrust,
   decodedSendError,
   formatAssetUnits,
+  parseAssetAmount,
 } from './assets.js';
 import { SimulatedLiquidityNode, simulatedAssetAddress } from '../testing/simulatedLiquidity.js';
 
@@ -38,6 +39,22 @@ describe('asset amounts', () => {
     expect(formatAssetUnits(500_000n, 2)).toBe('5,000');
     expect(formatAssetUnits(500_050n, 2)).toBe('5,000.5');
     expect(formatAssetUnits(1_234_567n, null)).toBe('1,234,567');
+  });
+
+  it('parses display units exactly into base units', () => {
+    expect(parseAssetAmount('1.5', 2)).toEqual({ ok: true, units: 150n });
+    expect(parseAssetAmount('0.01', 2)).toEqual({ ok: true, units: 1n });
+    expect(parseAssetAmount('1,000.25', 2)).toEqual({ ok: true, units: 100_025n });
+    // No float rounding, even at 18 decimals.
+    expect(parseAssetAmount('0.1', 18)).toEqual({ ok: true, units: 100_000_000_000_000_000n });
+    expect(parseAssetAmount('123456789.123456789123456789', 18)).toEqual({ ok: true, units: 123_456_789_123_456_789_123_456_789n });
+    expect(parseAssetAmount('0.1234567891234567891', 18)).toEqual({ ok: false, error: 'This asset has at most 18 decimals.' });
+    expect(parseAssetAmount('25', null)).toEqual({ ok: true, units: 25n });
+    expect(parseAssetAmount('2.5', null)).toMatchObject({ ok: false, error: expect.stringMatching(/whole number/) });
+    expect(parseAssetAmount('0.001', 2)).toMatchObject({ ok: false, error: 'This asset has at most 2 decimals.' });
+    expect(parseAssetAmount('1,5', 2)).toMatchObject({ ok: false, error: expect.stringMatching(/Use a dot for decimals/) });
+    expect(parseAssetAmount('0', 2)).toMatchObject({ ok: false });
+    expect(parseAssetAmount('abc', 2)).toMatchObject({ ok: false });
   });
 });
 
@@ -126,6 +143,24 @@ describe('RemoteAssetStore over the simulated node', () => {
     store.editReceiveAmount('25');
     await store.createReceiveAddress();
     expect(store.getState().receive?.address).toMatch(/^taprt1sim/);
+  });
+
+  it('receive takes the amount in display units and asks the node for base units', async () => {
+    const { store, port } = setup();
+    const create = vi.spyOn(port, 'newAssetAddress');
+    await store.load();
+    const usdt = store.getState().assets?.find((a) => a.decimalDisplay === 2);
+    if (usdt === undefined) throw new Error('no 2-decimal asset');
+    store.beginReceive(usdt.assetIdHex);
+    store.editReceiveAmount('1.5');
+    await store.createReceiveAddress();
+    expect(create).toHaveBeenCalledWith({ assetIdHex: usdt.assetIdHex, amount: 150n });
+    expect(store.getState().receive?.addressUnits).toBe(150n);
+    expect(formatAssetUnits(store.getState().receive?.addressUnits ?? 0n, usdt.decimalDisplay)).toBe('1.5');
+    store.editReceiveAmount('1.505');
+    await store.createReceiveAddress();
+    expect(store.getState().receive?.error).toMatch(/at most 2 decimals/);
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   it('a port without assets says unavailable', async () => {

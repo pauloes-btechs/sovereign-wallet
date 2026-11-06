@@ -16,12 +16,14 @@ import type { NativeAppProps } from '../App.js';
 import { defaultRandomBytes } from '../flows/appLock.js';
 import type { PlatformServices } from '../flows/platform.js';
 import { reactNativeKeychainAdapter } from './keychainAdapter.js';
-import { createNativeBiometricPrompt, createNativeSecureStorage } from './secureStorage.js';
+import { createNativeBiometricGate, createNativeBiometricPrompt, createNativeSecureStorage } from './secureStorage.js';
 
 export function createNativePlatformServices(): PlatformServices {
+  const biometricGate = createNativeBiometricGate(reactNativeKeychainAdapter, defaultRandomBytes);
   return {
     secureStorage: createNativeSecureStorage(reactNativeKeychainAdapter),
-    authenticateBiometric: createNativeBiometricPrompt(reactNativeKeychainAdapter, defaultRandomBytes),
+    biometricGate,
+    authenticateBiometric: createNativeBiometricPrompt(biometricGate),
   };
 }
 

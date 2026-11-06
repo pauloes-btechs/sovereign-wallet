@@ -5,8 +5,10 @@ import {
   BACKUP_RECORD_STORAGE_KEY,
   BackupRecordStore,
   FREE_PIN_ATTEMPTS,
+  MAX_PIN_BACKOFF_MS,
   PIN_BACKOFF_MS,
   backoffAfter,
+  backupRecordStorageKey,
   browserPreviewSecureStorage,
   constantTimeEqual,
   memorySecureStorage,
@@ -28,6 +30,7 @@ function makeLock(options: {
   biometric?: (reason: string) => Promise<boolean>;
   timeout?: number;
   clock?: { t: number };
+  mono?: { t: number };
 } = {}) {
   const clock = options.clock ?? { t: 1_000_000 };
   const storage = options.storage ?? memorySecureStorage();
@@ -36,6 +39,8 @@ function makeLock(options: {
     authenticateBiometric: options.biometric,
     lockTimeoutSeconds: () => options.timeout ?? 300,
     now: () => clock.t,
+    // Time passing in a test moves both clocks; clock-change tests pass their own.
+    monotonicNow: () => options.mono?.t ?? clock.t,
     kdf: FAST_KDF,
     randomBytes: fixedRandom(7),
   });
@@ -202,6 +207,111 @@ describe('AppLock attempts and backoff', () => {
   });
 });
 
+describe('AppLock and clock changes', () => {
+  async function lockedOut(clock: { t: number }, mono: { t: number }) {
+    const storage = memorySecureStorage();
+    const { lock } = makeLock({ storage, clock, mono });
+    await lock.load();
+    await lock.setPin('482913');
+    lock.lockNow();
+    for (let i = 0; i < FREE_PIN_ATTEMPTS; i++) await lock.unlockWithPin('000001');
+    expect(lock.waitMs()).toBe(PIN_BACKOFF_MS[0]);
+    return { lock, storage };
+  }
+
+  it('moving the wall clock forward does not end a wait early in this session', async () => {
+    const clock = { t: 5_000_000 };
+    const mono = { t: 0 };
+    const { lock } = await lockedOut(clock, mono);
+    clock.t += 10 * 3_600_000;
+    expect(lock.waitMs()).toBe(PIN_BACKOFF_MS[0]);
+    expect(await lock.unlockWithPin('482913')).toMatchObject({ ok: false, reason: 'locked-out' });
+    mono.t += PIN_BACKOFF_MS[0] ?? 0; // real time passes
+    expect(await lock.unlockWithPin('482913')).toEqual({ ok: true });
+  });
+
+  it('moving the wall clock back cannot stretch a wait beyond the one imposed', async () => {
+    const clock = { t: 5_000_000 };
+    const mono = { t: 0 };
+    const { lock, storage } = await lockedOut(clock, mono);
+    clock.t -= 20 * 3_600_000;
+    expect(lock.waitMs()).toBe(PIN_BACKOFF_MS[0]);
+    const refused = await lock.unlockWithPin('482913');
+    expect(refused).toMatchObject({ ok: false, reason: 'locked-out', message: 'Too many wrong PINs. Try again in 30 seconds.' });
+
+    // A restart reads the stored deadline clamped to the imposed wait, too.
+    const relaunch = makeLock({ storage, clock, mono: { t: 0 } });
+    await relaunch.lock.load();
+    expect(relaunch.lock.waitMs()).toBe(PIN_BACKOFF_MS[0]);
+  });
+
+  it('a stored deadline far in the future is clamped to the longest backoff', async () => {
+    const clock = { t: 5_000_000 };
+    const storage = memorySecureStorage();
+    const { lock } = makeLock({ storage, clock });
+    await lock.load();
+    await lock.setPin('482913');
+    const stored = JSON.parse((await storage.getItem(APP_LOCK_STORAGE_KEY)) ?? '{}');
+    await storage.setItem(APP_LOCK_STORAGE_KEY, JSON.stringify({ ...stored, failedAttempts: 9, lockedUntil: clock.t + 1e12 }));
+    const relaunch = makeLock({ storage, clock });
+    await relaunch.lock.load();
+    expect(relaunch.lock.waitMs()).toBe(MAX_PIN_BACKOFF_MS);
+  });
+
+  it('a negative time in the background (clock moved back) counts as timed out', async () => {
+    const clock = { t: 10_000_000 };
+    const { lock } = makeLock({ timeout: 60, clock, mono: { t: 0 } });
+    await lock.load();
+    await lock.setPin('482913');
+    lock.noteBackground(clock.t);
+    lock.noteForeground(clock.t - 3_600_000);
+    expect(lock.getSnapshot()).toMatchObject({ status: 'locked', lockReason: 'timeout' });
+  });
+
+  it('time away measured by the monotonic clock locks even if the wall clock says otherwise', async () => {
+    const clock = { t: 10_000_000 };
+    const mono = { t: 0 };
+    const { lock } = makeLock({ timeout: 60, clock, mono });
+    await lock.load();
+    await lock.setPin('482913');
+    lock.noteBackground(clock.t);
+    mono.t += 120_000;
+    lock.noteForeground(clock.t + 1_000);
+    expect(lock.getSnapshot().status).toBe('locked');
+  });
+});
+
+describe('AppLock concurrent PIN checks', () => {
+  it('20 parallel wrong PINs are each counted (or refused once the wait starts), and the lockout engages', async () => {
+    const storage = memorySecureStorage();
+    const { lock } = makeLock({ storage });
+    await lock.load();
+    await lock.setPin('482913');
+    lock.lockNow();
+    const results = await Promise.all(Array.from({ length: 20 }, (_, i) => lock.unlockWithPin(String(100_000 + i))));
+    const wrong = results.filter((r) => !r.ok && r.reason === 'wrong-pin').length;
+    const refused = results.filter((r) => !r.ok && r.reason === 'locked-out').length;
+    expect(wrong).toBe(FREE_PIN_ATTEMPTS);
+    expect(refused).toBe(20 - FREE_PIN_ATTEMPTS);
+    expect(lock.getSnapshot().failedAttempts).toBe(FREE_PIN_ATTEMPTS);
+    expect(JSON.parse((await storage.getItem(APP_LOCK_STORAGE_KEY)) ?? '{}')).toMatchObject({ failedAttempts: FREE_PIN_ATTEMPTS });
+    expect(lock.waitMs()).toBeGreaterThan(0);
+    // The right PIN is refused during the wait.
+    expect(await lock.unlockWithPin('482913')).toMatchObject({ ok: false, reason: 'locked-out' });
+  });
+
+  it('counts against the stored record re-read after hashing (another instance on the same storage)', async () => {
+    const storage = memorySecureStorage();
+    const a = makeLock({ storage });
+    await a.lock.load();
+    await a.lock.setPin('482913');
+    const b = makeLock({ storage });
+    await b.lock.load();
+    await Promise.all([a.lock.unlockWithPin('000001'), b.lock.unlockWithPin('000002')]);
+    expect(JSON.parse((await storage.getItem(APP_LOCK_STORAGE_KEY)) ?? '{}')).toMatchObject({ failedAttempts: 2 });
+  });
+});
+
 describe('AppLock timeout locking', () => {
   it('locks after the timeout in the background, not before', async () => {
     const clock = { t: 0 };
@@ -260,12 +370,16 @@ describe('AppLock biometric gating', () => {
     expect(await lock.setBiometricEnabled(true)).toMatchObject({ ok: false, reason: 'no-pin' });
     await lock.setPin('482913');
 
+    // Turning it on needs the PIN first (a wrong one counts as an attempt).
+    expect(await lock.setBiometricEnabled(true)).toMatchObject({ ok: false, reason: 'invalid-pin' });
+    expect(await lock.setBiometricEnabled(true, '000001')).toMatchObject({ ok: false, reason: 'wrong-pin' });
+    expect(reasons).toEqual([]);
     answers.push(false);
-    expect(await lock.setBiometricEnabled(true)).toMatchObject({ ok: false, reason: 'biometric-failed' });
+    expect(await lock.setBiometricEnabled(true, '482913')).toMatchObject({ ok: false, reason: 'biometric-failed' });
     expect(lock.getSnapshot().biometricEnabled).toBe(false);
 
     answers.push(true);
-    expect(await lock.setBiometricEnabled(true)).toEqual({ ok: true });
+    expect(await lock.setBiometricEnabled(true, '482913')).toEqual({ ok: true });
     expect(lock.getSnapshot().biometricEnabled).toBe(true);
     expect(JSON.parse(storage.dump().get(APP_LOCK_STORAGE_KEY) ?? '{}')).toMatchObject({ biometric: true });
 
@@ -287,7 +401,7 @@ describe('AppLock biometric gating', () => {
     const { lock } = makeLock({ biometric: () => Promise.reject(new Error('cancelled')) });
     await lock.load();
     await lock.setPin('482913');
-    expect(await lock.setBiometricEnabled(true)).toMatchObject({ ok: false, reason: 'biometric-failed' });
+    expect(await lock.setBiometricEnabled(true, '482913')).toMatchObject({ ok: false, reason: 'biometric-failed' });
   });
 });
 
@@ -319,13 +433,13 @@ describe('BackupRecordStore', () => {
   it('records a verifier, never the phrase, and checks a written copy', async () => {
     const storage = memorySecureStorage();
     const words = ['abandon', 'ability', 'able', 'about', 'above', 'absent', 'absorb', 'abstract', 'absurd', 'abuse', 'access', 'accident'];
-    const store = new BackupRecordStore({ storage, kdf: FAST_KDF, randomBytes: fixedRandom(3), now: () => Date.UTC(2026, 10, 5) });
+    const store = new BackupRecordStore({ storage, walletType: 'wavelength', kdf: FAST_KDF, randomBytes: fixedRandom(3), now: () => Date.UTC(2026, 10, 5) });
     await store.load();
     expect(store.getSnapshot()).toEqual({ status: 'none' });
     expect(await store.check(words.join(' '))).toBeNull();
 
     await store.record('verified-at-creation', words);
-    const raw = storage.dump().get(BACKUP_RECORD_STORAGE_KEY) ?? '';
+    const raw = storage.dump().get(backupRecordStorageKey('wavelength')) ?? '';
     for (const word of words) expect(raw).not.toContain(word);
     expect(store.getSnapshot()).toMatchObject({
       status: 'recorded',
@@ -336,10 +450,59 @@ describe('BackupRecordStore', () => {
     expect(await store.check(`  ${words.join('   ').toUpperCase()} `)).toBe(true);
     expect(store.getSnapshot()).toMatchObject({ record: { lastCheckedAt: '2026-11-05T00:00:00.000Z' } });
 
-    const reloaded = new BackupRecordStore({ storage, kdf: FAST_KDF });
+    const reloaded = new BackupRecordStore({ storage, walletType: 'wavelength', kdf: FAST_KDF });
     await reloaded.load();
     expect(reloaded.getSnapshot()).toMatchObject({ status: 'recorded' });
     expect(await reloaded.check(words.join(' '))).toBe(true);
+  });
+
+  it('is kept per wallet type, never read from the untyped key, and cleared when a new wallet is made', async () => {
+    const storage = memorySecureStorage();
+    const old = ['abandon', 'ability', 'able', 'about', 'above', 'absent', 'absorb', 'abstract', 'absurd', 'abuse', 'access', 'accident'];
+    // A record under the old untyped key can't be tied to a wallet: ignored and removed.
+    const legacy = new BackupRecordStore({ storage, walletType: 'wavelength', kdf: FAST_KDF });
+    await legacy.record('verified-at-creation', old);
+    const legacyRaw = storage.dump().get(backupRecordStorageKey('wavelength')) ?? '';
+    await storage.removeItem(backupRecordStorageKey('wavelength'));
+    await storage.setItem(BACKUP_RECORD_STORAGE_KEY, legacyRaw);
+    const store = new BackupRecordStore({ storage, walletType: 'wavelength', kdf: FAST_KDF });
+    await store.load();
+    expect(store.getSnapshot()).toEqual({ status: 'none' });
+    expect(await store.check(old.join(' '))).toBeNull();
+    expect(storage.dump().has(BACKUP_RECORD_STORAGE_KEY)).toBe(false);
+
+    // Another wallet type doesn't see it.
+    await store.record('verified-at-creation', old);
+    const node = new BackupRecordStore({ storage, walletType: 'remote-lnd', kdf: FAST_KDF });
+    await node.load();
+    expect(await node.check(old.join(' '))).toBeNull();
+
+    // A new wallet: the old phrase no longer proves anything.
+    await store.clear();
+    expect(store.getSnapshot()).toEqual({ status: 'none' });
+    expect(await store.check(old.join(' '))).toBeNull();
+    const reloaded = new BackupRecordStore({ storage, walletType: 'wavelength', kdf: FAST_KDF });
+    await reloaded.load();
+    expect(await reloaded.check(old.join(' '))).toBeNull();
+  });
+
+  it('a failed save removes the previous wallet\'s record instead of keeping it', async () => {
+    const backing = memorySecureStorage();
+    let refuse = false;
+    const storage: SecureStoragePort = {
+      getItem: (k) => backing.getItem(k),
+      removeItem: (k) => backing.removeItem(k),
+      setItem: (k, v) => (refuse ? Promise.reject(new Error('keystore full')) : backing.setItem(k, v)),
+    };
+    const old = ['abandon', 'ability', 'able', 'about', 'above', 'absent', 'absorb', 'abstract', 'absurd', 'abuse', 'access', 'accident'];
+    const store = new BackupRecordStore({ storage, walletType: 'wavelength', kdf: FAST_KDF });
+    await store.load();
+    await store.record('verified-at-creation', old);
+    refuse = true;
+    await store.record('restored', ['zoo', 'zoo']);
+    expect(store.getSnapshot()).toMatchObject({ status: 'error' });
+    expect(await store.check(old.join(' '))).toBeNull();
+    expect(await backing.getItem(backupRecordStorageKey('wavelength'))).toBeNull();
   });
 
   it('normalizes phrases', () => {

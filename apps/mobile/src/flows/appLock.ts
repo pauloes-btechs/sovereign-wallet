@@ -20,9 +20,19 @@
  *   the foreground after the lock-timeout preference has passed (0 = on
  *   every trip to the background).
  * - Biometric unlock is offered only when the host provides
- *   `authenticateBiometric`; turning it on requires a successful prompt
- *   first. Biometrics never replace the PIN: removing or changing the PIN
- *   always asks for the current PIN.
+ *   `biometricGate` (native keystore gate) or `authenticateBiometric`;
+ *   turning it on requires the PIN and then a successful prompt. Only that
+ *   step creates the keystore gate, and the record notes it. A gate that has
+ *   gone missing (biometric enrollment changed on the phone) turns biometric
+ *   unlock off — persisted — and the PIN is required. Biometrics never
+ *   replace the PIN: removing or changing the PIN always asks for it.
+ * - The wall clock can be changed by whoever holds the phone. A stored wait
+ *   is clamped to the wait that was actually imposed (so setting the clock
+ *   back cannot stretch it), a monotonic clock keeps an in-session wait
+ *   running when the wall clock jumps forward, and a negative time in the
+ *   background counts as the lock timeout having passed.
+ * - PIN checks run one at a time (queued) and each re-reads the stored
+ *   record after hashing, so parallel guesses are each counted.
  * - Storage failures fail closed: if the record cannot be read the app
  *   stays covered and says why.
  *
@@ -33,7 +43,7 @@
 
 import { scryptAsync } from '@noble/hashes/scrypt';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
-import type { SecureStorageProtection, SecureStoragePort } from './platform.js';
+import type { BiometricGate, SecureStorageProtection, SecureStoragePort } from './platform.js';
 
 // ——— secure storage implementations (non-native) ———
 
@@ -247,10 +257,21 @@ interface StoredLock {
   readonly version: 1;
   readonly pin: SecretVerifier;
   readonly biometric: boolean;
+  /**
+   * True once `setBiometricEnabled(true)` (with the PIN) created the
+   * keystore gate. Biometric unlock through a gate needs this; older
+   * records without it must turn biometric unlock on again.
+   */
+  readonly biometricGate: boolean;
   readonly failedAttempts: number;
   /** Epoch ms before which no PIN is checked; null = no wait. */
   readonly lockedUntil: number | null;
+  /** The wait imposed when `lockedUntil` was set (ms); bounds what the wall clock can stretch. */
+  readonly lockWaitMs: number | null;
 }
+
+/** The longest wait the backoff ever imposes. */
+export const MAX_PIN_BACKOFF_MS = Math.max(...PIN_BACKOFF_MS);
 
 function parseStoredLock(raw: string): StoredLock {
   let parsed: unknown;
@@ -261,18 +282,47 @@ function parseStoredLock(raw: string): StoredLock {
   }
   if (!isRecord(parsed) || parsed.version !== 1) throw new Error('The app lock record has an unknown format.');
   const pin = readVerifier(parsed.pin);
-  const { biometric, failedAttempts, lockedUntil } = parsed;
+  const { biometric, biometricGate, failedAttempts, lockedUntil, lockWaitMs } = parsed;
   if (
     pin === null ||
     typeof biometric !== 'boolean' ||
+    !(biometricGate === undefined || typeof biometricGate === 'boolean') ||
     typeof failedAttempts !== 'number' ||
     !Number.isInteger(failedAttempts) ||
     failedAttempts < 0 ||
-    !(lockedUntil === null || typeof lockedUntil === 'number')
+    !(lockedUntil === null || (typeof lockedUntil === 'number' && Number.isFinite(lockedUntil))) ||
+    !(lockWaitMs === undefined || lockWaitMs === null || (typeof lockWaitMs === 'number' && lockWaitMs >= 0))
   ) {
     throw new Error('The app lock record is damaged.');
   }
-  return { version: 1, pin, biometric, failedAttempts, lockedUntil };
+  return {
+    version: 1,
+    pin,
+    biometric,
+    biometricGate: biometricGate ?? false,
+    failedAttempts,
+    lockedUntil,
+    lockWaitMs: lockWaitMs ?? null,
+  };
+}
+
+/**
+ * The wait still owed at `at` by the stored deadline, never more than the
+ * wait that was imposed (nor the longest backoff): moving the wall clock
+ * back cannot stretch a lockout into hours, and a damaged deadline far in
+ * the future cannot lock the owner out for good.
+ */
+function storedWaitMs(record: StoredLock, at: number): number {
+  if (record.lockedUntil === null) return 0;
+  const cap = Math.min(record.lockWaitMs ?? MAX_PIN_BACKOFF_MS, MAX_PIN_BACKOFF_MS);
+  return Math.min(Math.max(0, record.lockedUntil - at), cap);
+}
+
+/** A monotonic clock (ms) when the runtime has one; else the wall clock. */
+function defaultMonotonicNow(): number {
+  const perf: unknown = Reflect.get(globalThis, 'performance');
+  const now: unknown = typeof perf === 'object' && perf !== null ? Reflect.get(perf, 'now') : undefined;
+  return typeof now === 'function' ? Number(now.call(perf)) : Date.now();
 }
 
 // ——— the lock ———
@@ -324,8 +374,12 @@ export type PinResult =
 
 export interface AppLockOptions {
   readonly storage: SecureStoragePort;
-  /** The host's biometric prompt; absent = biometric unlock unavailable. */
+  /** The host's biometric prompt; used when there is no `biometricGate`. */
   readonly authenticateBiometric?: (reason: string) => Promise<boolean>;
+  /** Keystore gate (native). Preferred over `authenticateBiometric` when present. */
+  readonly biometricGate?: BiometricGate;
+  /** Monotonic ms (not affected by clock changes); defaults to `performance.now`. */
+  readonly monotonicNow?: () => number;
   /** Current lock-timeout preference, in seconds (read at each foreground). */
   readonly lockTimeoutSeconds: () => number;
   readonly now?: () => number;
@@ -343,30 +397,40 @@ function describeWait(ms: number): string {
   return `${minutes} minute${minutes === 1 ? '' : 's'}`;
 }
 
+/** The tail of each storage's PIN-check queue: checks run strictly one after another. */
+const PIN_QUEUES = new WeakMap<SecureStoragePort, Promise<void>>();
+
 export class AppLock {
   private readonly storage: SecureStoragePort;
   private readonly authenticate: ((reason: string) => Promise<boolean>) | undefined;
+  private readonly gate: BiometricGate | undefined;
   private readonly lockTimeoutSeconds: () => number;
   private readonly now: () => number;
+  private readonly mono: () => number;
   private readonly kdf: PinKdfParams;
   private readonly random: RandomBytes;
   private readonly listeners = new Set<() => void>();
   private record: StoredLock | null = null;
   private backgroundAt: number | null = null;
+  private backgroundMono: number | null = null;
+  /** Monotonic deadline of the current wait in this session; null = none. */
+  private monoDeadline: number | null = null;
   private snapshot: AppLockSnapshot;
 
   constructor(options: AppLockOptions) {
     this.storage = options.storage;
     this.authenticate = options.authenticateBiometric;
+    this.gate = options.biometricGate;
     this.lockTimeoutSeconds = options.lockTimeoutSeconds;
     this.now = options.now ?? Date.now;
+    this.mono = options.monotonicNow ?? defaultMonotonicNow;
     this.kdf = options.kdf ?? DEFAULT_PIN_KDF;
     this.random = options.randomBytes ?? defaultRandomBytes;
     this.snapshot = {
       status: 'loading',
       pinSet: false,
       biometricEnabled: false,
-      biometricAvailable: this.authenticate !== undefined,
+      biometricAvailable: this.gate !== undefined || this.authenticate !== undefined,
       failedAttempts: 0,
       lockedUntil: null,
       busy: false,
@@ -389,8 +453,8 @@ export class AppLock {
   async load(): Promise<void> {
     this.publish({ status: 'loading', error: null });
     try {
-      const raw = await this.storage.getItem(APP_LOCK_STORAGE_KEY);
-      this.record = raw === null ? null : parseStoredLock(raw);
+      this.record = await this.readRecord();
+      this.startMonoWait(this.record);
       this.publishRecord(this.record === null ? 'off' : 'locked', this.record === null ? null : 'launch');
     } catch (error) {
       this.record = null;
@@ -401,10 +465,17 @@ export class AppLock {
     }
   }
 
-  /** Seconds until a PIN may be tried again (0 = now). */
+  /**
+   * Milliseconds until a PIN may be tried again (0 = now): the stored wait
+   * (clamped, see `storedWaitMs`) or, in this session, the monotonic one —
+   * whichever is longer, so moving the clock either way doesn't skip it.
+   */
   waitMs(at: number = this.now()): number {
-    const until = this.record?.lockedUntil ?? null;
-    return until === null ? 0 : Math.max(0, until - at);
+    const record = this.record;
+    if (record === null) return 0;
+    const stored = storedWaitMs(record, at);
+    const monotonic = this.monoDeadline === null ? 0 : Math.max(0, this.monoDeadline - this.mono());
+    return Math.max(stored, Math.min(monotonic, MAX_PIN_BACKOFF_MS));
   }
 
   // ——— PIN lifecycle ———
@@ -418,8 +489,10 @@ export class AppLock {
         version: 1,
         pin: await makeVerifier(pin, this.kdf, this.random),
         biometric: false,
+        biometricGate: false,
         failedAttempts: 0,
         lockedUntil: null,
+        lockWaitMs: null,
       };
       await this.write(record);
       this.publishRecord('unlocked', null);
@@ -447,6 +520,8 @@ export class AppLock {
     return this.withBusy(async () => {
       await this.storage.removeItem(APP_LOCK_STORAGE_KEY);
       this.record = null;
+      this.monoDeadline = null;
+      await this.gate?.remove();
       this.publishRecord('off', null);
       return { ok: true };
     });
@@ -463,6 +538,8 @@ export class AppLock {
     return this.withBusy(async () => {
       await this.storage.removeItem(APP_LOCK_STORAGE_KEY);
       this.record = null;
+      this.monoDeadline = null;
+      await this.gate?.remove();
       this.publishRecord('off', null);
       return { ok: true };
     });
@@ -482,22 +559,47 @@ export class AppLock {
   }
 
   /**
-   * Shows the host's biometric prompt and unlocks on success. False when
-   * biometrics are off, unavailable, cancelled or failed — the PIN still works.
+   * Shows the biometric prompt and unlocks on success. False when
+   * biometrics are off, unavailable, cancelled or failed — the PIN still
+   * works. A missing keystore gate (enrollment changed) turns biometric
+   * unlock off for good, until it is turned on again with the PIN.
    */
   async unlockWithBiometric(reason = 'Unlock Sovereign Wallet'): Promise<boolean> {
     const record = this.record;
-    if (record === null || !record.biometric || this.authenticate === undefined) return false;
+    if (record === null || !record.biometric) return false;
     let passed = false;
-    try {
-      passed = await this.authenticate(reason);
-    } catch {
-      passed = false;
+    if (this.gate !== undefined) {
+      if (!record.biometricGate) {
+        await this.disableBiometric(record, 'Biometric unlock needs to be turned on again with your PIN.');
+        return false;
+      }
+      let check: Awaited<ReturnType<BiometricGate['verify']>> = 'failed';
+      try {
+        check = await this.gate.verify(reason);
+      } catch {
+        check = 'failed';
+      }
+      if (check === 'gate-missing') {
+        await this.disableBiometric(
+          record,
+          "Biometric unlock was turned off because this phone's fingerprints or face changed. Enter your PIN; you can turn biometric unlock on again in Security.",
+        );
+        return false;
+      }
+      passed = check === 'passed';
+    } else if (this.authenticate !== undefined) {
+      try {
+        passed = await this.authenticate(reason);
+      } catch {
+        passed = false;
+      }
     }
     if (!passed) return false;
-    if (record.failedAttempts !== 0 || record.lockedUntil !== null) {
+    const latest = this.record ?? record;
+    if (latest.failedAttempts !== 0 || latest.lockedUntil !== null) {
       try {
-        await this.write({ ...record, failedAttempts: 0, lockedUntil: null });
+        await this.write({ ...latest, failedAttempts: 0, lockedUntil: null, lockWaitMs: null });
+        this.monoDeadline = null;
       } catch (error) {
         this.publish({ error: `Unlocked, but the attempt counter could not be reset: ${message(error)}` });
       }
@@ -507,27 +609,42 @@ export class AppLock {
   }
 
   /**
-   * Turns biometric unlock on (after a successful prompt, so it is known to
-   * work) or off. Needs a PIN: biometrics are a shortcut to it, not a
+   * Turns biometric unlock on or off. Turning it on needs the app PIN (it
+   * counts as an attempt) and then a successful prompt; only this creates
+   * the keystore gate. Biometrics are a shortcut to the PIN, not a
    * replacement.
    */
-  async setBiometricEnabled(enabled: boolean): Promise<PinResult> {
+  async setBiometricEnabled(enabled: boolean, pin?: string): Promise<PinResult> {
     const record = this.record;
     if (record === null) return fail('no-pin', 'Set a PIN first; biometric unlock is a shortcut to it.');
-    if (enabled) {
-      if (this.authenticate === undefined) {
-        return fail('biometric-unavailable', 'This build has no biometric prompt.');
-      }
-      let passed = false;
-      try {
-        passed = await this.authenticate('Turn on biometric unlock');
-      } catch {
-        passed = false;
-      }
-      if (!passed) return fail('biometric-failed', 'Biometric check did not succeed, so biometric unlock stays off.');
+    if (!enabled) {
+      return this.withBusy(async () => {
+        await this.write({ ...this.requireRecord(), biometric: false, biometricGate: false });
+        await this.gate?.remove();
+        this.publishRecord(this.snapshot.status === 'locked' ? 'locked' : 'unlocked', this.snapshot.lockReason);
+        return { ok: true };
+      });
     }
+    if (this.gate === undefined && this.authenticate === undefined) {
+      return fail('biometric-unavailable', 'This build has no biometric prompt.');
+    }
+    if (pin === undefined || pin === '') {
+      return fail('invalid-pin', 'Enter your PIN to turn on biometric unlock.');
+    }
+    const checked = await this.checkPin(pin);
+    if (!checked.ok) return checked;
+    let passed = false;
+    try {
+      passed =
+        this.gate !== undefined
+          ? await this.gate.create('Turn on biometric unlock')
+          : this.authenticate !== undefined && (await this.authenticate('Turn on biometric unlock'));
+    } catch {
+      passed = false;
+    }
+    if (!passed) return fail('biometric-failed', 'Biometric check did not succeed, so biometric unlock stays off.');
     return this.withBusy(async () => {
-      await this.write({ ...record, biometric: enabled });
+      await this.write({ ...this.requireRecord(), biometric: true, biometricGate: this.gate !== undefined });
       this.publishRecord(this.snapshot.status === 'locked' ? 'locked' : 'unlocked', this.snapshot.lockReason);
       return { ok: true };
     });
@@ -544,22 +661,45 @@ export class AppLock {
   /** The app went to the background at `at`. */
   noteBackground(at: number = this.now()): void {
     this.backgroundAt = at;
+    this.backgroundMono = this.mono();
   }
 
-  /** The app came back at `at`: locks if the lock timeout has passed. */
+  /**
+   * The app came back at `at`: locks if the lock timeout has passed. A wall
+   * clock that went backwards (negative time away) counts as timed out, and
+   * the monotonic clock counts too, so neither clock change skips the lock.
+   */
   noteForeground(at: number = this.now()): void {
     const since = this.backgroundAt;
+    const sinceMono = this.backgroundMono;
     this.backgroundAt = null;
+    this.backgroundMono = null;
     if (since === null || this.record === null || this.snapshot.status !== 'unlocked') return;
-    if (at - since >= this.lockTimeoutSeconds() * 1000) this.publishRecord('locked', 'timeout');
+    const timeoutMs = this.lockTimeoutSeconds() * 1000;
+    const away = at - since;
+    const awayMono = sinceMono === null ? 0 : this.mono() - sinceMono;
+    if (away < 0 || away >= timeoutMs || awayMono >= timeoutMs) this.publishRecord('locked', 'timeout');
   }
 
   // ——— internals ———
 
-  /** Verifies a PIN against the record, enforcing and recording attempts. */
-  private async checkPin(pin: string): Promise<PinResult> {
-    const record = this.record;
-    if (record === null) return fail('no-pin', 'No PIN is set.');
+  /** Verifies a PIN against the record, enforcing and recording attempts — one check at a time. */
+  private checkPin(pin: string): Promise<PinResult> {
+    // Queued per storage, so two lock instances over the same record can't interleave either.
+    const previous = PIN_QUEUES.get(this.storage) ?? Promise.resolve();
+    const run = previous.then(() => this.checkPinNow(pin));
+    PIN_QUEUES.set(
+      this.storage,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
+  private async checkPinNow(pin: string): Promise<PinResult> {
+    if (this.record === null) return fail('no-pin', 'No PIN is set.');
     const at = this.now();
     const wait = this.waitMs(at);
     if (wait > 0) {
@@ -567,19 +707,34 @@ export class AppLock {
     }
     if (!/^[0-9]+$/.test(pin)) return fail('invalid-pin', 'Enter your PIN using digits.');
     return this.withBusy(async () => {
-      const matches = await checkVerifier(pin, record.pin);
+      const verifier = this.requireRecord().pin;
+      const matches = await checkVerifier(pin, verifier);
+      // Re-read after the (slow) hash: count against what is stored now.
+      const latest = await this.readRecord();
+      if (latest === null) {
+        this.record = null;
+        this.publishRecord('off', null);
+        return fail('no-pin', 'No PIN is set.');
+      }
+      this.record = latest;
+      if (latest.pin.hash !== verifier.hash || latest.pin.salt !== verifier.salt) {
+        return fail('wrong-pin', 'The PIN was changed meanwhile. Enter the current PIN.');
+      }
       if (matches) {
-        if (record.failedAttempts !== 0 || record.lockedUntil !== null) {
-          await this.write({ ...record, failedAttempts: 0, lockedUntil: null });
+        if (latest.failedAttempts !== 0 || latest.lockedUntil !== null) {
+          await this.write({ ...latest, failedAttempts: 0, lockedUntil: null, lockWaitMs: null });
         }
+        this.monoDeadline = null;
         this.publishRecord(this.snapshot.status, this.snapshot.lockReason);
         return { ok: true };
       }
-      const failedAttempts = record.failedAttempts + 1;
+      const failedAttempts = latest.failedAttempts + 1;
       const delay = backoffAfter(failedAttempts);
-      const lockedUntil = delay > 0 ? this.now() + delay : null;
+      const now = this.now();
+      const lockedUntil = delay > 0 ? now + delay : null;
       // Recorded before answering, so a restart does not reset the count.
-      await this.write({ ...record, failedAttempts, lockedUntil });
+      await this.write({ ...latest, failedAttempts, lockedUntil, lockWaitMs: delay > 0 ? delay : null });
+      this.monoDeadline = delay > 0 ? this.mono() + delay : null;
       this.publishRecord(this.snapshot.status, this.snapshot.lockReason);
       const left = FREE_PIN_ATTEMPTS - failedAttempts;
       if (lockedUntil !== null) {
@@ -590,6 +745,38 @@ export class AppLock {
         left === 1 ? 'Wrong PIN. One more miss starts a wait.' : `Wrong PIN. ${left} tries before a wait.`,
       );
     });
+  }
+
+  /** The stored record, with any stored wait clamped (see `storedWaitMs`). */
+  private async readRecord(): Promise<StoredLock | null> {
+    const raw = await this.storage.getItem(APP_LOCK_STORAGE_KEY);
+    if (raw === null) return null;
+    const record = parseStoredLock(raw);
+    if (record.lockedUntil === null) return record;
+    const at = this.now();
+    const wait = storedWaitMs(record, at);
+    return wait === 0 ? { ...record, lockedUntil: null, lockWaitMs: null } : { ...record, lockedUntil: at + wait };
+  }
+
+  /** Starts the in-session monotonic wait for a record read from storage. */
+  private startMonoWait(record: StoredLock | null): void {
+    const wait = record === null ? 0 : storedWaitMs(record, this.now());
+    this.monoDeadline = wait > 0 ? this.mono() + wait : null;
+  }
+
+  /** Persists "biometric unlock off" after its gate went missing; the PIN is required. */
+  private async disableBiometric(record: StoredLock, why: string): Promise<void> {
+    try {
+      await this.write({ ...(this.record ?? record), biometric: false, biometricGate: false });
+      await this.gate?.remove();
+      this.publishRecord(this.snapshot.status, this.snapshot.lockReason);
+      this.publish({ error: why });
+    } catch (error) {
+      // Not persisted: still refuse biometrics for this session.
+      this.record = { ...(this.record ?? record), biometric: false, biometricGate: false };
+      this.publishRecord(this.snapshot.status, this.snapshot.lockReason);
+      this.publish({ error: `${why} (This could not be saved: ${message(error)})` });
+    }
   }
 
   private requireRecord(): StoredLock {
@@ -635,7 +822,19 @@ export class AppLock {
 
 // ——— backup record ———
 
+/**
+ * The pre-wallet-type key. Never read: a record there can't be tied to a
+ * wallet, so it is removed on load (it held only a verifier, never a phrase).
+ */
 export const BACKUP_RECORD_STORAGE_KEY = 'sovereign.backup-record.v1';
+
+/** Which wallet a backup record belongs to (one record per wallet type). */
+export type BackupWalletType = 'wavelength' | 'remote-lnd';
+
+/** Storage key of one wallet type's backup record. */
+export function backupRecordStorageKey(walletType: BackupWalletType): string {
+  return `${BACKUP_RECORD_STORAGE_KEY}.${walletType}`;
+}
 
 /**
  * How this device knows the recovery phrase was backed up:
@@ -675,8 +874,16 @@ export type BackupStoreSnapshot =
   | { readonly status: 'none' }
   | { readonly status: 'recorded'; readonly record: BackupRecord };
 
+/**
+ * The record proves ownership for "Forgot PIN", so it must always describe
+ * the wallet that exists now: it is keyed per wallet type, cleared the
+ * moment a new wallet is created (before its words are verified) and
+ * replaced when a wallet is restored — an old phrase can never remove the
+ * PIN of a newer wallet.
+ */
 export class BackupRecordStore {
   private readonly storage: SecureStoragePort;
+  private readonly key: string;
   private readonly kdf: PinKdfParams;
   private readonly random: RandomBytes;
   private readonly now: () => number;
@@ -686,11 +893,13 @@ export class BackupRecordStore {
 
   constructor(options: {
     storage: SecureStoragePort;
+    walletType: BackupWalletType;
     kdf?: PinKdfParams;
     randomBytes?: RandomBytes;
     now?: () => number;
   }) {
     this.storage = options.storage;
+    this.key = backupRecordStorageKey(options.walletType);
     this.kdf = options.kdf ?? DEFAULT_PIN_KDF;
     this.random = options.randomBytes ?? defaultRandomBytes;
     this.now = options.now ?? Date.now;
@@ -711,7 +920,8 @@ export class BackupRecordStore {
 
   async load(): Promise<void> {
     try {
-      const raw = await this.storage.getItem(BACKUP_RECORD_STORAGE_KEY);
+      await this.storage.removeItem(BACKUP_RECORD_STORAGE_KEY).catch(() => undefined);
+      const raw = await this.storage.getItem(this.key);
       this.stored = raw === null ? null : parseStoredBackup(raw);
       this.publish();
     } catch (error) {
@@ -731,11 +941,28 @@ export class BackupRecordStore {
         lastCheckedAt: null,
         verifier,
       };
-      await this.storage.setItem(BACKUP_RECORD_STORAGE_KEY, JSON.stringify(stored));
+      await this.storage.setItem(this.key, JSON.stringify(stored));
       this.stored = stored;
       this.publish();
     } catch (error) {
+      // Never leave the previous wallet's record in place.
+      await this.forget();
       this.set({ status: 'error', error: `The backup record could not be saved: ${message(error)}` });
+    }
+  }
+
+  /** A new wallet replaces the old one: its record no longer proves anything. */
+  async clear(): Promise<void> {
+    await this.forget();
+    this.publish();
+  }
+
+  private async forget(): Promise<void> {
+    this.stored = null;
+    try {
+      await this.storage.removeItem(this.key);
+    } catch {
+      // In memory it is gone already; `check` answers null without it.
     }
   }
 
@@ -747,7 +974,7 @@ export class BackupRecordStore {
     if (matches) {
       const updated: StoredBackup = { ...stored, lastCheckedAt: new Date(this.now()).toISOString() };
       try {
-        await this.storage.setItem(BACKUP_RECORD_STORAGE_KEY, JSON.stringify(updated));
+        await this.storage.setItem(this.key, JSON.stringify(updated));
         this.stored = updated;
       } catch {
         // The check itself succeeded; only the timestamp was not saved.

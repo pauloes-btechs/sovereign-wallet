@@ -5,13 +5,16 @@
  * integration suite in services/litd-adapter.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DispatchOutcome } from '@sovereign/payments';
+import type { DispatchOutcome, PaymentIntent } from '@sovereign/payments';
 import type { LncRpcPort, RemoteBalances, RemoteNodeInfo } from './modeBRemoteController.js';
+import { DEFAULT_PREFERENCES } from './preferences.js';
 import {
   DESKTOP_ONLY_DISCLOSURE,
   LIVENESS_REQUIRED_OPS,
+  LncPaymentDispatcher,
   ModeBRemoteController,
   ModeBRemoteError,
+  PaymentNotDispatchedError,
   isDesktopOnly,
   parseSats,
   sha256Hex,
@@ -252,6 +255,67 @@ describe('ModeBRemoteController payments', () => {
     await controller.checkPaymentStatus();
     expect(port.payCalls).toHaveLength(1);
     expect(controller.getState().sendStatus).toBe('in-flight');
+  });
+});
+
+describe('ModeBRemoteController — unknown network', () => {
+  it('refuses to review a send on a network name it does not recognize, instead of assuming mainnet', async () => {
+    const port = makePort();
+    const controller = new ModeBRemoteController({ port, network: 'liquidv1' });
+    controller.enterPairingPhrase(TEN_WORDS);
+    await controller.pair();
+    controller.editSendDestination('lnbc10u1pjexample');
+    controller.reviewSend({ ...DEFAULT_PREFERENCES });
+    expect(controller.getState().sendStatus).toBe('idle');
+    expect(controller.getState().sendError).toMatch(/network "liquidv1", which this app doesn't recognize/);
+    expect(port.payCalls).toHaveLength(0);
+    controller.stop();
+  });
+});
+
+describe('LncPaymentDispatcher — thrown errors', () => {
+  const intent = (payload: unknown): PaymentIntent => ({
+    intentId: 'intent-1',
+    kind: 'lightning-invoice',
+    payload,
+    state: 'in-flight',
+    backendRef: 'hash-1',
+    attempts: [],
+  });
+
+  it('a throw after the request may have reached the node is ambiguous (timeout), not a definitive failure', async () => {
+    const port = makePort();
+    port.payInvoice = async () => {
+      throw new Error('rpc error: code = Unavailable desc = transport is closing');
+    };
+    const dispatcher = new LncPaymentDispatcher(port);
+    const outcome = await dispatcher.dispatch(intent({ bolt11: 'lnbcrt1m1abc' }), 'hash-1');
+    expect(outcome).toEqual({ status: 'timeout' });
+    expect(dispatcher.failureReason('intent-1')).toBeNull();
+    expect(dispatcher.uncertainReason('intent-1')).toBe('rpc error: code = Unavailable desc = transport is closing');
+  });
+
+  it('a typed pre-dispatch refusal, or an invalid payload caught on the phone, is definitive', async () => {
+    const port = makePort();
+    port.payInvoice = async () => {
+      throw new PaymentNotDispatchedError('not connected');
+    };
+    const dispatcher = new LncPaymentDispatcher(port);
+    expect(await dispatcher.dispatch(intent({ bolt11: 'lnbcrt1m1abc' }), 'hash-1')).toEqual({
+      status: 'definitive-failure',
+      reason: 'not connected',
+    });
+    expect(await dispatcher.dispatch(intent({}), 'hash-1')).toMatchObject({ status: 'definitive-failure' });
+  });
+
+  it('an explicit terminal node failure result stays definitive', async () => {
+    const port = makePort();
+    port.settledOutcome = { status: 'definitive-failure', reason: 'FAILURE_REASON_NO_ROUTE' };
+    const dispatcher = new LncPaymentDispatcher(port);
+    expect(await dispatcher.dispatch(intent({ bolt11: 'lnbcrt1m1abc' }), 'hash-1')).toEqual({
+      status: 'definitive-failure',
+      reason: 'FAILURE_REASON_NO_ROUTE',
+    });
   });
 });
 

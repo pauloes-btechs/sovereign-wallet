@@ -210,6 +210,51 @@ describe('App lock', () => {
     expect(await screen.findByText('Wallet locked')).toBeTruthy();
     expect(screen.getByText('Enter your PIN to open your wallet.')).toBeTruthy();
   }, 30_000);
+
+  it('turning on biometric unlock asks for the PIN before the biometric prompt', async () => {
+    const storage = memorySecureStorage();
+    const prompts: string[] = [];
+    const { AppLock } = await import('../../flows/appLock.js');
+    const seed = new AppLock({ storage, lockTimeoutSeconds: () => 300 });
+    await seed.load();
+    expect(await seed.setPin('482913')).toEqual({ ok: true });
+    const platform: PlatformServices = {
+      secureStorage: storage,
+      authenticateBiometric: (reason) => {
+        prompts.push(reason);
+        return Promise.resolve(true);
+      },
+    };
+    render(
+      <NativeApp
+        mode="remote-node"
+        network="regtest"
+        resolveLncPort={() => Promise.resolve(new SimulatedLncPort())}
+        platform={platform}
+      />,
+    );
+    await screen.findByText('Wallet locked');
+    typeInto('PIN', '482913');
+    click('Unlock');
+    await screen.findByText('Connect your node', {}, { timeout: 15_000 });
+    typeInto('Pairing phrase', TEN_WORDS);
+    click('Connect');
+    await waitFor(() => expect(screen.getAllByRole('tab')).toHaveLength(5));
+    tab('Wallet');
+    await open('Security and recovery');
+    fireEvent.click(screen.getByRole('switch', { name: 'Biometric unlock' }));
+    expect(await screen.findByText(/Enter your PIN, then confirm with your fingerprint or face/)).toBeTruthy();
+    expect(prompts).toEqual([]); // nothing prompted before the PIN
+    typeInto('Current PIN', '000001');
+    click('Continue');
+    expect(await screen.findByText(/Wrong PIN/, {}, { timeout: 15_000 })).toBeTruthy();
+    expect(prompts).toEqual([]);
+    typeInto('Current PIN', '482913');
+    click('Continue');
+    await screen.findByText('Biometric unlock is on. Your PIN still works too.', {}, { timeout: 15_000 });
+    expect(prompts).toEqual(['Turn on biometric unlock']);
+    expect(JSON.parse(storage.dump().get(APP_LOCK_STORAGE_KEY) ?? '{}')).toMatchObject({ biometric: true });
+  }, 60_000);
 });
 
 describe('Backup (everyday wallet)', () => {

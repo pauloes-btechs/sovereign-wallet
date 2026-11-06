@@ -19,6 +19,7 @@
 
 import { loopRoutingFeeCapSat } from '@sovereign/liquidity';
 import type { BackendKind, FeatureId, FeatureStatus } from './capabilities.js';
+import { NETWORK_LABEL, knownBitcoinNetwork, parseOnchainAddress } from './destination.js';
 
 // ——— routes this track adds to the tab stacks ———
 
@@ -350,23 +351,31 @@ export function quotedSwapError(quote: LoopQuoteView, funds: SwapFunds): string 
   return null;
 }
 
-/** Loose address check before handing an address to loopd (which validates it fully). */
+/**
+ * Checks a Loop Out destination before handing it to loopd: a valid
+ * address (checksum included, via `parseOnchainAddress`) for the node's
+ * network. Empty = the node's own wallet.
+ */
 export function bitcoinAddressError(text: string, network: string): string | null {
   const a = text.trim();
   if (a === '') return null;
-  const prefixes: Record<string, readonly string[]> = {
-    mainnet: ['bc1'],
-    testnet: ['tb1'],
-    signet: ['tb1'],
-    regtest: ['bcrt1'],
-  };
-  const expected = prefixes[network] ?? [];
-  const lower = a.toLowerCase();
-  if (expected.some((p) => lower.startsWith(p))) {
-    return /^[a-z0-9]{14,90}$/.test(lower) ? null : 'That address has characters a Bitcoin address cannot contain.';
+  const expected = knownBitcoinNetwork(network);
+  if (expected === null) {
+    return `Your node reports the network "${network}", which this app doesn't recognize, so the address can't be checked. Leave it empty to use your node's own wallet.`;
   }
-  if (/^[13mn2][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(a)) return null;
-  return `That doesn't look like a ${network} Bitcoin address (expected ${expected.join(' or ') || 'a Bitcoin address'}…).`;
+  const parsed = parseOnchainAddress(a);
+  if (!parsed.ok) {
+    return parsed.failure === 'checksum'
+      ? "That address doesn't check out — a character is wrong or missing. Copy it again."
+      : parsed.failure === 'not-address'
+        ? `That isn't a Bitcoin address. Paste a ${NETWORK_LABEL[expected]} address, or leave it empty for your node's wallet.`
+        : "That address can't be used: it is malformed or of a type this app doesn't support.";
+  }
+  if (!parsed.address.networks.includes(expected)) {
+    const found = parsed.address.networks.map((n) => NETWORK_LABEL[n]).join(' or ');
+    return `That is a ${found} address, but your node is on ${NETWORK_LABEL[expected]}. Use a ${NETWORK_LABEL[expected]} address.`;
+  }
+  return null;
 }
 
 // ——— swap state copy ———
@@ -955,10 +964,31 @@ export interface SwapDraft {
   readonly amountText: string;
   /** Loop Out only; empty = a fresh address in your node's wallet. */
   readonly destinationText: string;
-  readonly stage: 'edit' | 'quoting' | 'review' | 'confirming';
+  /**
+   * `uncertain`: the start request was sent and the answer was lost (an
+   * error, a dropped connection) — the swap MAY have started. Confirming
+   * again is blocked until the node's swap list has been checked for it.
+   */
+  readonly stage: 'edit' | 'quoting' | 'review' | 'confirming' | 'uncertain';
   /** The quote the review shows; fee limits are derived from a FRESH quote at confirm. */
   readonly quote: LoopQuoteView | null;
   readonly error: string | null;
+  /** The start request whose outcome is unknown (set with stage `uncertain`). */
+  readonly pendingStart?: PendingSwapStart | null;
+}
+
+/** What the app sent in a start request — how the swap is found in the node's list. */
+export interface PendingSwapStart {
+  readonly direction: LoopDirection;
+  readonly amountSat: bigint;
+  /** Unique per attempt. */
+  readonly label: string;
+}
+
+/** A label unique to one start attempt, so the swap can be found if the reply is lost. */
+function attemptLabel(direction: LoopDirection): string {
+  const token = `${Date.now().toString(36)}${Math.floor(Math.random() * 36 ** 4).toString(36).padStart(4, '0')}`;
+  return `mobile ${direction} ${token}`;
 }
 
 export interface RemoteSwapsState {
@@ -1064,7 +1094,14 @@ export class RemoteSwapStore {
 
   // ——— draft ———
 
+  /** True while a start whose reply was lost hasn't been found or ruled out in the swap list. */
+  hasUncertainStart(): boolean {
+    return this.state.draft?.stage === 'uncertain';
+  }
+
   beginDraft(direction: LoopDirection, amountSat?: bigint): void {
+    // Keep the unchecked attempt: a new swap must wait until it is checked.
+    if (this.hasUncertainStart()) return;
     this.set({
       draft: {
         direction,
@@ -1079,18 +1116,23 @@ export class RemoteSwapStore {
   }
 
   editAmount(text: string): void {
+    if (this.hasUncertainStart()) return;
     this.patchDraft({ amountText: text, error: null, stage: 'edit', quote: null });
   }
 
   editDestination(text: string): void {
+    if (this.hasUncertainStart()) return;
     this.patchDraft({ destinationText: text, error: null, stage: 'edit', quote: null });
   }
 
   backToEdit(): void {
+    // A start that may have happened must be checked first.
+    if (this.hasUncertainStart()) return;
     this.patchDraft({ stage: 'edit', error: null });
   }
 
   discardDraft(): void {
+    if (this.hasUncertainStart()) return;
     this.set({ draft: null });
   }
 
@@ -1174,17 +1216,30 @@ export class RemoteSwapStore {
         this.patchDraft({ stage: 'review', quote: fresh, error: refusal });
         return null;
       }
-      const label = `mobile ${draft.direction}`;
-      const started =
-        draft.direction === 'loop-out'
-          ? await port.loopOut?.call(port, {
-              amountSat: authorization.amountSat,
-              destAddress: draft.destinationText.trim() === '' ? null : draft.destinationText.trim(),
-              sweepConfTarget: fresh.confTarget,
-              label,
-              ...loopOutFeeLimits(freshRaw),
-            })
-          : await port.loopIn?.call(port, { amountSat: authorization.amountSat, label, ...loopInFeeLimits(freshRaw) });
+      const label = attemptLabel(draft.direction);
+      const pending: PendingSwapStart = { direction: draft.direction, amountSat: authorization.amountSat, label };
+      let started: LoopSwapStarted | undefined;
+      try {
+        started =
+          draft.direction === 'loop-out'
+            ? await port.loopOut?.call(port, {
+                amountSat: authorization.amountSat,
+                destAddress: draft.destinationText.trim() === '' ? null : draft.destinationText.trim(),
+                sweepConfTarget: fresh.confTarget,
+                label,
+                ...loopOutFeeLimits(freshRaw),
+              })
+            : await port.loopIn?.call(port, { amountSat: authorization.amountSat, label, ...loopInFeeLimits(freshRaw) });
+      } catch (error) {
+        // The request went to loopd and the answer was lost: it may have
+        // started. Never "did not start"; find it in the node's list first.
+        this.patchDraft({
+          stage: 'uncertain',
+          pendingStart: pending,
+          error: `The swap may have started — your node's reply was lost (${describe(error)}). Checking your node's swaps before anything else.`,
+        });
+        return this.checkUncertainStart();
+      }
       if (started === undefined) return null;
       this.set({ draft: null });
       this.watch(started.swapId);
@@ -1192,9 +1247,45 @@ export class RemoteSwapStore {
       this.options.onSwapChanged?.();
       return started.swapId;
     } catch (error) {
+      // Authorization or the fresh quote failed: no start request was sent.
       this.patchDraft({ stage: 'review', error: `The swap did not start: ${describe(error)}` });
       return null;
     }
+  }
+
+  /**
+   * After a start whose reply was lost: reloads the node's swaps and looks
+   * for the one this attempt asked for (its label, amount and direction).
+   * Found → follows it and returns its id. Not found → back to review with
+   * what was checked (a new confirm is a new attempt with a fresh quote).
+   * The list can't be read → stays `uncertain`; confirming stays blocked.
+   */
+  async checkUncertainStart(): Promise<string | null> {
+    const draft = this.state.draft;
+    const pending = draft?.pendingStart ?? null;
+    if (draft === null || draft.stage !== 'uncertain' || pending === null) return null;
+    await this.loadSwaps();
+    if (this.state.swapsStatus !== 'loaded') {
+      this.patchDraft({
+        error: `The swap may have started, and your node's swap list could not be read${this.state.swapsError === null ? '' : ` (${this.state.swapsError})`}. Check again before starting another swap.`,
+      });
+      return null;
+    }
+    const found = (this.state.swaps ?? []).find(
+      (s) => s.label === pending.label && s.amountSat === pending.amountSat && s.direction === pending.direction,
+    );
+    if (found !== undefined) {
+      this.set({ draft: null });
+      this.watch(found.id);
+      this.options.onSwapChanged?.();
+      return found.id;
+    }
+    this.patchDraft({
+      stage: 'review',
+      pendingStart: null,
+      error: `Your node's swap list has no swap from that attempt (label "${pending.label}"). Check Transfers if you're unsure; confirming again starts a new attempt with a fresh quote.`,
+    });
+    return null;
   }
 
   // ——— progress ———

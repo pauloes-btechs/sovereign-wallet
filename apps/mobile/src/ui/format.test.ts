@@ -6,6 +6,7 @@ import {
   formatAmount,
   formatBtcNumber,
   formatSatsNumber,
+  amountInputProblem,
   maskText,
   parseAmountInput,
   shortenMiddle,
@@ -61,6 +62,22 @@ describe('amount input parsing', () => {
     expect(parseAmountInput('0.000000001', 'btc')).toBeNull(); // sub-satoshi
     expect(parseAmountInput('.', 'btc')).toBeNull();
     expect(parseAmountInput('0.00000000', 'btc')).toBeNull();
+  });
+
+  it('accepts commas only as thousands groups in the whole part, and says why otherwise', () => {
+    expect(parseAmountInput('1,000.5', 'btc')).toBe(100_050_000_000n);
+    expect(parseAmountInput('21,000,000', 'btc')).toBe(2_100_000_000_000_000n);
+    expect(amountInputProblem('1,000.5', 'btc')).toBeNull();
+    for (const text of ['0,001', '1,5', '1,00', '0.001,5', '1,0000', ',5', '1,000,5']) {
+      expect(parseAmountInput(text, 'btc')).toBeNull();
+      expect(amountInputProblem(text, 'btc')).toMatch(/Use a dot for decimals/);
+    }
+    expect(parseAmountInput('0.001', 'btc')).toBe(100_000n);
+    // The same rule for sats: "1,5" is not 15 sats.
+    expect(parseAmountInput('1,5', 'sats')).toBeNull();
+    expect(parseAmountInput('12,345', 'sats')).toBe(12_345n);
+    expect(amountInputProblem('abc', 'sats')).toBe('Enter a whole number of sats.');
+    expect(amountInputProblem('', 'btc')).toBeNull();
   });
 });
 

@@ -574,6 +574,8 @@ export class ModeAController {
 
   /** "Back to edit" from Review: drops the approved quote, keeps the draft. */
   editSend(): void {
+    // A payment that was handed off can't be edited back into a draft.
+    if (this.state.sendStatus === 'sending') return;
     this.pendingPayload = undefined;
     this.pendingMaxFeeSat = undefined;
     this.set({ sendStatus: 'idle', sendQuote: null, sendFeeSat: null, sendAmountSat: null, sendError: null });
@@ -585,21 +587,64 @@ export class ModeAController {
    * so a crash here is reconciled by `reconcilePending`, never re-dispatched.
    */
   async confirmSend(): Promise<void> {
+    // Only a payment sitting on Review can be confirmed. A second tap while
+    // one is sending, or a confirm after it settled/failed, is ignored — it
+    // must never submit (and dispatch) the same payment again, nor overwrite
+    // the in-flight state with "failed".
+    if (this.state.sendStatus !== 'review') return;
     const payload = this.pendingPayload;
     if (payload === undefined) {
       this.set({ sendStatus: 'failed', sendError: 'No approved payment to send.' });
       return;
     }
+    const maxFeeSat = this.pendingMaxFeeSat;
+    // Take the approved payload before the first await: the review approves
+    // exactly one dispatch.
+    this.pendingPayload = undefined;
+    this.pendingMaxFeeSat = undefined;
+    this.pendingIntentId = undefined;
     const kind: PaymentKind = 'invoice' in payload ? 'lightning-invoice' : 'onchain';
     this.set({ sendStatus: 'sending', sendError: null });
+    let intentId: string | undefined;
     try {
-      const intent = await this.engine.submit(kind, payload, this.pendingMaxFeeSat);
-      this.pendingIntentId = intent.intentId;
-      const executed = await this.engine.execute(intent.intentId);
+      const intent = await this.engine.submit(kind, payload, maxFeeSat);
+      intentId = intent.intentId;
+      this.pendingIntentId = intentId;
+      const executed = await this.engine.execute(intentId);
       await this.applySendOutcome(executed);
     } catch (error) {
-      this.set({ sendStatus: 'failed', sendError: errorMessage(error) });
+      await this.applySendError(error, intentId);
     }
+  }
+
+  /**
+   * A throw from submit (nothing persisted for dispatch) is a plain failure.
+   * A throw once the intent exists may have come after the request reached
+   * the wallet (e.g. the dispatcher's own timeout): the payment stays
+   * in-flight with "Check status" — never "failed", never "nothing was
+   * sent". The one exception is an intent the store still has as
+   * `authorized`, which execute never got as far as dispatching.
+   */
+  private async applySendError(error: unknown, intentId: string | undefined): Promise<void> {
+    const message = errorMessage(error);
+    if (intentId === undefined) {
+      this.set({ sendStatus: 'failed', sendError: message });
+      return;
+    }
+    let persisted: PaymentIntent['state'] | undefined;
+    if (this.engine.intentState !== undefined) {
+      try {
+        persisted = await this.engine.intentState(intentId);
+      } catch {
+        persisted = undefined;
+      }
+    }
+    if (persisted === 'authorized') {
+      this.pendingIntentId = undefined;
+      this.set({ sendStatus: 'failed', sendError: message });
+      return;
+    }
+    this.set({ sendStatus: 'sending', sendError: message });
   }
 
   /**

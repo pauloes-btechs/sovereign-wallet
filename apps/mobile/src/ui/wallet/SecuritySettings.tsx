@@ -49,7 +49,7 @@ function utcDate(iso: string): string {
   return `${text.slice(0, 10)} ${text.slice(11, 16)} UTC`;
 }
 
-type PinSheetMode = 'set' | 'change' | 'remove' | null;
+type PinSheetMode = 'set' | 'change' | 'remove' | 'biometric' | null;
 
 export function SecurityScreen({ host }: { host: WalletHost }): ReactNode {
   const security = useWalletSecurityServices();
@@ -107,7 +107,12 @@ export function SecurityScreen({ host }: { host: WalletHost }): ReactNode {
           disabledReason={biometricBlocker}
           onChange={(next) => {
             setBiometricError(null);
-            void security.lock.setBiometricEnabled(next).then((result) => {
+            // Turning it on asks for the PIN first (in the sheet); turning it off doesn't.
+            if (next) {
+              setSheet('biometric');
+              return;
+            }
+            void security.lock.setBiometricEnabled(false).then((result) => {
               if (!result.ok) setBiometricError(result.message);
             });
           }}
@@ -217,6 +222,7 @@ const SHEET_TITLES: Record<Exclude<PinSheetMode, null>, string> = {
   set: 'Set up PIN',
   change: 'Change PIN',
   remove: 'Turn off PIN',
+  biometric: 'Turn on biometric unlock',
 };
 
 /** One sheet for set / change / remove, each asking only for what it needs. */
@@ -263,6 +269,10 @@ function PinSheet({
 
   const submit = (): void => {
     if (mode === null) return;
+    if (mode === 'biometric') {
+      void lock.setBiometricEnabled(true, current).then((r) => finish(r, 'Biometric unlock is on. Your PIN still works too.'));
+      return;
+    }
     if (mode !== 'remove') {
       const problem = pinFormatProblem(next);
       if (problem !== null) {
@@ -279,7 +289,16 @@ function PinSheet({
     if (mode === 'remove') void lock.removePin(current).then((r) => finish(r, 'PIN turned off. Biometric unlock is off too.'));
   };
 
-  const action = mode === null ? '' : mode === 'set' ? 'Set PIN' : mode === 'change' ? 'Change PIN' : 'Turn off PIN';
+  const action =
+    mode === null
+      ? ''
+      : mode === 'set'
+        ? 'Set PIN'
+        : mode === 'change'
+          ? 'Change PIN'
+          : mode === 'biometric'
+            ? 'Continue'
+            : 'Turn off PIN';
   return (
     <Sheet
       open={mode !== null}
@@ -299,8 +318,22 @@ function PinSheet({
           Without a PIN, anyone holding your unlocked phone can open the wallet and see your balances.
         </Text>
       )}
-      {mode !== 'set' && <PinField label="Current PIN" value={current} onChangeText={setCurrent} autoFocus />}
-      {mode !== 'remove' && (
+      {mode === 'biometric' && (
+        <Text style={base.dim}>
+          Enter your PIN, then confirm with your fingerprint or face. If the phone&apos;s biometrics
+          change later, biometric unlock turns itself off and the app asks for your PIN.
+        </Text>
+      )}
+      {mode !== 'set' && (
+        <PinField
+          label="Current PIN"
+          value={current}
+          onChangeText={setCurrent}
+          onSubmit={mode === 'biometric' ? submit : undefined}
+          autoFocus
+        />
+      )}
+      {mode !== 'remove' && mode !== 'biometric' && (
         <>
           <PinField label="New PIN" value={next} onChangeText={setNext} autoFocus={mode === 'set'} />
           <PinField label="Confirm new PIN" value={confirm} onChangeText={setConfirm} onSubmit={submit} />

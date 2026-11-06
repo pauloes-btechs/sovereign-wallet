@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import NativeApp from '../../App.js';
 import type { LncRpcPort } from '../../flows/modeBRemoteController.js';
 import { SimulatedLncPort } from '../../testing/simulatedLncPort.js';
+import { simSegwitAddress } from '../../testing/simInvoice.js';
 
 const TEN_WORDS = 'abstract acid acrobat actor actual admit adopt adore advance adventure';
 
@@ -49,7 +50,9 @@ async function createInvoice(amount: string, memo: string): Promise<string> {
 /** A node whose payment resolves only when the test says so. */
 class DeferredPort extends SimulatedLncPort {
   release: (() => void) | null = null;
+  calls = 0;
   override payInvoice(request: Parameters<SimulatedLncPort['payInvoice']>[0]): ReturnType<SimulatedLncPort['payInvoice']> {
+    this.calls += 1;
     return new Promise((resolve) => {
       this.release = () => resolve(super.payInvoice(request));
     });
@@ -149,5 +152,34 @@ describe('remote node Send and Receive', () => {
     await waitFor(() => {
       expect(screen.queryByText('Sending payment')).toBeNull();
     });
+  });
+
+  it('a payment link whose amount disagrees with its invoice says so on the review', async () => {
+    const port = new SimulatedLncPort();
+    await pairWith(port);
+    const invoice = await createInvoice('2100', 'Mismatch');
+    tab('Send');
+    typeInto('Pay to', `bitcoin:${simSegwitAddress('regtest', 'e2e-mismatch')}?amount=0.0001&lightning=${invoice}`);
+    expect(await screen.findByText(/asks for 10,000 sats on-chain, but its Lightning invoice is for 2,100 sats/)).toBeTruthy();
+    click('Review payment');
+    await screen.findByLabelText('Confirm and send');
+    expect(screen.getByText(/asks for 10,000 sats on-chain, but its Lightning invoice is for 2,100 sats/)).toBeTruthy();
+    expect(port.payRequests).toHaveLength(0);
+  });
+
+  it('a double tap on "Confirm and send" dispatches the payment once', async () => {
+    const port = new DeferredPort();
+    await pairWith(port);
+    const invoice = await createInvoice('1500', 'Twice');
+    tab('Send');
+    typeInto('Pay to', invoice);
+    click('Review payment');
+    const confirm = await screen.findByLabelText('Confirm and send');
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(await screen.findByText('Sending payment')).toBeTruthy();
+    port.release?.();
+    expect(await screen.findByText('Payment sent.')).toBeTruthy();
+    expect(port.calls).toBe(1);
   });
 });
