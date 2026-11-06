@@ -6,7 +6,7 @@
  * mode, lnd's aezeed in node mode), never by the app.
  */
 import { generateMnemonic, validateMnemonic } from '@scure/bip39';
-import { wordlist } from '@scure/bip39/wordlists/english';
+import { wordlist } from '@scure/bip39/wordlists/english.js';
 
 /** 128 bits → 12 words; 256 bits → 24 words (BIP-39). */
 export type MnemonicStrength = 128 | 256;

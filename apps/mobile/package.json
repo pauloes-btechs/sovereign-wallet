@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@noble/hashes": "1.8.0",
-    "@scure/bip39": "1.6.0",
+    "@scure/bip39": "2.4.0",
     "@sovereign/liquidity": "workspace:*",
     "@sovereign/payments": "workspace:*",
     "@sovereign/ui": "workspace:*",
