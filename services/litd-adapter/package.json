@@ -26,7 +26,7 @@
     "@sovereign/harness-regtest": "workspace:*",
     "@types/node": "^22.20.5",
     "@types/ws": "^8.18.2",
-    "typescript": "^5.7.2",
+    "typescript": "^6.0.3",
     "vitest": "^3.0.5",
     "ws": "^8.22.0"
   },

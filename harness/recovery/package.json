@@ -22,7 +22,7 @@
     "@grpc/grpc-js": "^1.14.7",
     "@protobuf-ts/grpc-transport": "^2.11.1",
     "@types/node": "^22.20.5",
-    "typescript": "^5.7.2",
+    "typescript": "^6.0.3",
     "vitest": "^3.0.5"
   }
 }
