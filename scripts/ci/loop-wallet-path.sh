@@ -107,6 +107,24 @@ wait_until "channel to lndserver active" 180 bash -c "curl -sf -H 'authorization
 api GET /channels | jq '.open'
 echo "::endgroup::"
 
+# Active is not routable yet: lnd registers the channel's HTLC link with its
+# switch a moment after the channel turns active, and a payment in that window
+# fails at once with INSUFFICIENT_BALANCE (also documented in
+# lnc.integration.test.ts). Loop's first step is a payment (the L402 token),
+# so prove the channel carries one before swapping: pay a small invoice from
+# the server's node through the wallet, retrying until it settles.
+echo "::group::Prove the channel can route a payment"
+routable=false
+for attempt in $(seq 1 20); do
+  probe="$(rt lndserver addinvoice --amt 1000 --memo routability-probe | jq -r '.payment_request')"
+  res="$(api POST /payments "$(jq -nc --arg pr "$probe" '{paymentRequest:$pr,feeLimitSat:"10"}')")" || true
+  echo "probe attempt=$attempt: $(jq -c '{status, failureReason, feeSat}' <<<"$res" 2>/dev/null || echo "$res")"
+  if [[ "$(jq -r '.status' <<<"$res" 2>/dev/null)" == succeeded ]]; then routable=true; break; fi
+  sleep 3
+done
+[[ "$routable" == true ]] || fail "The channel never routed a 1,000-sat payment to the server's node"
+echo "::endgroup::"
+
 LND_INVOICE_OFFSET=0
 note_server_invoices() { LND_INVOICE_OFFSET="$(rt lndserver listinvoices --max_invoices 1 | jq -r '.last_index_offset // 0')"; }
 
@@ -121,7 +139,7 @@ pay_new_l402_invoice() {
   invoice="$(rt lndserver listinvoices --max_invoices 1 | jq -r '.invoices[-1] | select(.state == "OPEN") | .payment_request')"
   [[ -n "$invoice" ]] || return 1
   echo "Paying aperture's L402 invoice through the wallet (POST /payments)"
-  api POST /payments "$(jq -nc --arg pr "$invoice" '{paymentRequest:$pr,feeLimitSat:"10"}')" | jq '{status, feeSat}'
+  api POST /payments "$(jq -nc --arg pr "$invoice" '{paymentRequest:$pr,feeLimitSat:"10"}')" | jq '{status, failureReason, feeSat}'
 }
 
 start_swap() {
