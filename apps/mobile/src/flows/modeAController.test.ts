@@ -20,7 +20,8 @@ import type {
   ModeAEnginePort,
   ModeAProviderPort,
 } from './modeAController.js';
-import { ModeAController, parseSats, summarizeVtxos, tabForScreen } from './modeAController.js';
+import { ModeAController, isModeAPhaseScreen, parseSats, summarizeVtxos } from './modeAController.js';
+import { explainSendFailure } from './sendFlow.js';
 
 let idSeq = 0;
 const nextId = (prefix: string): string => {
@@ -196,12 +197,18 @@ class FakeEngine implements ModeAEnginePort {
     needsRecovery: [],
   };
 
+  /** Driver-set: submit()/execute() throw this instead of returning. */
+  submitThrows: Error | undefined;
+  executeThrows: Error | undefined;
+
   async submit(kind: 'lightning-invoice' | 'onchain', payload: unknown): Promise<PaymentIntent> {
+    if (this.submitThrows) throw this.submitThrows;
     this.submitted.push({ kind, payload });
     return { intentId: nextId('intent'), kind, payload, state: 'authorized', attempts: [] };
   }
   async execute(intentId: string): Promise<PaymentIntent> {
     this.executed.push(intentId);
+    if (this.executeThrows) throw this.executeThrows;
     return {
       intentId,
       kind: 'lightning-invoice',
@@ -388,6 +395,89 @@ describe('ModeAController — send', () => {
     expect(s.sendError).toContain('could pay twice');
   });
 
+  it('two concurrent confirms submit and execute the payment once; a confirm after it settled submits nothing', async () => {
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await Promise.all([controller.confirmSend(), controller.confirmSend()]);
+    expect(engine.submitted).toHaveLength(1);
+    expect(engine.executed).toHaveLength(1);
+    expect(controller.getState().sendStatus).toBe('settled');
+
+    await controller.confirmSend();
+    expect(engine.submitted).toHaveLength(1);
+    expect(controller.getState().sendStatus).toBe('settled');
+  });
+
+  it('a second confirm while the first is in flight does not overwrite the in-flight state', async () => {
+    engine.executeOutcome = 'in-flight';
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await controller.confirmSend();
+    await controller.confirmSend();
+    expect(engine.submitted).toHaveLength(1);
+    expect(controller.getState().sendStatus).toBe('sending');
+    expect(controller.getState().sendError).toBeNull();
+    // Editing a handed-off payment back into a draft is refused too.
+    controller.editSend();
+    expect(controller.getState().sendStatus).toBe('sending');
+  });
+
+  it('an error thrown after the intent was submitted keeps the payment in flight (check status), never "failed"', async () => {
+    engine.executeThrows = new WavelengthError('Dispatch for send ph-1 exceeded 30000ms', 'wavelength_error');
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await controller.confirmSend();
+    const s = controller.getState();
+    expect(engine.executed).toHaveLength(1);
+    expect(s.sendStatus).toBe('sending'); // the in-flight view, with "Check payment status"
+    expect(s.sendError).toBe('Dispatch for send ph-1 exceeded 30000ms');
+    const explained = explainSendFailure(s.sendError, 'after-dispatch');
+    expect(explained).toMatchObject({ unknownOutcome: true, safeToRetry: false });
+    expect(explained.detail).not.toMatch(/Nothing was sent/);
+
+    // "Check status" reconciles it — and never re-dispatches.
+    engine.recoverReport = { reconciled: [engine.executed[0] ?? ''], needsRecovery: [] };
+    await controller.reconcilePending();
+    expect(controller.getState().sendStatus).toBe('settled');
+    expect(engine.executed).toHaveLength(1);
+  });
+
+  it('even a "service unavailable" thrown after submit is in flight, not "nothing was sent"', async () => {
+    engine.executeThrows = new Error('rpc error: code = Unavailable desc = transport is closing');
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await controller.confirmSend();
+    expect(controller.getState().sendStatus).toBe('sending');
+  });
+
+  it('an error from submit (before anything is dispatched) is a plain failure', async () => {
+    engine.submitThrows = new Error('rpc error: code = Unavailable desc = transport is closing');
+    controller.setSendDestination('lnbcrt1-invoice');
+    await controller.reviewSend(100);
+    await controller.confirmSend();
+    const s = controller.getState();
+    expect(s.sendStatus).toBe('failed');
+    expect(engine.executed).toHaveLength(0);
+    expect(explainSendFailure(s.sendError, 'before-dispatch')).toMatchObject({ detail: 'Nothing was sent.', safeToRetry: true });
+  });
+
+  it('a throw from execute while the store still has the intent as authorized is a plain failure', async () => {
+    class StatefulEngine extends FakeEngine {
+      async intentState(): Promise<PaymentIntent['state']> {
+        return 'authorized';
+      }
+    }
+    const stateful = new StatefulEngine();
+    stateful.executeThrows = new Error('store write failed');
+    const c = new ModeAController({ provider, engine: stateful, network: 'regtest', dataDir: '/tmp/mode-a-unit' });
+    await c.start();
+    c.setSendDestination('lnbcrt1-invoice');
+    await c.reviewSend(100);
+    await c.confirmSend();
+    expect(c.getState().sendStatus).toBe('failed');
+    expect(c.getState().sendError).toBe('store write failed');
+  });
+
   it('sendAnother resets the draft and clears pending intent state', async () => {
     controller.setSendDestination('lnbcrt1-invoice');
     await controller.reviewSend(100);
@@ -499,22 +589,52 @@ describe('ModeAController — balance status, activity, tabs', () => {
     expect(controller.getState().activity).toBeNull();
   });
 
-  it('maps screens to tabs and keeps the Pay draft when Pay is re-selected', () => {
-    expect(tabForScreen('onboarding')).toBeNull();
-    expect(tabForScreen('capabilities')).toBe('more');
-    expect(tabForScreen('receive')).toBe('pay');
+  it('five tabs: Send and Receive are separate tabs, each keeps its draft across tab switches', () => {
+    expect(isModeAPhaseScreen('onboarding')).toBe(true);
+    expect(isModeAPhaseScreen('wallet')).toBe(false);
+    expect(controller.getState().nav).toBeNull(); // no tabs before a wallet exists
 
-    controller.selectTab('pay');
+    controller.selectTab('send');
     expect(controller.getState().screen).toBe('send');
-    controller.navigate('receive');
-    controller.setReceiveAmount('5000');
-    controller.selectTab('pay');
+    controller.selectTab('receive');
     expect(controller.getState().screen).toBe('receive');
+    controller.setReceiveAmount('5000');
+    controller.selectTab('send');
+    controller.selectTab('receive');
     expect(controller.getState().receiveAmountText).toBe('5000');
 
-    controller.selectTab('home');
+    controller.selectTab('wallet');
+    expect(controller.getState().screen).toBe('wallet');
+    controller.navigate('capabilities'); // pushed onto the Wallet stack
+    expect(controller.getState().screen).toBe('capabilities');
+    expect(controller.getState().nav?.tab).toBe('wallet');
+    expect(controller.goBack()).toBe(true);
+    expect(controller.getState().screen).toBe('wallet');
+    expect(controller.goBack()).toBe(true); // tab root → Home
+    expect(controller.getState().screen).toBe('home');
+    expect(controller.goBack()).toBe(false); // Home root: the OS decides
+
+    // "Done" after a payment clears the drafts and lands on Home.
+    controller.selectTab('receive');
+    controller.backToHome();
     expect(controller.getState().screen).toBe('home');
     expect(controller.getState().receiveAmountText).toBe('');
+  });
+
+  it('re-tapping the active tab pops its stack to the root', () => {
+    controller.selectTab('home');
+    controller.navigate('capabilities');
+    expect(controller.getState().screen).toBe('capabilities');
+    controller.selectTab('home');
+    expect(controller.getState().screen).toBe('home');
+  });
+
+  it('walletCapabilities reflects the live operator state with a reason', async () => {
+    await controller.start();
+    controller.confirmBackup();
+    expect(controller.walletCapabilities().features.lightningSend.available).toBe(true);
+    expect(controller.walletCapabilities()).toBe(controller.walletCapabilities()); // stable per state
+    expect(controller.walletCapabilities().features.loopSwaps.available).toBe(false);
   });
 });
 
@@ -557,6 +677,16 @@ describe('ModeAController — restore', () => {
     expect(s.restoreSummary).toEqual({ recoveredVTXOs: 3, recoveryRan: false });
     expect(provider.calls.createWallets[0]?.recoverState).toBe(true);
     expect(provider.calls.createWallets[0]?.mnemonic).toHaveLength(12);
+  });
+
+  it('drops the typed phrase and password from state once the restore succeeds', async () => {
+    controller.setRestoreWords('w '.repeat(12).trim());
+    controller.setRestorePassword('passphrase-1');
+    await controller.restore();
+    const s = controller.getState();
+    expect(s.restoreStatus).toBe('restored');
+    expect(s.restoreWordsText).toBe('');
+    expect(s.restorePassword).toBe('');
   });
 
   it('maps a deadline miss to the batch-expired unilateral-exit fallback', async () => {

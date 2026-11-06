@@ -18,6 +18,7 @@ import {
   entryMatchesBackendRef,
   entryMatchesOnchainPayload,
   isInboundSettled,
+  mapEntryToActivityDetail,
   mapEntryToRecord,
   paymentKindOfEntry,
   reconcileFromEntry,
@@ -172,5 +173,68 @@ describe('describeEntryFailure', () => {
     const text = describeEntryFailure(entry({ status: EntryStatusFailed, failureCode: EntryFailureCodeTimedOut, failureReason: 'swap timed out' }));
     expect(text).toContain('timed_out');
     expect(text).toContain('swap timed out');
+  });
+});
+
+describe('mapEntryToActivityDetail', () => {
+  it('carries the reported receipt fields and nulls what the daemon left empty', () => {
+    const detail = mapEntryToActivityDetail(
+      entry({
+        kind: EntryKindSend,
+        status: EntryStatusComplete,
+        note: 'coffee',
+        request: {
+          type: 'lightning',
+          lightningInvoice: 'lnbcrt1-detail',
+          paymentHash: 'ph-req',
+          onchainAddress: '',
+          arkAddress: '',
+        },
+        progress: {
+          phase: EntryPhaseConfirmed,
+          phaseLabel: 'confirmed',
+          paymentHash: 'ph-3',
+          txid: '',
+          confirmationHeight: 0,
+          vTXOOutpoint: '',
+          preimage: 'pre-3',
+        },
+      }),
+      'wavelength',
+    );
+    expect(detail.entryId).toBe('entry-1');
+    expect(detail.rail).toBe('lightning');
+    expect(detail.feeSat).toBe(100n);
+    expect(detail.note).toBe('coffee');
+    expect(detail.phase).toBe('confirmed');
+    expect(detail.paymentHash).toBe('ph-3');
+    expect(detail.preimage).toBe('pre-3');
+    expect(detail.txid).toBeNull();
+    expect(detail.confirmationHeight).toBeNull();
+    expect(detail.invoice).toBe('lnbcrt1-detail');
+    expect(detail.onchainAddress).toBeNull();
+    // Failure fields only accompany a failed entry.
+    expect(detail.failureCode).toBeNull();
+    expect(detail.record.status).toBe('settled');
+  });
+
+  it('labels a Lightning receive without a request echo as Lightning, a deposit as on-chain', () => {
+    expect(mapEntryToActivityDetail(entry({ kind: 'receive', request: undefined }), 'wavelength').rail).toBe('lightning');
+    expect(mapEntryToActivityDetail(entry({ kind: 'deposit', request: undefined }), 'wavelength').rail).toBe('onchain');
+    expect(
+      mapEntryToActivityDetail(
+        entry({ kind: 'send', request: { type: EntryRequestTypeOnchain, lightningInvoice: '', paymentHash: '', onchainAddress: 'bcrt1q', arkAddress: '' } }),
+        'wavelength',
+      ).onchainAddress,
+    ).toBe('bcrt1q');
+  });
+
+  it('reports the failure code and reason of a failed entry', () => {
+    const detail = mapEntryToActivityDetail(
+      entry({ status: EntryStatusFailed, failureCode: EntryFailureCodeExpired, failureReason: 'invoice expired' }),
+      'wavelength',
+    );
+    expect(detail.failureReason).toBe('invoice expired');
+    expect(detail.failureCode).toBe(EntryFailureCodeExpired);
   });
 });

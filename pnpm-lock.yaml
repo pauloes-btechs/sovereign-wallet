@@ -108,9 +108,15 @@ importers:
 
   apps/mobile:
     dependencies:
+      '@noble/hashes':
+        specifier: 1.8.0
+        version: 1.8.0
       '@scure/bip39':
         specifier: 1.6.0
         version: 1.6.0
+      '@sovereign/liquidity':
+        specifier: workspace:*
+        version: link:../../packages/liquidity
       '@sovereign/payments':
         specifier: workspace:*
         version: link:../../packages/payments
@@ -123,12 +129,18 @@ importers:
       '@sovereign/wavelength-adapter':
         specifier: workspace:*
         version: link:../../services/wavelength-adapter
+      qrcode-generator:
+        specifier: 1.4.4
+        version: 1.4.4
       react:
         specifier: ^19.3.0
         version: 19.3.1
       react-native:
         specifier: 0.88.1
         version: 0.88.1(@babel/core@7.29.7)(@react-native-community/cli@20.2.0(typescript@5.9.3))(@react-native/metro-config@0.88.1(@babel/core@7.29.7))(@types/react@19.3.0)(react@19.3.1)
+      react-native-keychain:
+        specifier: 10.0.0
+        version: 10.0.0
     devDependencies:
       '@babel/core':
         specifier: ^7.25.2
@@ -149,6 +161,9 @@ importers:
         specifier: 20.2.0
         version: 20.2.0
       '@react-native/babel-preset':
+        specifier: 0.88.1
+        version: 0.88.1(@babel/core@7.29.7)
+      '@react-native/codegen':
         specifier: 0.88.1
         version: 0.88.1(@babel/core@7.29.7)
       '@react-native/gradle-plugin':
@@ -3990,6 +4005,10 @@ packages:
 
   react-is@18.3.1:
     resolution: {integrity: sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==}
+
+  react-native-keychain@10.0.0:
+    resolution: {integrity: sha512-YzPKSAnSzGEJ12IK6CctNLU79T1W15WDrElRQ+1/FsOazGX9ucFPTQwgYe8Dy8jiSEDJKM4wkVa3g4lD2Z+Pnw==}
+    engines: {node: '>=16'}
 
   react-native-web@0.21.4:
     resolution: {integrity: sha512-77B6KlalB4osNIck91TNFixPkYPsTbuNEvw8P7IV+4v4/5wZSBRKZnw0Zhx6YjuauDTz71gc8IW+fVhcBMjr5A==}
@@ -8564,6 +8583,8 @@ snapshots:
   react-is@17.0.2: {}
 
   react-is@18.3.1: {}
+
+  react-native-keychain@10.0.0: {}
 
   react-native-web@0.21.4(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:

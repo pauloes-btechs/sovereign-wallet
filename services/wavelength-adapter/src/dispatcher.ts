@@ -95,19 +95,29 @@ export function isOnchainSendPayload(payload: unknown): payload is OnchainSendPa
 export interface WavelengthDispatcherOptions {
   readonly client: WavelengthClient;
   readonly sdkPin: string;
-  /** Dispatch attempt timeout; an expired attempt is ambiguous, never retried. */
-  readonly dispatchTimeoutMs?: number;
+  /**
+   * Dispatch attempt timeout; an expired attempt is ambiguous, never retried.
+   * A function is read at every dispatch, so a host can follow a setting the
+   * user changes while the wallet runs.
+   */
+  readonly dispatchTimeoutMs?: number | (() => number | undefined);
 }
 
 export class WavelengthPaymentDispatcher implements PaymentDispatcher {
   private readonly client: WavelengthClient;
   private readonly sdkPin: string;
-  private readonly dispatchTimeoutMs: number;
+  private readonly timeoutSource: number | (() => number | undefined) | undefined;
 
   constructor(options: WavelengthDispatcherOptions) {
     this.client = options.client;
     this.sdkPin = options.sdkPin;
-    this.dispatchTimeoutMs = options.dispatchTimeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS;
+    this.timeoutSource = options.dispatchTimeoutMs;
+  }
+
+  /** The timeout for the dispatch starting now (a valid positive number, else the default). */
+  private get dispatchTimeoutMs(): number {
+    const raw = typeof this.timeoutSource === 'function' ? this.timeoutSource() : this.timeoutSource;
+    return raw !== undefined && Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_DISPATCH_TIMEOUT_MS;
   }
 
   /** backendRef comes from the stored quote — the budget was enforced at authorization. */
@@ -278,16 +288,17 @@ export class WavelengthPaymentDispatcher implements PaymentDispatcher {
   /** Races the SDK call against the dispatch timeout — expiry is an error (ambiguous). */
   private async withTimeout<T>(call: Promise<T>, label: string): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const limitMs = this.dispatchTimeoutMs; // read once per dispatch
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
         () =>
           reject(
             new WavelengthError(
-              `Dispatch for ${label} exceeded ${this.dispatchTimeoutMs}ms`,
+              `Dispatch for ${label} exceeded ${limitMs}ms`,
               'wavelength_error',
             ),
           ),
-        this.dispatchTimeoutMs,
+        limitMs,
       );
     });
     try {

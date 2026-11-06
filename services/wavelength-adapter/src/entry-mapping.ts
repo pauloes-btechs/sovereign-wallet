@@ -134,6 +134,85 @@ export function mapEntryToRecord(entry: Entry, providerId: ProviderId): Transact
   };
 }
 
+/**
+ * One activity entry as a receipt: the history record plus every field the
+ * daemon reported for it. Empty strings and zero heights (the SDK's "not
+ * known yet") become null, so hosts can say a field was not reported rather
+ * than show a blank.
+ */
+export interface WavelengthActivityDetail {
+  readonly record: TransactionRecord;
+  /** The daemon's entry id — unique within the wallet's activity. */
+  readonly entryId: string;
+  /** send · receive (Lightning via the swap service) · deposit (on-chain boarding) · exit (to on-chain). */
+  readonly entryKind: 'send' | 'receive' | 'deposit' | 'exit';
+  /** The rail the entry moved over, from its request echo or its kind. */
+  readonly rail: 'lightning' | 'onchain' | 'ark';
+  /** Fee the daemon recorded for the entry, in sats. */
+  readonly feeSat: bigint;
+  readonly note: string | null;
+  /** Who the wallet dealt with, as the daemon names it (e.g. `swap-server`, `chain`). */
+  readonly counterparty: string | null;
+  readonly createdAt: string | null;
+  readonly updatedAt: string | null;
+  /** Coarse lifecycle phase; null when the daemon gave no hint. */
+  readonly phase: EntryPhase | null;
+  readonly paymentHash: string | null;
+  readonly txid: string | null;
+  readonly preimage: string | null;
+  readonly confirmationHeight: number | null;
+  readonly vtxoOutpoint: string | null;
+  readonly failureReason: string | null;
+  readonly failureCode: string | null;
+  readonly invoice: string | null;
+  readonly onchainAddress: string | null;
+  readonly arkAddress: string | null;
+}
+
+const orNull = (value: string | undefined): string | null =>
+  value === undefined || value === '' ? null : value;
+
+/** Maps an SDK entry onto a receipt (record + reported fields). Mode A only. */
+export function mapEntryToActivityDetail(entry: Entry, providerId: ProviderId): WavelengthActivityDetail {
+  const record = mapEntryToRecord(entry, providerId);
+  const progress = entry.progress;
+  const request = entry.request;
+  const rail: WavelengthActivityDetail['rail'] =
+    request?.type === 'lightning'
+      ? 'lightning'
+      : request?.type === 'ark'
+        ? 'ark'
+        : request?.type === 'onchain'
+          ? 'onchain'
+          : entry.kind === 'receive'
+            ? 'lightning'
+            : 'onchain';
+  const failed = entry.status === 'failed';
+  return {
+    record,
+    entryId: entry.id,
+    entryKind: entry.kind,
+    rail,
+    feeSat: BigInt(entry.feeSat),
+    note: orNull(entry.note),
+    counterparty: orNull(entry.counterparty),
+    createdAt: orNull(entry.createdAt),
+    updatedAt: orNull(entry.updatedAt),
+    phase: progress === undefined || progress.phase === 'unspecified' ? null : progress.phase,
+    paymentHash: orNull(progress?.paymentHash) ?? orNull(request?.paymentHash),
+    txid: orNull(progress?.txid),
+    preimage: orNull(progress?.preimage),
+    confirmationHeight:
+      progress !== undefined && progress.confirmationHeight > 0 ? progress.confirmationHeight : null,
+    vtxoOutpoint: orNull(progress?.vTXOOutpoint),
+    failureReason: failed ? orNull(entry.failureReason) : null,
+    failureCode: failed ? orNull(entry.failureCode) : null,
+    invoice: orNull(request?.lightningInvoice),
+    onchainAddress: orNull(request?.onchainAddress),
+    arkAddress: orNull(request?.arkAddress),
+  };
+}
+
 /** The daemon phase that means an inbound payment was durably settled. */
 const SETTLED_PHASES: readonly EntryPhase[] = ['confirmed'];
 

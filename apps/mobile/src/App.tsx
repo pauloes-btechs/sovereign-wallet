@@ -18,37 +18,37 @@ import {
   WavelengthProvider,
 } from '@sovereign/wavelength-adapter';
 import type { WavelengthClient } from '@sovereign/wavelength-adapter';
-import { ModeAController, tabForScreen } from './flows/modeAController.js';
-import type { ModeATab } from './flows/modeAController.js';
+import { ModeAController } from './flows/modeAController.js';
 import { ModeBRemoteController } from './flows/modeBRemoteController.js';
 import type { LncRpcPort } from './flows/modeBRemoteController.js';
+import type { PreferencesStore } from './flows/preferences.js';
+import { NO_PLATFORM_SERVICES } from './flows/platform.js';
+import type { PlatformServices } from './flows/platform.js';
+import { MobileAppProvider, usePreferencesStore } from './ui/appContext.js';
 import { ModeBRemoteApp } from './ui/modeBScreens.js';
+import { ModeAMoneyScreen } from './ui/transfers/moneyScreens.js';
+import { PrimaryTabBar, useHardwareBack } from './ui/navigationUi.js';
 import {
   BackupConfirmationScreen,
   OnboardingScreen,
   RestoreScreen,
 } from './ui/onboardingScreens.js';
-import { MobileTabBar, mobilePalette } from './ui/Primitives.js';
+import { mobilePalette } from './ui/Primitives.js';
 import {
-  ActivityScreen,
-  CapabilitiesScreen,
-  HomeScreen,
-  MoreScreen,
-  ReceiveScreen,
-  SendScreen,
-} from './ui/walletScreens.js';
-
-/**
- * The everyday wallet's primary destinations. Every tab maps onto a screen
- * backed by the provider: Activity reads the daemon's activity stream, Pay
- * hosts Send and Receive, More holds status and the capability disclosure.
- */
-const MODE_A_TABS: ReadonlyArray<{ id: ModeATab; label: string; glyph: string }> = [
-  { id: 'home', label: 'Home', glyph: '⌂' },
-  { id: 'activity', label: 'Activity', glyph: '≡' },
-  { id: 'pay', label: 'Pay', glyph: '⇅' },
-  { id: 'more', label: 'More', glyph: '⋯' },
-];
+  ModeAActivityScreen,
+  ModeAHomeScreen,
+  ModeATransactionScreen,
+} from './ui/home/ModeAHome.js';
+import { CapabilitiesScreen } from './ui/walletScreens.js';
+import { ModeASendScreen } from './ui/send/sendScreens.js';
+import { ModeAReceiveScreen } from './ui/receive/receiveScreens.js';
+import { isWalletRoute } from './ui/wallet/routes.js';
+import { WalletRouter } from './ui/wallet/WalletSettings.js';
+import {
+  WalletSecurityBoundary,
+  useBackupRecorder,
+  useWalletSecurity,
+} from './ui/wallet/WalletSecurity.js';
 
 export interface ModeAAppPorts {
   /** A CONNECTED Wavelength client (native bindings or the harness simulator). */
@@ -57,6 +57,13 @@ export interface ModeAAppPorts {
   readonly dataDir: string;
   /** Daemon poll cadence for VTXO/exit state; the UI also refreshes on events. */
   readonly pollIntervalMs?: number;
+  /**
+   * Preferences (denomination, privacy, payment limits…). Omitted → an
+   * in-memory store: settings work but do not survive a restart.
+   */
+  readonly preferences?: PreferencesStore;
+  /** Device services (clipboard, share, scanner, keystore, safe area). */
+  readonly platform?: PlatformServices;
 }
 
 /**
@@ -68,24 +75,47 @@ export function createModeAController(ports: ModeAAppPorts): ModeAController {
     client: ports.client,
     pollIntervalMs: ports.pollIntervalMs ?? 30_000,
   });
-  const engine = new PaymentEngine({
-    // TODO(native-shell): swap for the SQLCipher-at-rest store and inject the
-    // platform UUID source — Hermes has no crypto.randomUUID.
-    store: new InMemoryPaymentIntentStore(),
-    dispatcher: new WavelengthPaymentDispatcher({ client: ports.client, sdkPin: SDK_PIN }),
+  // The payment-timeout preference is read at every dispatch, so a change
+  // applies to the next payment without restarting the wallet.
+  const preferences = ports.preferences;
+  // TODO(native-shell): swap for the SQLCipher-at-rest store and inject the
+  // platform UUID source — Hermes has no crypto.randomUUID.
+  const store = new InMemoryPaymentIntentStore();
+  const paymentEngine = new PaymentEngine({
+    store,
+    dispatcher: new WavelengthPaymentDispatcher({
+      client: ports.client,
+      sdkPin: SDK_PIN,
+      dispatchTimeoutMs: () => {
+        const seconds = preferences?.get().paymentTimeoutSeconds;
+        return seconds === undefined ? undefined : seconds * 1000;
+      },
+    }),
     newId: () => globalThis.crypto.randomUUID(),
   });
   return new ModeAController({
     provider,
-    engine,
+    engine: {
+      submit: (kind, payload, maxFeeSat) => paymentEngine.submit(kind, payload, maxFeeSat),
+      execute: (intentId) => paymentEngine.execute(intentId),
+      recoverInterrupted: () => paymentEngine.recoverInterrupted(),
+      // Read-only: lets a reconcile report what the intent actually became.
+      intentState: async (intentId) => (await store.get(intentId))?.state,
+    },
     network: ports.network,
     dataDir: ports.dataDir,
+    platform: ports.platform,
   });
 }
 
 export function ModeAApp(ports: ModeAAppPorts): ReactNode {
-  const [controller] = useState(() => createModeAController(ports));
+  const preferences = usePreferencesStore(ports.preferences);
+  const [controller] = useState(() => createModeAController({ ...ports, preferences }));
   const state = useSyncExternalStore(controller.subscribe, controller.getState);
+  const platform = ports.platform ?? NO_PLATFORM_SERVICES;
+  useHardwareBack(() => controller.goBack(), state.nav !== null);
+  const security = useWalletSecurity(platform, preferences, 'wavelength');
+  useBackupRecorder(security.backup, state);
 
   useEffect(() => {
     void controller.start();
@@ -95,6 +125,14 @@ export function ModeAApp(ports: ModeAAppPorts): ReactNode {
   }, [controller]);
 
   const screen = ((): ReactNode => {
+    if (isWalletRoute(state.screen)) {
+      return (
+        <WalletRouter
+          host={{ kind: 'wavelength', controller, state, network: ports.network }}
+          route={state.screen}
+        />
+      );
+    }
     switch (state.screen) {
       case 'onboarding':
         return <OnboardingScreen controller={controller} />;
@@ -103,28 +141,39 @@ export function ModeAApp(ports: ModeAAppPorts): ReactNode {
       case 'restore':
         return <RestoreScreen controller={controller} state={state} />;
       case 'send':
-        return <SendScreen controller={controller} state={state} />;
+        return <ModeASendScreen controller={controller} state={state} network={ports.network} />;
       case 'receive':
-        return <ReceiveScreen controller={controller} state={state} />;
+        return <ModeAReceiveScreen controller={controller} state={state} />;
       case 'activity':
-        return <ActivityScreen controller={controller} state={state} />;
-      case 'more':
-        return <MoreScreen controller={controller} state={state} network={ports.network} />;
+        return <ModeAActivityScreen controller={controller} state={state} />;
+      case 'transaction':
+        return <ModeATransactionScreen controller={controller} state={state} />;
       case 'capabilities':
         return <CapabilitiesScreen controller={controller} />;
       case 'home':
-        return <HomeScreen controller={controller} state={state} network={ports.network} />;
+        return <ModeAHomeScreen controller={controller} state={state} network={ports.network} />;
+      case 'transfers':
+      case 'liquidity':
+      case 'assets':
+        return <ModeAMoneyScreen controller={controller} state={state} route={state.screen} />;
     }
   })();
-  const tab = tabForScreen(state.screen);
 
   return (
-    <View style={shellStyles.shell}>
-      {screen}
-      {tab !== null && (
-        <MobileTabBar tabs={MODE_A_TABS} activeId={tab} onChange={(id) => controller.selectTab(id)} />
-      )}
-    </View>
+    <MobileAppProvider preferences={preferences} platform={platform}>
+      <WalletSecurityBoundary security={security}>
+        <View style={shellStyles.shell}>
+          {screen}
+          {state.nav !== null && (
+            <PrimaryTabBar
+              activeTab={state.nav.tab}
+              onSelect={(tab) => controller.selectTab(tab)}
+              bottomInset={platform.bottomInset}
+            />
+          )}
+        </View>
+      </WalletSecurityBoundary>
+    </MobileAppProvider>
   );
 }
 
@@ -149,6 +198,13 @@ export interface NativeAppProps {
   readonly resolveLncPort?: () => Promise<LncRpcPort>;
   /** Wallet mode; defaults to everyday (Mode A). */
   readonly mode?: 'everyday' | 'remote-node';
+  /**
+   * Native slot: a preferences store over the shell's storage module
+   * (`NativePreferencesBackend`). Omitted → in-memory, not persisted.
+   */
+  readonly preferences?: PreferencesStore;
+  /** Native slot: device services the shell provides. Omitted → none. */
+  readonly platform?: PlatformServices;
   readonly network?: 'mainnet' | 'testnet' | 'signet' | 'regtest';
   readonly dataDir?: string;
 }
@@ -187,6 +243,8 @@ function ModeAEntry(props: NativeAppProps): ReactNode {
         client={client}
         network={props.network ?? 'mainnet'}
         dataDir={props.dataDir ?? '.'}
+        preferences={props.preferences}
+        platform={props.platform}
       />
     );
   }
@@ -223,7 +281,11 @@ function ModeBEntry(props: NativeAppProps): ReactNode {
       .then((port) => {
         if (!cancelled) {
           setController(
-            new ModeBRemoteController({ port, network: props.network ?? 'mainnet' }),
+            new ModeBRemoteController({
+              port,
+              network: props.network ?? 'mainnet',
+              platform: props.platform,
+            }),
           );
         }
       })
@@ -233,7 +295,7 @@ function ModeBEntry(props: NativeAppProps): ReactNode {
     return () => {
       cancelled = true;
     };
-  }, [props.resolveLncPort, props.network]);
+  }, [props.resolveLncPort, props.network, props.platform]);
 
   // Stop the PREVIOUS controller when a new one replaces it, and stop the
   // live one on unmount.
@@ -244,7 +306,14 @@ function ModeBEntry(props: NativeAppProps): ReactNode {
   }, [controller]);
 
   if (controller !== null) {
-    return <ModeBRemoteApp controller={controller} network={props.network ?? 'mainnet'} />;
+    return (
+      <ModeBRemoteApp
+        controller={controller}
+        network={props.network ?? 'mainnet'}
+        preferences={props.preferences}
+        platform={props.platform}
+      />
+    );
   }
   if (error !== null) {
     return <Text>The node connection failed to start: {error}</Text>;

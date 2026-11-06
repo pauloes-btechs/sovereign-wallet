@@ -5,13 +5,16 @@
  * integration suite in services/litd-adapter.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DispatchOutcome } from '@sovereign/payments';
+import type { DispatchOutcome, PaymentIntent } from '@sovereign/payments';
 import type { LncRpcPort, RemoteBalances, RemoteNodeInfo } from './modeBRemoteController.js';
+import { DEFAULT_PREFERENCES } from './preferences.js';
 import {
   DESKTOP_ONLY_DISCLOSURE,
   LIVENESS_REQUIRED_OPS,
+  LncPaymentDispatcher,
   ModeBRemoteController,
   ModeBRemoteError,
+  PaymentNotDispatchedError,
   isDesktopOnly,
   parseSats,
   sha256Hex,
@@ -232,9 +235,9 @@ describe('ModeBRemoteController payments', () => {
     await controller.send();
     expect(port.payCalls).toHaveLength(1);
     expect(controller.getState().sendStatus).toBe('failed');
-    // The engine's Attempt shape carries no reason field — the UI shows the
-    // generic failure; the reason lives in the port's backend logs.
-    expect(controller.getState().sendError).toContain('Payment failed');
+    // The engine's intent carries no reason; the dispatcher keeps the node's
+    // reason per intent so the screen can explain it.
+    expect(controller.getState().sendError).toBe('Payment failed: invoice already paid');
   });
 
   it('surfaces needs-recovery instead of re-dispatching on an ambiguous outcome', async () => {
@@ -242,7 +245,77 @@ describe('ModeBRemoteController payments', () => {
     controller.editSendDestination('lnbcrt1m1abc');
     await controller.send();
     expect(port.payCalls).toHaveLength(1); // never blind-retried
-    expect(controller.getState().sendStatus).toBe('failed');
+    // Not "failed": the node may still complete it. The state says so and
+    // offers a status check, never a resend.
+    expect(controller.getState().sendStatus).toBe('in-flight');
+    expect(controller.getState().sendError).toContain('could pay twice');
+
+    // Checking status looks the payment up (the port answers unknown) and
+    // still never dispatches again.
+    await controller.checkPaymentStatus();
+    expect(port.payCalls).toHaveLength(1);
+    expect(controller.getState().sendStatus).toBe('in-flight');
+  });
+});
+
+describe('ModeBRemoteController — unknown network', () => {
+  it('refuses to review a send on a network name it does not recognize, instead of assuming mainnet', async () => {
+    const port = makePort();
+    const controller = new ModeBRemoteController({ port, network: 'liquidv1' });
+    controller.enterPairingPhrase(TEN_WORDS);
+    await controller.pair();
+    controller.editSendDestination('lnbc10u1pjexample');
+    controller.reviewSend({ ...DEFAULT_PREFERENCES });
+    expect(controller.getState().sendStatus).toBe('idle');
+    expect(controller.getState().sendError).toMatch(/network "liquidv1", which this app doesn't recognize/);
+    expect(port.payCalls).toHaveLength(0);
+    controller.stop();
+  });
+});
+
+describe('LncPaymentDispatcher — thrown errors', () => {
+  const intent = (payload: unknown): PaymentIntent => ({
+    intentId: 'intent-1',
+    kind: 'lightning-invoice',
+    payload,
+    state: 'in-flight',
+    backendRef: 'hash-1',
+    attempts: [],
+  });
+
+  it('a throw after the request may have reached the node is ambiguous (timeout), not a definitive failure', async () => {
+    const port = makePort();
+    port.payInvoice = async () => {
+      throw new Error('rpc error: code = Unavailable desc = transport is closing');
+    };
+    const dispatcher = new LncPaymentDispatcher(port);
+    const outcome = await dispatcher.dispatch(intent({ bolt11: 'lnbcrt1m1abc' }), 'hash-1');
+    expect(outcome).toEqual({ status: 'timeout' });
+    expect(dispatcher.failureReason('intent-1')).toBeNull();
+    expect(dispatcher.uncertainReason('intent-1')).toBe('rpc error: code = Unavailable desc = transport is closing');
+  });
+
+  it('a typed pre-dispatch refusal, or an invalid payload caught on the phone, is definitive', async () => {
+    const port = makePort();
+    port.payInvoice = async () => {
+      throw new PaymentNotDispatchedError('not connected');
+    };
+    const dispatcher = new LncPaymentDispatcher(port);
+    expect(await dispatcher.dispatch(intent({ bolt11: 'lnbcrt1m1abc' }), 'hash-1')).toEqual({
+      status: 'definitive-failure',
+      reason: 'not connected',
+    });
+    expect(await dispatcher.dispatch(intent({}), 'hash-1')).toMatchObject({ status: 'definitive-failure' });
+  });
+
+  it('an explicit terminal node failure result stays definitive', async () => {
+    const port = makePort();
+    port.settledOutcome = { status: 'definitive-failure', reason: 'FAILURE_REASON_NO_ROUTE' };
+    const dispatcher = new LncPaymentDispatcher(port);
+    expect(await dispatcher.dispatch(intent({ bolt11: 'lnbcrt1m1abc' }), 'hash-1')).toEqual({
+      status: 'definitive-failure',
+      reason: 'FAILURE_REASON_NO_ROUTE',
+    });
   });
 });
 
@@ -310,5 +383,101 @@ describe('ModeBRemoteController receive + revocation', () => {
     await controller.revokeCurrentSession('03abc');
     expect(port.revokeSession).toHaveBeenCalledWith('03abc');
     expect(controller.getState().screen).toBe('revoked');
+  });
+});
+
+describe('ModeBRemoteController tabs, activity and capabilities', () => {
+  let port: ReturnType<typeof makePort>;
+  let controller: ModeBRemoteController;
+
+  beforeEach(async () => {
+    port = makePort();
+    controller = new ModeBRemoteController({ port, network: 'regtest', pollIntervalMs: 600_000 });
+    controller.enterPairingPhrase(TEN_WORDS);
+    await controller.pair();
+  });
+
+  afterEach(() => {
+    controller.stop();
+  });
+
+  it('pairing opens the five-tab navigation on Home; revocation leaves it', async () => {
+    expect(controller.getState().nav?.tab).toBe('home');
+    controller.selectTab('wallet');
+    expect(controller.getState().screen).toBe('wallet');
+    controller.selectTab('send');
+    expect(controller.getState().screen).toBe('send');
+    expect(controller.goBack()).toBe(true); // tab root → Home
+    expect(controller.getState().screen).toBe('home');
+    expect(controller.goBack()).toBe(false);
+
+    port.emit({ type: 'revoked' });
+    await vi.waitFor(() => expect(controller.getState().screen).toBe('revoked'));
+    expect(controller.getState().nav).toBeNull();
+  });
+
+  it('a port without listLightningActivity reports activity as unavailable, not empty', async () => {
+    controller.selectTab('activity');
+    await vi.waitFor(() => expect(controller.getState().activityStatus).toBe('unavailable'));
+    expect(controller.getState().activity).toBeNull();
+    const caps = controller.walletCapabilities();
+    expect(caps.features.activity.available).toBe(false);
+  });
+
+  it('reads Lightning activity from the port when it implements the method', async () => {
+    const records = [
+      {
+        paymentHash: 'ab'.repeat(32),
+        direction: 'out' as const,
+        amountSat: 1_000n,
+        feeSat: 1n,
+        status: 'settled' as const,
+        createdAt: '2026-11-05T10:00:00.000Z',
+        memo: null,
+        paymentRequest: 'lnbcrt10u1x',
+      },
+    ];
+    const requests: number[] = [];
+    const withActivity = Object.assign(port, {
+      async listLightningActivity(request: { maxItems: number }) {
+        requests.push(request.maxItems);
+        return records;
+      },
+    });
+    const c = new ModeBRemoteController({ port: withActivity, network: 'regtest', pollIntervalMs: 600_000 });
+    c.enterPairingPhrase(TEN_WORDS);
+    await c.pair();
+    expect(c.walletCapabilities().features.activity.available).toBe(true);
+    c.selectTab('activity');
+    await vi.waitFor(() => expect(c.getState().activityStatus).toBe('loaded'));
+    expect(c.getState().activity).toEqual(records);
+    expect(requests).toEqual([100]);
+    c.stop();
+  });
+
+  it('an activity read failure is shown as a failure', async () => {
+    const failing = Object.assign(port, {
+      async listLightningActivity(): Promise<never> {
+        throw new Error('permission denied: offchain read');
+      },
+    });
+    const c = new ModeBRemoteController({ port: failing, network: 'regtest', pollIntervalMs: 600_000 });
+    c.enterPairingPhrase(TEN_WORDS);
+    await c.pair();
+    await c.loadActivity();
+    expect(c.getState().activityStatus).toBe('failed');
+    expect(c.getState().activityError).toMatch(/permission denied/);
+    c.stop();
+  });
+
+  it('capabilities never claim on-chain or fee quotes over LNC, and track the foreground rule', () => {
+    const caps = controller.walletCapabilities();
+    expect(caps.backend).toBe('remote-lnd');
+    expect(caps.features.onchainSend.available).toBe(false);
+    expect(caps.features.sendFeeQuote.available).toBe(false);
+    expect(caps.features.lightningSend.available).toBe(true);
+    expect(caps.features.sessionRevoke.available).toBe(false); // fake port has no revokeSession
+    controller.setForegrounded(false);
+    expect(controller.walletCapabilities().features.lightningSend.available).toBe(false);
   });
 });

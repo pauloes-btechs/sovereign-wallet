@@ -38,7 +38,8 @@ import type { Unsubscribe } from './sdk/index.js';
 import type { WireBalance } from './sdk/gateway-client.js';
 import type { ExitReadiness } from './exit.js';
 import { summarizeExitReadiness } from './exit.js';
-import { mapEntryToRecord } from './entry-mapping.js';
+import { mapEntryToActivityDetail, mapEntryToRecord } from './entry-mapping.js';
+import type { WavelengthActivityDetail } from './entry-mapping.js';
 import { SDK_PIN } from './sdk-pin.js';
 import type { QuotedSend } from './submit.js';
 import { quoteLightningSend, quoteOnchainSend } from './submit.js';
@@ -199,19 +200,7 @@ export class WavelengthProvider implements WalletProvider {
       this.client.balance(),
       classified !== undefined ? Promise.resolve(classified) : this.classifyCurrentInventory(),
     ]);
-    // lockedOrExpiring classifies a SUBSET of confirmed funds — clamp so the
-    // bucket never exceeds the confirmed total (double-count guard).
-    const locked = lockedOrExpiringSat(inventory);
-    const confirmed = BigInt(balance.confirmedSat);
-    return {
-      onchainConfirmedSat: 0n,
-      onchainPendingSat: 0n,
-      lightningSpendableSat: confirmed,
-      lightningPendingSat: BigInt(
-        balance.pendingInSat + balance.pendingOutSat + balance.creditReservedSat,
-      ),
-      lockedOrExpiringSat: locked > confirmed ? confirmed : locked,
-    };
+    return bucketsFromSdkBalance(balance, lockedOrExpiringSat(inventory));
   }
 
   /** Credit-based Lightning receive invoice (fresh invoice + amount + memo). */
@@ -244,6 +233,17 @@ export class WavelengthProvider implements WalletProvider {
     this.assertStarted();
     const result = await this.client.list({ view, pendingOnly: false });
     return (result.activity?.entries ?? []).map((e) => mapEntryToRecord(e, this.id));
+  }
+
+  /**
+   * The same page of activity, with the receipt fields each entry carries
+   * (fee, note, phase, payment hash, txid, preimage, timestamps). Fields the
+   * daemon left empty are null — hosts show them as not reported.
+   */
+  async activityDetails(view: ListView = 'activity'): Promise<WavelengthActivityDetail[]> {
+    this.assertStarted();
+    const result = await this.client.list({ view, pendingOnly: false });
+    return (result.activity?.entries ?? []).map((e) => mapEntryToActivityDetail(e, this.id));
   }
 
   // ——— Mode A sends (quote at authorization; dispatch via the engine) ———
@@ -413,6 +413,28 @@ export type { Balance };
 /** Clients that expose the daemon's raw balance breakdown (the waved gateway). */
 function hasWireBalance(client: unknown): client is { getWireBalance(): Promise<WireBalance> } {
   return typeof (client as { getWireBalance?: unknown }).getWireBalance === 'function';
+}
+
+/**
+ * Mode A buckets from the SDK's unified balance (no gateway breakdown). The
+ * locked-or-expiring VTXOs are a SUBSET of the confirmed funds: they move
+ * out of Lightning-spendable into their own bucket, clamped to the
+ * confirmed total, so each sat lands in exactly one bucket — the same rule
+ * as `bucketsFromWireBalance`, and what every bucket total assumes.
+ */
+export function bucketsFromSdkBalance(
+  balance: Readonly<Pick<Balance, 'confirmedSat' | 'pendingInSat' | 'pendingOutSat' | 'creditReservedSat'>>,
+  lockedOrExpiringVtxoSat: bigint,
+): BalanceBuckets {
+  const confirmed = BigInt(balance.confirmedSat);
+  const locked = lockedOrExpiringVtxoSat > confirmed ? confirmed : lockedOrExpiringVtxoSat;
+  return {
+    onchainConfirmedSat: 0n,
+    onchainPendingSat: 0n,
+    lightningSpendableSat: confirmed - locked,
+    lightningPendingSat: BigInt(balance.pendingInSat + balance.pendingOutSat + balance.creditReservedSat),
+    lockedOrExpiringSat: locked,
+  };
 }
 
 /**

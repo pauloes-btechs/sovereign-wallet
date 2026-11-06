@@ -213,6 +213,27 @@ describe('dispatch — send the exact approved quote once', () => {
     const d = new WavelengthPaymentDispatcher({ client: c, sdkPin: SDK_PIN, dispatchTimeoutMs: 10 });
     await expect(d.dispatch(intent(), 'ref')).rejects.toBeInstanceOf(WavelengthError);
   });
+
+  it('reads a function timeout at each dispatch, so a changed setting applies to the next payment', async () => {
+    let limitMs = 10;
+    const c = fakeClient({ sendPrepared: vi.fn().mockReturnValue(new Promise(() => {})) });
+    const d = new WavelengthPaymentDispatcher({ client: c, sdkPin: SDK_PIN, dispatchTimeoutMs: () => limitMs });
+    await expect(d.dispatch(intent(), 'ref')).rejects.toThrow('exceeded 10ms');
+    limitMs = 25;
+    await expect(d.dispatch(intent(), 'ref')).rejects.toThrow('exceeded 25ms');
+  });
+
+  it('falls back to the default timeout when the setting is missing or invalid (no instant timeout)', async () => {
+    for (const bad of [undefined, 0, -5, Number.NaN]) {
+      // A send that completes after 30ms must succeed: an invalid limit must
+      // not become a 0ms (or NaN) timer that rejects every payment at once.
+      const c = fakeClient({
+        sendPrepared: vi.fn().mockImplementation(() => new Promise((r) => setTimeout(() => r(sendResult(entry())), 30))),
+      });
+      const d = new WavelengthPaymentDispatcher({ client: c, sdkPin: SDK_PIN, dispatchTimeoutMs: () => bad });
+      await expect(d.dispatch(intent(), 'ref')).resolves.toBeDefined();
+    }
+  });
 });
 
 describe('lookup — the ONLY method recovery may call', () => {

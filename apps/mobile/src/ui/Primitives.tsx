@@ -16,7 +16,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { formatSats, satsLabel } from '@sovereign/ui/copy';
+import type { StyleProp, TextStyle } from 'react-native';
 import { providerTotalSat } from '@sovereign/ui/totals';
 import {
   sovlColors,
@@ -28,6 +28,9 @@ import {
 import type { BalanceBuckets } from '@sovereign/wallet-core';
 import { Children } from 'react';
 import type { ReactNode } from 'react';
+import { useAmountFormatter } from './appContext.js';
+import { unitLabel } from './format.js';
+import { MIN_TOUCH_TARGET } from './navigationUi.js';
 
 const palette = sovlColors;
 
@@ -56,17 +59,43 @@ const toneColor: Record<BandTone, string> = {
 
 // ——— Amounts ———
 
-/** The hero balance: the total in sats, largest text on screen. */
+/**
+ * The hero balance: the total in the user's denomination, largest text on
+ * screen. Privacy mode masks the digits (spoken as "Amount hidden").
+ */
 export function MobileAmountBig({ sats }: { sats: bigint }): ReactNode {
+  const amounts = useAmountFormatter();
   return (
-    <View style={styles.amountBigRow}>
-      <Text style={styles.amountBig}>{formatSats(sats)}</Text>
-      <Text style={styles.amountUnit}>sats</Text>
+    <View style={styles.amountBigRow} accessible accessibilityLabel={amounts.accessibilityLabel(sats)}>
+      <Text style={styles.amountBig}>{amounts.format(sats).replace(/ (sats|BTC)$/, '')}</Text>
+      <Text style={styles.amountUnit}>{unitLabel(amounts.preferences.denomination)}</Text>
     </View>
   );
 }
 
-/** Labeled sat amount row (value right-aligned), with an optional fund-color key. */
+/**
+ * One amount as text in the user's denomination (masked in privacy mode).
+ * Use this for every amount on every tab instead of formatting by hand.
+ */
+export function MobileAmount({
+  sats,
+  sign = null,
+  style,
+}: {
+  sats: bigint;
+  /** Direction sign for lists ('+' received, '−' sent). */
+  sign?: '+' | '−' | null;
+  style?: StyleProp<TextStyle>;
+}): ReactNode {
+  const amounts = useAmountFormatter();
+  return (
+    <Text style={[styles.value, style]} accessibilityLabel={amounts.accessibilityLabel(sats, sign)}>
+      {amounts.format(sats, sign)}
+    </Text>
+  );
+}
+
+/** Labeled amount row (value right-aligned), with an optional fund-color key. */
 export function MobileSats({
   label,
   sats,
@@ -82,7 +111,7 @@ export function MobileSats({
         {swatch !== undefined && <View style={[styles.swatch, { backgroundColor: swatch }]} />}
         <Text style={styles.dim}>{label}</Text>
       </View>
-      <Text style={styles.value}>{satsLabel(sats)}</Text>
+      <MobileAmount sats={sats} />
     </View>
   );
 }
@@ -195,6 +224,7 @@ export function MobileFlowTabs({
             accessibilityRole="tab"
             accessibilityLabel={tab.label}
             accessibilityState={{ selected: active }}
+            aria-selected={active}
             onPress={() => onChange(tab.id)}
             style={
               underline
@@ -205,48 +235,6 @@ export function MobileFlowTabs({
             <Text style={[styles.segmentText, active ? styles.segmentTextActive : null]}>
               {tab.label}
             </Text>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-/**
- * The bottom tab bar — the app's primary destinations. The selected tab is
- * marked in text weight and an indicator, and announced as selected.
- */
-export function MobileTabBar<T extends string>({
-  tabs,
-  activeId,
-  onChange,
-}: {
-  tabs: ReadonlyArray<{ id: T; label: string; glyph: string }>;
-  activeId: T | null;
-  onChange: (id: T) => void;
-}): ReactNode {
-  return (
-    <View style={styles.tabBar} accessibilityRole="tablist">
-      {tabs.map((tab) => {
-        const active = tab.id === activeId;
-        return (
-          <Pressable
-            key={tab.id}
-            accessibilityRole="tab"
-            accessibilityLabel={tab.label}
-            accessibilityState={{ selected: active }}
-            onPress={() => onChange(tab.id)}
-            style={styles.tabBarItem}
-          >
-            <View style={[styles.tabIndicator, active ? styles.tabIndicatorActive : null]} />
-            <Text
-              style={[styles.tabGlyph, active ? styles.tabTextActive : null]}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >
-              {tab.glyph}
-            </Text>
-            <Text style={[styles.tabLabel, active ? styles.tabTextActive : null]}>{tab.label}</Text>
           </Pressable>
         );
       })}
@@ -292,7 +280,10 @@ export function MobileButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: inert, busy }}
+      aria-disabled={inert}
+      aria-busy={busy}
       onPress={inert ? undefined : onPress}
+      hitSlop={compact ? 4 : undefined}
       style={[
         styles.button,
         compact ? styles.buttonCompact : null,
@@ -605,6 +596,8 @@ export const styles = StyleSheet.create({
   },
   segment: {
     flex: 1,
+    minHeight: 40,
+    justifyContent: 'center',
     paddingVertical: sovlSpace[2],
     borderRadius: sovlRadius.xs,
     alignItems: 'center',
@@ -619,33 +612,24 @@ export const styles = StyleSheet.create({
     borderBottomColor: palette.border,
   },
   underlineTab: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     paddingVertical: sovlSpace[2],
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
     marginBottom: -1,
   },
   underlineTabActive: { borderBottomColor: palette.text },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: palette.sidebar,
-    borderTopColor: palette.border,
-    borderTopWidth: 1,
-    paddingBottom: sovlSpace[2],
-  },
-  tabBarItem: { flex: 1, alignItems: 'center', paddingTop: 0, gap: 2, minHeight: 56 },
-  tabIndicator: { height: 2, width: 28, borderRadius: 1, marginBottom: 6 },
-  tabIndicatorActive: { backgroundColor: palette.accent },
-  tabGlyph: { ...text, color: palette.textFaint, fontSize: sovlFontSize.lg, lineHeight: 20 },
-  tabLabel: { ...text, color: palette.textFaint, fontSize: sovlFontSize.xs, fontWeight: '500' },
-  tabTextActive: { color: palette.text, fontWeight: '600' },
   button: {
+    minHeight: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
     paddingVertical: sovlSpace[3],
     paddingHorizontal: sovlSpace[4],
     borderRadius: sovlRadius.sm,
     borderWidth: 1,
     alignItems: 'center',
   },
-  buttonCompact: { paddingVertical: 6, paddingHorizontal: sovlSpace[3] },
+  buttonCompact: { minHeight: 36, paddingVertical: 6, paddingHorizontal: sovlSpace[3] },
   buttonDisabled: { opacity: 0.45 },
   buttonText: { ...text, fontSize: sovlFontSize.md, fontWeight: '600' },
   buttonTextCompact: { fontSize: sovlFontSize.sm },
@@ -721,6 +705,14 @@ export const styles = StyleSheet.create({
   },
   wordIndex: { ...text, color: palette.textFaint, fontSize: sovlFontSize.xs, width: 20 },
   header: { gap: 2, paddingTop: sovlSpace[1] },
-  backButton: { alignSelf: 'flex-start', paddingVertical: sovlSpace[1] },
+  backButton: {
+    alignSelf: 'flex-start',
+    minHeight: MIN_TOUCH_TARGET,
+    minWidth: MIN_TOUCH_TARGET,
+    justifyContent: 'center',
+    paddingRight: sovlSpace[3],
+    marginLeft: -sovlSpace[1],
+    paddingLeft: sovlSpace[1],
+  },
   backLink: { ...text, color: palette.textSecondary, fontSize: sovlFontSize.md },
 });
