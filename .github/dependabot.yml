@@ -1,7 +1,30 @@
 version: 2
 updates:
+  # npm: minor and patch updates arrive as one grouped weekly PR. Major
+  # versions (TypeScript, Vitest, ESLint, Babel, protobufjs, @scure/bip39, ...)
+  # change APIs and need code changes, so they are upgraded deliberately in
+  # their own branch rather than opened automatically, where they only fail CI.
+  # Security advisories are separate: Dependabot security updates still open
+  # PRs for vulnerable versions, majors included.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  # Workflow actions (checkout, setup-node, upload-artifact, pnpm setup):
+  # one grouped weekly PR, majors included, which also moves them off the
+  # deprecated Node.js 20 runtime.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ['*']
