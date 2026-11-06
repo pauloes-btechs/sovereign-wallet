@@ -217,7 +217,7 @@ export function wavelengthCapabilities(input: WavelengthCapabilityInput): Mobile
         'The wallet picks the on-chain fee rate itself. The fee is quoted and shown before you confirm.',
       ),
       invoiceExpiry: no('The wallet sets invoice expiry itself; this app cannot choose it.'),
-      paymentTimeout: yes('Applies the next time the wallet starts.'),
+      paymentTimeout: yes('Applies to the next payment.'),
       exitInformation: exitSupported ? yes() : no('This wallet type has no exit path to show.'),
       unilateralExit: exitSupported
         ? yes('Moves funds on-chain without the operator. Slow (hours to days) and on-chain fees apply.')

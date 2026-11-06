@@ -75,9 +75,9 @@ export function createModeAController(ports: ModeAAppPorts): ModeAController {
     client: ports.client,
     pollIntervalMs: ports.pollIntervalMs ?? 30_000,
   });
-  // The payment-timeout preference is read when the wallet starts (the
-  // dispatcher is built once); capabilities say so next to the setting.
-  const timeoutSeconds = ports.preferences?.get().paymentTimeoutSeconds;
+  // The payment-timeout preference is read at every dispatch, so a change
+  // applies to the next payment without restarting the wallet.
+  const preferences = ports.preferences;
   // TODO(native-shell): swap for the SQLCipher-at-rest store and inject the
   // platform UUID source — Hermes has no crypto.randomUUID.
   const store = new InMemoryPaymentIntentStore();
@@ -86,7 +86,10 @@ export function createModeAController(ports: ModeAAppPorts): ModeAController {
     dispatcher: new WavelengthPaymentDispatcher({
       client: ports.client,
       sdkPin: SDK_PIN,
-      dispatchTimeoutMs: timeoutSeconds === undefined ? undefined : timeoutSeconds * 1000,
+      dispatchTimeoutMs: () => {
+        const seconds = preferences?.get().paymentTimeoutSeconds;
+        return seconds === undefined ? undefined : seconds * 1000;
+      },
     }),
     newId: () => globalThis.crypto.randomUUID(),
   });

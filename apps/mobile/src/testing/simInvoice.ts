@@ -53,7 +53,10 @@ export interface SimulatedInvoiceInput {
   readonly amountMsat: bigint | null;
   /** 64 hex chars. */
   readonly paymentHashHex: string;
+  /** Defaults to an empty description: BOLT11 requires a d (or h) field. */
   readonly description?: string;
+  /** Test-only: leave out the description field to build a non-conforming invoice. */
+  readonly omitDescription?: boolean;
   readonly expirySeconds?: number;
   /** Unix seconds. */
   readonly timestamp: number;
@@ -65,8 +68,8 @@ export function encodeSimulatedBolt11(input: SimulatedInvoiceInput): string {
   const hrp = `ln${CURRENCY[input.network]}${input.amountMsat === null ? '' : hrpAmount(input.amountMsat)}`;
   const words: number[] = [...intToWords(input.timestamp, 7)];
   words.push(...tagged(1, convertBits([...hash], 8, 5, true) ?? []));
-  if (input.description !== undefined) {
-    words.push(...tagged(13, convertBits([...utf8Encode(input.description)], 8, 5, true) ?? []));
+  if (input.omitDescription !== true) {
+    words.push(...tagged(13, convertBits([...utf8Encode(input.description ?? '')], 8, 5, true) ?? []));
   }
   if (input.expirySeconds !== undefined) words.push(...tagged(6, intToWords(input.expirySeconds)));
   words.push(...new Array<number>(104).fill(0)); // unsigned: simulation only

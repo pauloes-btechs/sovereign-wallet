@@ -185,6 +185,9 @@ function decodeBolt11Unchecked(text: string): { ok: true; invoice: Bolt11Invoice
         if (length === 52) hasDescriptionHash = true;
         break;
       case 6: // x — expiry seconds
+        // Ten 5-bit words is already 50 bits (decades); anything longer can't
+        // fit a safe JavaScript integer and is not a real expiry.
+        if (length === 0 || length > 10) return { ok: false, failure: 'malformed' };
         expirySeconds = wordsToInt(data);
         break;
       default:
@@ -192,6 +195,9 @@ function decodeBolt11Unchecked(text: string): { ok: true; invoice: Bolt11Invoice
     }
   }
   if (paymentHash === null) return { ok: false, failure: 'malformed' };
+  // BOLT11: a writer MUST include exactly one of d (description) or h
+  // (description hash); an invoice with neither is not well-formed.
+  if (description === null && !hasDescriptionHash) return { ok: false, failure: 'malformed' };
   return {
     ok: true,
     invoice: {

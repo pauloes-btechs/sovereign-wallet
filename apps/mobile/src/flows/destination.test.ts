@@ -57,6 +57,32 @@ describe('encodings', () => {
 });
 
 describe('decodeBolt11', () => {
+  it('rejects an invoice with neither a description nor a description hash (BOLT11 requires one)', () => {
+    const text = encodeSimulatedBolt11({
+      network: 'regtest',
+      amountMsat: 1_000_000n,
+      paymentHashHex: simHashHex('no-description'),
+      omitDescription: true,
+      timestamp: 1_800_000_000,
+    });
+    expect(decodeBolt11(text)).toEqual({ ok: false, failure: 'malformed' });
+  });
+
+  it('accepts an empty description, and rejects an expiry field too long to be a real expiry', () => {
+    expect(decodeBolt11(regtestInvoice(1_000_000n, { description: '' })).ok).toBe(true);
+    // A 3600-second expiry encodes in 3 words; build one with an 11-word x field instead.
+    const ok = regtestInvoice(1_000_000n, { expirySeconds: 3600 });
+    expect(decodeBolt11(ok).ok).toBe(true);
+    const huge = encodeSimulatedBolt11({
+      network: 'regtest',
+      amountMsat: 1_000_000n,
+      paymentHashHex: simHashHex('huge-expiry'),
+      expirySeconds: 2 ** 52, // 11 five-bit words: past a safe 50-bit expiry
+      timestamp: 1_800_000_000,
+    });
+    expect(decodeBolt11(huge)).toEqual({ ok: false, failure: 'malformed' });
+  });
+
   it('decodes the BOLT11 spec coffee invoice: amount, description, expiry, hash, timestamp', () => {
     const result = decodeBolt11(SPEC_COFFEE);
     expect(result.ok).toBe(true);
