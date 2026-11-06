@@ -64,7 +64,7 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 | --- | --- | --- |
 | Loop daemon running in the shipped app | ✅ | `planSubServers` sets `loop-mode=integrated` + per-wallet dirs; super macaroon auth (was ⛔ bug) |
 | Loop Out / Loop In quotes | ✅ code, ⛔ regtest | `/loop/terms`, `/loop/quote`; wizards with real fee breakdown. Here the operator is deliberately offline, and the UI says exactly that. Quote total no longer double-counts the prepayment |
-| Execute Loop Out / Loop In | 🟨 | **Swap server verified in CI**: `loop-regtest.yml` settles a real Loop Out, Loop In and static-address Loop In on regtest (green 2026-11-05). **Wallet path**: `loop-wallet-path.yml` drives Loop Out and Loop In through the bridge routes and checks swap history — pending its first green run. Writing it found that the bridge never sent loopd prepay or routing limits, so every real Loop Out would have been refused; fixed |
+| Execute Loop Out / Loop In | ✅ regtest | **Verified through the wallet** (2026-11-05, run 42123656983): `loop-wallet-path.yml` launches the bridge's litd against the source-built regtest swap server, opens a channel, and settles a real Loop Out (1,000,000 sats) then Loop In (500,000 sats) through `/loop/quote`, `/loop/out`, `/loop/in`, passing only when `GET /loop/swaps` shows both as success. Swap server alone: `loop-regtest.yml`. Getting here fixed the bridge never sending loopd prepay/routing limits (every real Loop Out would have been refused) |
 | Swap list / live status / history | ✅ code | `/loop/swaps`, `/loop/swaps/:id`; history with filters, timeline and costs. Empty without a swap server |
 | Static-address Loop In | 🟨 | Address, deposits, Loop In from deposits wired; creation needs the server. No quote route for chosen outpoints |
 | AutoLoop | 🟨 | Read params, budget-limited enable with review, dry run (`SuggestSwaps`). Direction/rules can't be set through the bridge yet; disable is in-memory |
@@ -141,10 +141,9 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 
 ## What is left (ordered)
 
-1. **Get `loop-wallet-path.yml` green**: it launches the bridge's litd
-   against the regtest swap server, runs Loop Out and Loop In through the
-   bridge routes and asserts the swap history. Then add static-address
-   Loop In to it.
+1. **Extend `loop-wallet-path.yml`** (green): add static-address Loop In
+   through the bridge, and drive the Loop pages themselves (Playwright)
+   against the same regtest server.
 2. **Bridge gaps found while building pages**: static-address quote, AutoLoop
    direction/rules, Loop In conf target, invoice expiry, peer alias, chain
    backend name, forwarding pagination, asset AddrReceives and decimals,
