@@ -6,6 +6,7 @@
  *
  * Reads (all optional except api/report.json):
  *   <dir>/api/report.json, <dir>/api/report.md        check.mjs output
+ *   <dir>/api/quantum.md                              quantum-readiness section (shown when it changed)
  *   <dir>/api/results.json                            { typecheck, unitTests } after regenerating clients
  *   <dir>/e2e/fixture-diff.md, <dir>/e2e/results.json { e2e }
  *   <dir>/integration/results.json                    { integration }
@@ -39,7 +40,10 @@ const label = (v) => (v === undefined ? '— not run' : (ICON[v] ?? v));
 
 const failed = Object.values(results).some((v) => v === 'failure');
 const breaking = api.summary.breaking;
-const status = failed ? 'broken' : breaking > 0 ? 'api-breaking' : 'compatible';
+const quantumChanges = api.quantum?.changes ?? [];
+const quantumSection = quantumChanges.length > 0 ? (read('api/quantum.md') ?? '### Quantum readiness\n\n_Section missing from the run artifact._') : null;
+const releasesChanged = api.summary.newReleases > 0;
+const status = !releasesChanged && quantumSection !== null ? 'quantum-readiness' : failed ? 'broken' : breaking > 0 ? 'api-breaking' : 'compatible';
 const verdict = {
   broken: '❌ **Something breaks on the new releases.** See the failing checks below.',
   'api-breaking': '⚠️ **Breaking API changes upstream**, but everything we exercise still passes. Check the listed fields before bumping.',
@@ -48,6 +52,18 @@ const verdict = {
 
 const lnd = api.latest.lnd;
 const md = [];
+if (status === 'quantum-readiness') {
+  // No new Lightning Labs releases this week; only the quantum track moved.
+  md.push(`Weekly upstream watch ([run](${process.env.RUN_URL ?? '#'})): no new Lightning Labs releases, but the quantum-readiness track changed.`);
+  md.push('');
+  md.push(quantumSection);
+  md.push('');
+  md.push('<sub>Opened by `.github/workflows/upstream-watch.yml`. Close this issue once the change is reviewed and the baseline is updated.</sub>');
+  writeFileSync(out, `${md.join('\n')}\n`);
+  console.log(`title=${quantumTitle(api)}`);
+  console.log(`status=${status}`);
+  process.exit(0);
+}
 md.push(`Weekly check of Lightning Labs releases against Sovereign Wallet ([run](${process.env.RUN_URL ?? '#'})).`);
 md.push('');
 md.push(verdict);
@@ -66,6 +82,10 @@ md.push(read('api/report.md') ?? '_API report missing._');
 md.push('');
 md.push(read('e2e/fixture-diff.md') ?? '### Desktop UI responses\n\n_No new recording (e2e did not run or failed before recording)._');
 md.push('');
+if (quantumSection !== null) {
+  md.push(quantumSection);
+  md.push('');
+}
 md.push('### To bump');
 md.push('');
 md.push(
@@ -83,3 +103,9 @@ writeFileSync(out, `${md.join('\n')}\n`);
 const title = `Upstream watch: litd ${api.targetLitd}, LND ${lnd} (pinned litd ${api.pins.litd})`;
 console.log(`title=${title}`);
 console.log(`status=${status}`);
+
+/** Stable per change set, so re-runs update one issue instead of opening new ones. */
+function quantumTitle(report) {
+  const kinds = [...new Set(report.quantum.changes.map((c) => c.track))].sort().join(', ');
+  return `Upstream watch: quantum readiness changed (${kinds}; baseline ${report.quantum.baselineRecordedAt ?? 'unrecorded'})`;
+}

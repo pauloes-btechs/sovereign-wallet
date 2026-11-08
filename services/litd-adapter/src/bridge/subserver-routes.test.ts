@@ -65,6 +65,23 @@ describe('sub-server routes', () => {
     );
   });
 
+  it('refuses a Loop Out to a SegWit v2 (BIP-360 P2MR) destination with the reason', async () => {
+    const hub = fakeHub();
+    const call = routeSubServers(
+      hub,
+      'POST',
+      '/loop/out',
+      body({
+        amountSat: 500_000,
+        destAddress: 'bc1zzmv50jjgxxhww6ve4g5zpewrkjqhr06fyujpm20tuezdlxmfphcqfc80ve',
+        authorization: { amountSat: 500_000, maxTotalFeeSat: 2_000 },
+      }),
+    );
+    await expect(call).rejects.toThrow('Coins sent to a version-2 address before BIP-360 activates can be taken by anyone.');
+    expect(await status(call)).toBe(400);
+    expect(hub.loopOut).not.toHaveBeenCalled();
+  });
+
   it('validates amounts, directions, pubkeys and outpoints', async () => {
     const hub = fakeHub();
     expect(await status(routeSubServers(hub, 'POST', '/loop/quote', body({ direction: 'sideways', amountSat: 1 })))).toBe(400);

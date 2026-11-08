@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LNC_REMOTE_DECLARATION, WAVELENGTH_DECLARATION } from '@sovereign/wallet-core';
 import { remoteLndCapabilities, wavelengthCapabilities } from './capabilities.js';
-import { parseDestination } from './destination.js';
+import { encodeSegwitAddress, parseDestination } from './destination.js';
 import { NO_PLATFORM_SERVICES } from './platform.js';
 import { DEFAULT_PREFERENCES, createPreferencesStore, memoryPreferencesBackend } from './preferences.js';
 import type { Preferences } from './preferences.js';
@@ -56,6 +56,16 @@ function parsed(text: string) {
 }
 
 describe('rail selection', () => {
+  it('marks the on-chain rail of a unified QR unavailable when its address is an unactivated SegWit version', () => {
+    const v2 = encodeSegwitAddress('regtest', 2, new Uint8Array(32).fill(3));
+    const inv = invoice(1_000_000n, { label: 'p2mr-rails' });
+    const options = railOptions(parsed(`bitcoin:${v2}?lightning=${inv}`), wavelength, WAVELENGTH_RAIL_RULES, NOW);
+    const onchain = options.find((o) => o.rail === 'onchain');
+    expect(onchain?.available).toBe(false);
+    expect(onchain?.reason).toContain('Coins sent to a version-2 address before BIP-360 activates can be taken by anyone.');
+    expect(defaultRail(options)).toBe('lightning');
+  });
+
   it('offers both rails of a unified QR on the everyday wallet, Lightning first', () => {
     const address = simSegwitAddress('regtest', 'rails');
     const dest = parsed(`bitcoin:${address}?amount=0.0001&lightning=${invoice(10_000_000n)}`);

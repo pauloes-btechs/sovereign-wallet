@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { compareVersions, diffModels, flattenImports, goVersionToRef, isPrerelease, parseGoMod, protoModel } from './lib.mjs';
 // @ts-expect-error — plain ESM script module, no type declarations
 import { diffFixtures } from './fixture-diff.mjs';
+// @ts-expect-error — plain ESM script module, no type declarations
+import { diffQuantum, githubClient, observeQuantum, parseBipHeader, quantumMarkdown, readBaseline, toBaseline } from './quantum.mjs';
 
 describe('version handling', () => {
   it('orders final releases after their release candidates', () => {
@@ -121,5 +123,182 @@ describe('fixture shape diff', () => {
     expect(diffFixtures(base, flipped)).toEqual(['- `GET /state`: `phase` `ready` → **`locked`**']);
     const broken = { meta: {}, routes: { 'GET /state': { status: 500, body: { error: 'boom' } } } };
     expect(diffFixtures(base, broken)).toEqual(['- `GET /state`: status 200 → **500** (`boom`)']);
+  });
+});
+
+// ——— quantum-readiness track (no network: fetch is a stub) ———
+
+const BIP360_HEAD = `<pre>
+  BIP: 360
+  Layer: Consensus (soft fork)
+  Title: Pay-to-Merkle-Root (P2MR)
+  Authors: Hunter Beast <hunter@surmount.systems>
+  Status: Draft
+  Type: Specification
+  Assigned: 2024-12-18
+  License: BSD-3-Clause
+  Version: 0.12.1
+  Requires: 340, 341, 342
+</pre>
+
+==Introduction==
+`;
+const BIP361_HEAD = `<pre>
+  BIP: 361
+  Layer: Consensus (soft fork)
+  Title: Post Quantum Migration and Legacy Signature Sunset
+  Status: Draft
+  Type: Informational
+</pre>
+`;
+
+interface StubRoute {
+  status?: number;
+  text?: string;
+  json?: unknown;
+}
+
+/** A fetch stub keyed by URL (exact, or by prefix with a trailing '*'); unknown URLs → 404. */
+function stubFetch(routes: Record<string, StubRoute>) {
+  const calls: { url: string; headers: Record<string, string> }[] = [];
+  const impl = async (url: string, init?: { headers?: Record<string, string> }) => {
+    calls.push({ url, headers: init?.headers ?? {} });
+    const key = Object.keys(routes).find((k) => (k.endsWith('*') ? url.startsWith(k.slice(0, -1)) : url === k));
+    const r: StubRoute = key === undefined ? { status: 404, text: 'Not Found' } : routes[key]!;
+    const status = r.status ?? 200;
+    return new Response(r.json !== undefined ? JSON.stringify(r.json) : (r.text ?? ''), { status });
+  };
+  return { impl, calls };
+}
+
+const API = 'https://api.github.com';
+const search = (q: string) => `${API}/search/issues?q=${encodeURIComponent(q)}&per_page=50`;
+const commitFor = (file: string) => `${API}/repos/bitcoin/bips/commits?path=${encodeURIComponent(file)}&per_page=1`;
+const pr = (number: number, title: string, state: string, merged = false) => ({
+  number,
+  title,
+  state,
+  html_url: `https://github.com/x/pull/${number}`,
+  pull_request: { merged_at: merged ? '2027-01-01T00:00:00Z' : null },
+});
+
+function baseRoutes(): Record<string, StubRoute> {
+  return {
+    [`${API}/repos/bitcoin/bips/contents/bip-0360.mediawiki`]: { text: BIP360_HEAD },
+    [`${API}/repos/bitcoin/bips/contents/bip-0361.mediawiki`]: { text: BIP361_HEAD },
+    [commitFor('bip-0360.mediawiki')]: { json: [{ sha: 'abc', commit: { committer: { date: '2026-10-30T00:00:00Z' } } }] },
+    [commitFor('bip-0361.mediawiki')]: { json: [] },
+    [search('repo:bitcoin/bitcoin is:pr "BIP-360"')]: { json: { items: [] } },
+    [search('repo:bitcoin/bitcoin is:pr "BIP360"')]: { json: { items: [] } },
+    [search('repo:bitcoin/bitcoin is:pr P2MR')]: { json: { items: [] } },
+    [search('repo:bitcoin/bips is:pr SHRINCS')]: { json: { items: [] } },
+  };
+}
+
+const BASELINE = {
+  recordedAt: '2026-11-08',
+  bips: {
+    '360': { file: 'bip-0360.mediawiki', present: true, status: 'Draft', version: '0.12.1' },
+    '361': { file: 'bip-0361.mediawiki', present: true, status: 'Draft', version: null },
+  },
+  corePrs: [],
+  shrincs: { prs: [], bips: [] },
+};
+
+describe('quantum readiness: BIP headers', () => {
+  it('reads Status and Version from the mediawiki header', () => {
+    expect(parseBipHeader(BIP360_HEAD)).toEqual({ bip: 360, title: 'Pay-to-Merkle-Root (P2MR)', layer: 'Consensus (soft fork)', status: 'Draft', version: '0.12.1' });
+    expect(parseBipHeader(BIP361_HEAD)).toMatchObject({ bip: 361, status: 'Draft', version: null });
+  });
+
+  it('the committed baseline records BIP-360 as Draft 0.12.1', () => {
+    const committed = readBaseline();
+    expect(committed.bips['360']).toEqual({ file: 'bip-0360.mediawiki', present: true, status: 'Draft', version: '0.12.1' });
+  });
+});
+
+describe('quantum readiness: observing and diffing', () => {
+  it('observes the unchanged state with no changes, sending the token when given', async () => {
+    const { impl, calls } = stubFetch(baseRoutes());
+    const obs = await observeQuantum(githubClient(impl, 'tok'), new Date('2026-11-09T00:00:00Z'));
+    expect(obs.errors).toEqual([]);
+    expect(obs.bips['360']).toMatchObject({ present: true, status: 'Draft', version: '0.12.1', lastCommit: { sha: 'abc' } });
+    expect(diffQuantum(BASELINE, obs)).toEqual([]);
+    expect(calls.every((c) => c.headers.authorization === 'Bearer tok')).toBe(true);
+    expect(calls.every((c) => c.url.startsWith(API))).toBe(true);
+  });
+
+  it('flags BIP-360 leaving Draft and a version bump', async () => {
+    const routes = baseRoutes();
+    routes[`${API}/repos/bitcoin/bips/contents/bip-0360.mediawiki`] = { text: BIP360_HEAD.replace('Status: Draft', 'Status: Complete').replace('0.12.1', '1.0.0') };
+    const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    const changes = diffQuantum(BASELINE, obs) as { kind: string; detail: string }[];
+    expect(changes.map((c) => c.kind)).toEqual(['bip-status', 'bip-version']);
+    expect(changes[0]!.detail).toContain('Status Draft → **Complete**');
+    const md = quantumMarkdown(BASELINE, obs, changes);
+    expect(md).toContain('### Quantum readiness');
+    expect(md).toContain('**2 change(s)**');
+  });
+
+  it('flags a new Bitcoin Core P2MR PR (deduplicated across queries) and its merge', async () => {
+    const routes = baseRoutes();
+    routes[search('repo:bitcoin/bitcoin is:pr P2MR')] = { json: { items: [pr(40000, 'consensus: BIP-360 P2MR', 'open')] } };
+    routes[search('repo:bitcoin/bitcoin is:pr "BIP-360"')] = { json: { items: [pr(40000, 'consensus: BIP-360 P2MR', 'open')] } };
+    const opened = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect(opened.corePrs).toHaveLength(1);
+    expect((diffQuantum(BASELINE, opened) as { kind: string }[]).map((c) => c.kind)).toEqual(['pr-new']);
+
+    routes[search('repo:bitcoin/bitcoin is:pr P2MR')] = { json: { items: [pr(40000, 'consensus: BIP-360 P2MR', 'closed', true)] } };
+    routes[search('repo:bitcoin/bitcoin is:pr "BIP-360"')] = { json: { items: [] } };
+    const merged = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    const changes = diffQuantum({ ...BASELINE, corePrs: opened.corePrs }, merged) as { kind: string; detail: string }[];
+    expect(changes.map((c) => c.kind)).toEqual(['pr-state']);
+    expect(changes[0]!.detail).toContain('open → **merged**');
+  });
+
+  it('tracks the SHRINCS draft: PR appears, gets a BIP number, then merges', async () => {
+    const routes = baseRoutes();
+    routes[search('repo:bitcoin/bips is:pr SHRINCS')] = { json: { items: [pr(2100, 'BIP draft: SHRINCS signatures', 'open')] } };
+    routes[`${API}/repos/bitcoin/bips/pulls/2100/files?per_page=100`] = {
+      json: [{ filename: 'bip-shrincs.mediawiki', status: 'added', contents_url: `${API}/repos/bitcoin/bips/contents/bip-shrincs.mediawiki?ref=deadbeef` }],
+    };
+    const first = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect(first.shrincs).toEqual({ prs: [{ number: 2100, title: 'BIP draft: SHRINCS signatures', state: 'open', url: 'https://github.com/x/pull/2100' }], bips: [] });
+    expect((diffQuantum(BASELINE, first) as { kind: string }[]).map((c) => c.kind)).toEqual(['pr-new']);
+
+    routes[`${API}/repos/bitcoin/bips/pulls/2100/files?per_page=100`] = {
+      json: [{ filename: 'bip-0399.mediawiki', status: 'added', contents_url: `${API}/repos/bitcoin/bips/contents/bip-0399.mediawiki?ref=deadbeef` }],
+    };
+    routes[`${API}/repos/bitcoin/bips/contents/bip-0399.mediawiki?ref=deadbeef`] = { text: '<pre>\n  BIP: 399\n  Title: SHRINCS\n  Status: Draft\n</pre>\n' };
+    const numbered = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    const b1 = { ...BASELINE, shrincs: first.shrincs };
+    const c1 = diffQuantum(b1, numbered) as { kind: string; detail: string }[];
+    expect(c1.map((c) => c.kind)).toEqual(['bip-number']);
+    expect(c1[0]!.detail).toContain('`bip-0399.mediawiki` (BIP 399, PR #2100, Status Draft)');
+
+    routes[search('repo:bitcoin/bips is:pr SHRINCS')] = { json: { items: [pr(2100, 'BIP draft: SHRINCS signatures', 'closed', true)] } };
+    routes[`${API}/repos/bitcoin/bips/contents/bip-0399.mediawiki`] = { text: '<pre>\n  BIP: 399\n  Status: Draft\n</pre>\n' };
+    const merged = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect((diffQuantum({ ...BASELINE, shrincs: numbered.shrincs }, merged) as { kind: string }[]).map((c) => c.kind)).toEqual(['pr-state']);
+  });
+
+  it('asks for a baseline when a section was never recorded, and never treats failures as changes', async () => {
+    const routes = baseRoutes();
+    routes[search('repo:bitcoin/bips is:pr SHRINCS')] = { status: 403, text: 'rate limited' };
+    const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect(obs.shrincs).toBeNull();
+    expect(obs.errors).toHaveLength(1);
+    const changes = diffQuantum({ ...BASELINE, corePrs: null, shrincs: null }, obs) as { track: string; kind: string }[];
+    expect(changes).toEqual([{ track: 'core', kind: 'first-observation', detail: 'Bitcoin Core BIP-360 / P2MR PRs: none found' }]);
+    expect(quantumMarkdown(BASELINE, obs, changes)).toContain('Not observed this run');
+    // Recording keeps the previous value for what failed.
+    expect(toBaseline(obs, BASELINE).shrincs).toEqual(BASELINE.shrincs);
+  });
+
+  it('notices a watched BIP file disappearing', async () => {
+    const routes = baseRoutes();
+    delete routes[`${API}/repos/bitcoin/bips/contents/bip-0361.mediawiki`];
+    const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect((diffQuantum(BASELINE, obs) as { kind: string }[]).map((c) => c.kind)).toEqual(['bip-removed']);
   });
 });

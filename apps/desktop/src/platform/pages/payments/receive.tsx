@@ -8,8 +8,9 @@ import type { WalletBalanceView } from '../../../modeb/bridge-client.js';
 import { computeAccounts } from '../../balances.js';
 import { usePlatform, usePoll } from '../../context.js';
 import { Link, useLocation } from '../../router.js';
-import { Amount, Field, Icon, LiquidityBar, Notice, PageHeader, Panel, QrCode, Segmented, Skeleton, Stat, Timeline, type StepState } from '../../ui.js';
+import { Amount, Badge, Field, Icon, LiquidityBar, Notice, PageHeader, Panel, QrCode, Segmented, Skeleton, Stat, Timeline, type StepState } from '../../ui.js';
 import { InvoiceCreator, InvoiceLive, useReceiveCapacity, type CreatedInvoice } from './receive-invoice.js';
+import { receiveTypeRows, type BridgeAddressType, type ReceiveTypeRow } from './receive-types.js';
 import { CopyValue, Details, errorText, readSats } from './send-kit.js';
 
 type Tab = 'lightning' | 'onchain';
@@ -122,7 +123,57 @@ function CapacityPanel() {
 
 // ——— On-chain ———
 
-type AddrType = 'p2wkh' | 'np2wkh';
+type AddrType = BridgeAddressType;
+
+const AVAILABILITY_BADGE: Readonly<Record<ReceiveTypeRow['availability'], { tone: 'positive' | 'neutral' | 'warning'; text: string }>> = {
+  offered: { tone: 'positive', text: 'Offered' },
+  'not-offered': { tone: 'neutral', text: 'Not offered' },
+  'not-available': { tone: 'warning', text: 'Not available' },
+};
+
+/** Every known address type: whether it is offered here (and why not), and its key exposure. */
+function AddressTypesPanel() {
+  const rows = receiveTypeRows();
+  return (
+    <Panel
+      title="Address types"
+      note="Which kinds of address this page can create, and whether each one shows its public key on-chain while coins sit there."
+      flush
+    >
+      <div className="p-table-wrap">
+        <table className="p-table" data-testid="receive-address-types">
+          <thead>
+            <tr>
+              <th scope="col">Type</th>
+              <th scope="col">Here</th>
+              <th scope="col">Public key while unspent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} data-type={r.id}>
+                <td>
+                  {r.label}
+                  <div className="p-faint">
+                    Starts <span className="p-mono">{r.prefix}</span> on mainnet
+                  </div>
+                </td>
+                <td>
+                  <Badge tone={AVAILABILITY_BADGE[r.availability].tone}>{AVAILABILITY_BADGE[r.availability].text}</Badge>
+                  <div className="p-hint">{r.availabilityText}</div>
+                </td>
+                <td>
+                  {r.exposure}
+                  <div className="p-hint">{r.exposureNote}</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
 
 function btcString(sats: number): string {
   // Exact decimal BTC without float drift: 8 places, trailing zeros trimmed.
@@ -249,6 +300,7 @@ function OnchainReceive() {
             Only send {services.data.network} coins to this address. Real bitcoin sent here would be lost.
           </Notice>
         ) : null}
+        <AddressTypesPanel />
       </div>
       <div className="p-span-4 p-stack">
         <Panel title="On-chain balance" note={wallet.updatedAt ? 'Checks every 5 seconds' : undefined}>

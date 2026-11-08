@@ -16,6 +16,11 @@
  *    the vendored protos with the target versions (imports flattened) so a
  *    follow-up `pnpm --filter @sovereign/litd-proto generate && pnpm typecheck`
  *    shows exactly which of our call sites stop compiling.
+ * 6. Quantum-readiness track (quantum.mjs): BIP-360 / BIP-361 Status and
+ *    Version in bitcoin/bips, Bitcoin Core P2MR PRs, and the SHRINCS draft
+ *    BIP, compared with quantum-baseline.json. Writes quantum.json +
+ *    quantum.md. --write-quantum-baseline records this run as the baseline.
+ *    Uses GH_TOKEN / GITHUB_TOKEN for the GitHub API when set.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -34,6 +39,7 @@ import {
   readJson,
   releasesSince,
 } from './lib.mjs';
+import { diffQuantum, githubClient, observeQuantum, quantumMarkdown, readBaseline, writeBaseline } from './quantum.mjs';
 
 const arg = (name, fallback) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -41,6 +47,7 @@ const arg = (name, fallback) => {
 };
 const outDir = path.resolve(arg('out', 'upstream-watch-out'));
 const writeProtos = process.argv.includes('--write-protos');
+const writeQuantumBaseline = process.argv.includes('--write-quantum-baseline');
 
 const map = readJson('packages/litd-proto/protos/upstream.json');
 const pins = currentPins();
@@ -115,6 +122,12 @@ for (const [file, src] of Object.entries(map.files)) {
 const all = files.flatMap((f) => f.changes.map((c) => ({ ...c, file: f.file })));
 const breaking = all.filter((c) => c.severity === 'breaking');
 const additive = all.filter((c) => c.severity === 'additive');
+// ——— quantum readiness ———
+const quantumBase = readBaseline();
+const quantumObs = await observeQuantum(githubClient());
+const quantumChanges = diffQuantum(quantumBase, quantumObs);
+if (writeQuantumBaseline) writeBaseline(quantumObs, quantumBase);
+
 const report = {
   generatedAt: new Date().toISOString(),
   targetLitd,
@@ -123,6 +136,7 @@ const report = {
   components,
   bundled,
   files,
+  quantum: { baselineRecordedAt: quantumBase.recordedAt ?? null, changes: quantumChanges, errors: quantumObs.errors },
   summary: {
     newReleases: components.filter((c) => c.newer.length > 0).length,
     breaking: breaking.length,
@@ -191,6 +205,9 @@ if (s.vendoredDrift.length > 0) {
 mkdirSync(outDir, { recursive: true });
 writeFileSync(path.join(outDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
 writeFileSync(path.join(outDir, 'report.md'), `${md.join('\n')}\n`);
+writeFileSync(path.join(outDir, 'quantum.json'), `${JSON.stringify(quantumObs, null, 2)}\n`);
+writeFileSync(path.join(outDir, 'quantum.md'), `${quantumMarkdown(quantumBase, quantumObs, quantumChanges)}\n`);
+console.log(`quantum readiness: ${quantumChanges.length} change(s) since baseline${quantumObs.errors.length ? `, ${quantumObs.errors.length} not observed` : ''}`);
 console.log(md.slice(0, 3).join('\n'));
 console.log(`report → ${path.relative(process.cwd(), outDir)}/report.{md,json}`);
 if (process.env.GITHUB_OUTPUT) {
@@ -198,7 +215,7 @@ if (process.env.GITHUB_OUTPUT) {
   const wavedNewer = components.find((c) => c.name.startsWith('waved')).newer.length > 0;
   writeFileSync(
     process.env.GITHUB_OUTPUT,
-    `target_litd=${targetLitd}\nlatest_lnd=${latest.lnd}\nlatest_waved=${latest.waved}\nhas_updates=${s.newReleases > 0}\nlitd_newer=${newer}\nwaved_newer=${wavedNewer}\nbreaking=${s.breaking}\nprotos_changed=${files.some((f) => f.textChanged)}\n`,
+    `target_litd=${targetLitd}\nlatest_lnd=${latest.lnd}\nlatest_waved=${latest.waved}\nhas_updates=${s.newReleases > 0}\nlitd_newer=${newer}\nwaved_newer=${wavedNewer}\nbreaking=${s.breaking}\nprotos_changed=${files.some((f) => f.textChanged)}\nquantum_changed=${quantumChanges.length > 0}\n`,
     { flag: 'a' },
   );
 }

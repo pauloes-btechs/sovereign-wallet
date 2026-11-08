@@ -6,6 +6,7 @@ import { useState, type ReactNode } from 'react';
 import { BridgeHttpError } from '../../../modeb/bridge-client.js';
 import type { InvoiceView } from '../../api.js';
 import { Badge, Icon, type Tone } from '../../ui.js';
+import { unactivatedAddressProblem } from './address-guard.js';
 import './send.css';
 
 export function errorText(err: unknown): string {
@@ -144,5 +145,5 @@ export function addressLooksWrong(address: string, network: string | undefined):
   if (prefixes !== undefined && !prefixes.some((p) => lower.startsWith(p))) {
     return `This doesn't look like a ${network} address (expected it to start with ${prefixes.join(', ')}).`;
   }
-  return null;
+  return unactivatedAddressProblem(a);
 }

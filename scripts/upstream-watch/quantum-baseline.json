@@ -1,0 +1,9 @@
+{
+  "recordedAt": "2026-11-08",
+  "bips": {
+    "360": { "file": "bip-0360.mediawiki", "present": true, "status": "Draft", "version": "0.12.1" },
+    "361": { "file": "bip-0361.mediawiki", "present": true, "status": "Draft", "version": null }
+  },
+  "corePrs": null,
+  "shrincs": null
+}

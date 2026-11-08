@@ -17,7 +17,10 @@
  * testnet address on a mainnet wallet is an error, never a warning.
  *
  * Recognized but not payable (named so the user knows why): BOLT12 offers,
- * LNURL, Lightning addresses, Ark addresses.
+ * LNURL, Lightning addresses, Ark addresses — and SegWit addresses whose
+ * version has no spending rules yet (v2 = BIP-360 P2MR, a draft; v3–v16).
+ * Coins sent to those can be taken by anyone, so on-chain sends to them are
+ * refused with that reason (`@sovereign/wallet-core` witnessVersionPolicy).
  */
 
 import {
@@ -30,6 +33,7 @@ import {
   wordsToBytes,
   wordsToInt,
 } from './bitcoinEncoding.js';
+import { outputType, witnessVersionPolicy } from '@sovereign/wallet-core';
 import { SATS_PER_BTC } from '../ui/format.js';
 
 export type BitcoinNetwork = 'mainnet' | 'testnet' | 'signet' | 'regtest';
@@ -222,7 +226,7 @@ export function invoiceAmountSat(invoice: Bolt11Invoice): bigint | null {
 
 // ——— on-chain addresses ———
 
-export type AddressType = 'p2pkh' | 'p2sh' | 'p2wpkh' | 'p2wsh' | 'p2tr' | 'segwit-future';
+export type AddressType = 'p2pkh' | 'p2sh' | 'p2wpkh' | 'p2wsh' | 'p2tr' | 'p2mr' | 'segwit-future';
 
 export interface OnchainAddress {
   /** As it must be sent (bech32 lowercased; base58 untouched). */
@@ -230,6 +234,13 @@ export interface OnchainAddress {
   /** Networks this address is valid on (`tb1…` is both testnet and signet). */
   readonly networks: readonly BitcoinNetwork[];
   readonly type: AddressType;
+  /** SegWit witness version; null for base58 (P2PKH / P2SH). */
+  readonly witnessVersion: number | null;
+  /**
+   * Why this wallet won't send here: set when the SegWit version has no
+   * spending rules yet (anyone could take the coins). Null = sendable.
+   */
+  readonly sendRefusal: string | null;
 }
 
 export const ADDRESS_TYPE_LABEL: Readonly<Record<AddressType, string>> = {
@@ -238,6 +249,7 @@ export const ADDRESS_TYPE_LABEL: Readonly<Record<AddressType, string>> = {
   p2wpkh: 'Native SegWit (P2WPKH)',
   p2wsh: 'SegWit script (P2WSH)',
   p2tr: 'Taproot (P2TR)',
+  p2mr: `${outputType('p2mr').label}, BIP-360 draft`,
   'segwit-future': 'Future SegWit version',
 };
 
@@ -276,9 +288,13 @@ function parseOnchainAddressUnchecked(text: string): { ok: true; address: Onchai
       else if (program.length === 32) type = 'p2wsh';
       else return { ok: false, failure: 'malformed' };
     } else {
-      type = version === 1 && program.length === 32 ? 'p2tr' : 'segwit-future';
+      type = version === 1 && program.length === 32 ? 'p2tr' : version === 2 && program.length === 32 ? 'p2mr' : 'segwit-future';
     }
-    return { ok: true, address: { address: lower, networks: segwitHrp.networks, type } };
+    const policy = witnessVersionPolicy(version, { programLength: program.length });
+    const sendRefusal = policy.allowed
+      ? null
+      : `This is a ${ADDRESS_TYPE_LABEL[type]} address (SegWit version ${version}). ${policy.reason} This wallet won't send to it — ask the recipient for a different address.`;
+    return { ok: true, address: { address: lower, networks: segwitHrp.networks, type, witnessVersion: version, sendRefusal } };
   }
   if (!/^[123mn][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(trimmed)) return { ok: false, failure: 'not-address' };
   const payload = base58CheckDecode(trimmed);
@@ -287,13 +303,13 @@ function parseOnchainAddressUnchecked(text: string): { ok: true; address: Onchai
   const testNets: readonly BitcoinNetwork[] = ['testnet', 'signet', 'regtest'];
   switch (payload[0]) {
     case 0x00:
-      return { ok: true, address: { address: trimmed, networks: ['mainnet'], type: 'p2pkh' } };
+      return { ok: true, address: { address: trimmed, networks: ['mainnet'], type: 'p2pkh', witnessVersion: null, sendRefusal: null } };
     case 0x05:
-      return { ok: true, address: { address: trimmed, networks: ['mainnet'], type: 'p2sh' } };
+      return { ok: true, address: { address: trimmed, networks: ['mainnet'], type: 'p2sh', witnessVersion: null, sendRefusal: null } };
     case 0x6f:
-      return { ok: true, address: { address: trimmed, networks: testNets, type: 'p2pkh' } };
+      return { ok: true, address: { address: trimmed, networks: testNets, type: 'p2pkh', witnessVersion: null, sendRefusal: null } };
     case 0xc4:
-      return { ok: true, address: { address: trimmed, networks: testNets, type: 'p2sh' } };
+      return { ok: true, address: { address: trimmed, networks: testNets, type: 'p2sh', witnessVersion: null, sendRefusal: null } };
     default:
       return { ok: false, failure: 'malformed' };
   }
@@ -358,7 +374,8 @@ export type DestinationErrorCode =
   | 'wrong-network'
   | 'invalid-amount'
   | 'unsupported-requirement'
-  | 'unsupported-format';
+  | 'unsupported-format'
+  | 'unactivated-witness-version';
 
 export interface DestinationError {
   readonly code: DestinationErrorCode;
@@ -500,6 +517,7 @@ function parseDestinationUnchecked(raw: string, network: BitcoinNetwork): Destin
       : addressFailure(address.failure);
   }
   if (!address.address.networks.includes(network)) return wrongNetwork('address', address.address.networks, network);
+  if (address.address.sendRefusal !== null) return fail('unactivated-witness-version', address.address.sendRefusal);
   return {
     ok: true,
     destination: { source: 'address', onchain: address.address, lightning: null, onchainAmountSat: null, label: null, message: null },
@@ -565,6 +583,11 @@ function parseBip21(text: string, network: BitcoinNetwork): DestinationResult {
         : addressFailure(address.failure);
     }
     if (!address.address.networks.includes(network)) return wrongNetwork('address', address.address.networks, network);
+    // Without a Lightning fallback there is nothing payable; with one, the
+    // on-chain rail is offered as unavailable with this reason (railOptions).
+    if (address.address.sendRefusal !== null && lightning === null) {
+      return fail('unactivated-witness-version', address.address.sendRefusal);
+    }
     onchain = address.address;
   }
   if (onchain === null && lightning === null) {

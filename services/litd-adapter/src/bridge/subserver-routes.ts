@@ -32,6 +32,7 @@
  */
 import type { AutoLoopBudgetPolicy } from '@sovereign/liquidity';
 import { BridgeRequestError } from './session.js';
+import { requireSendableAddress } from './address-policy.js';
 import type { SubServerHub, SwapAuthorization } from './subservers.js';
 
 type Json = Record<string, unknown>;
@@ -132,9 +133,10 @@ export async function routeSubServers(
   if (method === 'GET' && swapMatch !== null) return hub.swap(swapMatch[1] ?? '');
   if (method === 'POST' && path === '/loop/out') {
     const b = await post();
+    const destAddress = str(b, 'destAddress');
     return hub.loopOut({
       amountSat: sats(b, 'amountSat', true),
-      destAddress: str(b, 'destAddress'),
+      destAddress: destAddress === undefined ? undefined : requireSendableAddress(destAddress),
       sweepConfTarget: int(b, 'sweepConfTarget'),
       outgoingChanIds: strList(b, 'outgoingChanIds', /^[0-9]{1,20}$/, 'channel ids'),
       label: str(b, 'label'),

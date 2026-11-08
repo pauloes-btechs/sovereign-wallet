@@ -140,6 +140,19 @@ React UI → `waved` REST gateway (Wavelength). Mobile everyday = Wavelength SDK
 | Privacy controls | 🟨 | Amount hiding + connections disclosure; Tor not configured for the node |
 | Crash-safe payment intents | 🟨 | Engine is drill-tested; only Wavelength sends use it |
 
+## Post-quantum readiness
+
+See [QUANTUM_READINESS](QUANTUM_READINESS.md). BIP-360 (P2MR, SegWit v2) is a Draft and not activated as of 2026-11-08.
+
+| Capability | Status | Evidence / gap |
+| --- | --- | --- |
+| Output-type registry (P2PKH, nested SegWit, P2WPKH, P2WSH, P2TR active; P2MR proposed, BIP-360 Draft) with key-exposure notes | 🟦 | `packages/wallet-core/src/addressTypes.ts`; unit tests include the BIP-360 example address decoding as v2 |
+| Refuse sends to unactivated SegWit versions (v2 P2MR, v3–v16, non-32-byte v1) | ✅ | Mobile parse/rail selection (incl. `bitcoin:` links), desktop Send / Transfers / Loop Out before review, bridge `/onchain/send` and `/loop/out` return 400 with the reason. Tests in each package |
+| Receive address types listed with availability and key exposure | ✅ | Desktop Receive → On-chain "Address types"; P2MR shown as not available with the reason. Taproot receive still not offered by the bridge |
+| P2MR receive addresses | ⛔ | BIP-360 not activated; no way to create one by design. Bridge answers `type: p2mr` with the reason |
+| Migration of key-exposed coins to P2MR | ⬜ | Needs BIP-360 activation and LND support |
+| Weekly tracking of BIP-360/361, Core P2MR PRs, SHRINCS draft BIP | ✅ | `scripts/upstream-watch/quantum.mjs` + baseline; fetch-stubbed tests in `watch.test.ts`. Not yet run against the live GitHub API from CI |
+
 ## What is left (ordered)
 
 1. **Extend `loop-wallet-path.yml`** (green): add static-address Loop In

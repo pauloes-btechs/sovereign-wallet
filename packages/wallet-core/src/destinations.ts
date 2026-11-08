@@ -14,6 +14,7 @@
  * pure-TS SHA-256 and will ship with its own fuzz target.
  */
 
+import { witnessVersionPolicy } from './addressTypes.js';
 import { bech32Decode, segwitAddressDecode } from './bech32.js';
 
 export type DestinationKind = 'onchain' | 'lightning-invoice' | 'asset-id' | 'unknown';
@@ -147,6 +148,10 @@ export function parseDestination(
   if (hrpMatch && hrps.includes(hrpCandidate) && hrpCandidate.length <= 5) {
     const decoded = segwitAddressDecode(input, hrps);
     if (decoded) {
+      // SegWit versions without consensus rules (v2+ today, BIP-360 P2MR
+      // included) are spendable by anyone: refuse with the reason.
+      const policy = witnessVersionPolicy(decoded.witnessVersion, { programLength: decoded.program.length });
+      if (!policy.allowed) return { ok: false, kind: 'unknown', reason: policy.reason };
       return { ok: true, kind: 'onchain', normalized: input.toLowerCase() };
     }
     return { ok: false, kind: 'unknown', reason: 'malformed on-chain address' };

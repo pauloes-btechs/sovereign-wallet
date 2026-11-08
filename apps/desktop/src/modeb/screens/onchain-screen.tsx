@@ -3,6 +3,7 @@
  * fee-rate with estimate + explicit confirmation). Send-all supported; fee
  * estimate is advisory and shown before authorization.
  */
+import { unactivatedWitnessRefusal } from '@sovereign/wallet-core';
 import { useState } from 'react';
 import { Button, Card, TextField } from '@sovereign/ui';
 
@@ -91,6 +92,13 @@ function SendCard({ client }: { readonly client: BridgeClient }): React.ReactNod
     }
     if (address.trim() === '') {
       setError('Enter a Bitcoin address.');
+      return;
+    }
+    // SegWit versions without spending rules (v2 = BIP-360 P2MR draft, v3+):
+    // anyone could take the coins, so refuse before confirming.
+    const refusal = unactivatedWitnessRefusal(address);
+    if (refusal !== null) {
+      setError(`${refusal.reason} This wallet won't send to a SegWit version-${refusal.witnessVersion} address.`);
       return;
     }
     if (!sendAll && amountSat === undefined) {

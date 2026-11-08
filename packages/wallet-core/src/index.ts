@@ -15,4 +15,5 @@ export * from './backup.js';
 export * from './bech32.js';
 export * from './destinations.js';
 export * from './quantum.js';
+export * from './addressTypes.js';
 export * from '@sovereign/payments';

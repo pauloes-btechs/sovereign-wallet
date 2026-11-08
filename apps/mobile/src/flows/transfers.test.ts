@@ -205,6 +205,12 @@ describe('Loop quote and fee limits', () => {
     expect(bitcoinAddressError('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4', 'regtest')).toMatch(/regtest/);
   });
 
+  it('refuses a Loop Out to a SegWit v2 (BIP-360 P2MR) address with the reason', () => {
+    expect(bitcoinAddressError('bc1zzmv50jjgxxhww6ve4g5zpewrkjqhr06fyujpm20tuezdlxmfphcqfc80ve', 'mainnet')).toMatch(
+      /Coins sent to a version-2 address before BIP-360 activates can be taken by anyone\./,
+    );
+  });
+
   it('address checks use the full parser: checksum, network and unknown networks', () => {
     // A bech32 typo (last character changed) passed the old prefix/charset check.
     expect(bitcoinAddressError('bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt081', 'regtest')).toMatch(/doesn't check out/);

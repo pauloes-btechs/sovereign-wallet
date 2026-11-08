@@ -375,7 +375,7 @@ export function bitcoinAddressError(text: string, network: string): string | nul
     const found = parsed.address.networks.map((n) => NETWORK_LABEL[n]).join(' or ');
     return `That is a ${found} address, but your node is on ${NETWORK_LABEL[expected]}. Use a ${NETWORK_LABEL[expected]} address.`;
   }
-  return null;
+  return parsed.address.sendRefusal;
 }
 
 // ——— swap state copy ———

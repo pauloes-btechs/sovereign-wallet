@@ -6,6 +6,7 @@ import {
   invoiceAmountSat,
   parseBtcAmount,
   knownBitcoinNetwork,
+  encodeSegwitAddress,
   parseDestination,
   parseOnchainAddress,
 } from './destination.js';
@@ -393,5 +394,74 @@ describe('BIP21 amount disagreement', () => {
     }
     const agree = parseDestination(`bitcoin:${address}?amount=0.000021&lightning=${inv}`, 'regtest');
     expect(agree.ok && agree.destination.amountWarning).toBeNull();
+  });
+});
+
+describe('unactivated SegWit versions (BIP-360 P2MR and beyond)', () => {
+  /** The example P2MR address from the BIP-360 text: mainnet, SegWit v2. */
+  const BIP360_EXAMPLE = 'bc1zzmv50jjgxxhww6ve4g5zpewrkjqhr06fyujpm20tuezdlxmfphcqfc80ve';
+  const program = new Uint8Array(32).fill(7);
+  const regtestV2 = encodeSegwitAddress('regtest', 2, program);
+  const testnetV2 = encodeSegwitAddress('testnet', 2, program);
+  const REASON = 'Coins sent to a version-2 address before BIP-360 activates can be taken by anyone.';
+
+  it('still recognizes v2 addresses (so the refusal is specific) and marks them unsendable', () => {
+    const main = parseOnchainAddress(BIP360_EXAMPLE);
+    expect(main.ok).toBe(true);
+    if (!main.ok) return;
+    expect(main.address.type).toBe('p2mr');
+    expect(main.address.witnessVersion).toBe(2);
+    expect(main.address.sendRefusal).toContain(REASON);
+    expect(main.address.sendRefusal).toContain('Pay-to-Merkle-Root (P2MR)');
+    expect(regtestV2.startsWith('bcrt1z')).toBe(true);
+    expect(testnetV2.startsWith('tb1z')).toBe(true);
+  });
+
+  it('refuses a bare v2 address with the reason, on every network', () => {
+    const main = parseDestination(BIP360_EXAMPLE, 'mainnet');
+    expect(main.ok === false && main.error.code).toBe('unactivated-witness-version');
+    expect(main.ok === false && main.error.message).toContain(REASON);
+    const rt = parseDestination(regtestV2, 'regtest');
+    expect(rt.ok === false && rt.error.code).toBe('unactivated-witness-version');
+    const tb = parseDestination(testnetV2.toUpperCase(), 'signet');
+    expect(tb.ok === false && tb.error.code).toBe('unactivated-witness-version');
+  });
+
+  it('still reports the wrong network first', () => {
+    const r = parseDestination(BIP360_EXAMPLE, 'regtest');
+    expect(r.ok === false && r.error.code).toBe('wrong-network');
+  });
+
+  it('refuses a BIP21 link whose only payable part is a v2 address', () => {
+    const r = parseDestination(`bitcoin:${regtestV2}?amount=0.001`, 'regtest');
+    expect(r.ok === false && r.error.code).toBe('unactivated-witness-version');
+    expect(r.ok === false && r.error.message).toContain(REASON);
+  });
+
+  it('keeps the Lightning part of a unified BIP21 link, with the on-chain part marked unsendable', () => {
+    const inv = encodeSimulatedBolt11({
+      network: 'regtest',
+      amountMsat: 5_000_000n,
+      paymentHashHex: simHashHex('p2mr-unified'),
+      description: 'x',
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+    const r = parseDestination(`bitcoin:${regtestV2}?lightning=${inv}`, 'regtest');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.destination.onchain?.sendRefusal).toContain(REASON);
+  });
+
+  it('refuses v3–v16 and a non-32-byte v1 program; leaves v0 and Taproot sendable', () => {
+    for (const v of [3, 16]) {
+      const r = parseDestination(encodeSegwitAddress('regtest', v, program), 'regtest');
+      expect(r.ok === false && r.error.code).toBe('unactivated-witness-version');
+      expect(r.ok === false && r.error.message).toContain(`version-${v} address can be taken by anyone`);
+    }
+    const oddV1 = parseDestination(encodeSegwitAddress('regtest', 1, program.slice(0, 20)), 'regtest');
+    expect(oddV1.ok === false && oddV1.error.code).toBe('unactivated-witness-version');
+    const taproot = parseDestination(encodeSegwitAddress('regtest', 1, program), 'regtest');
+    expect(taproot.ok && taproot.destination.onchain?.sendRefusal).toBeNull();
+    const v0 = parseDestination(simSegwitAddress('regtest', 'v0'), 'regtest');
+    expect(v0.ok && v0.destination.onchain?.sendRefusal).toBeNull();
   });
 });
