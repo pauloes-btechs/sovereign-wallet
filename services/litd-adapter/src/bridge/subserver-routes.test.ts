@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Loop } from '@sovereign/litd-proto';
+import { AddressType, Loop, OutPoint, Transaction, Utxo, type GetTransactionsRequest, type LightningClient, type ListUnspentRequest } from '@sovereign/litd-proto';
 import { NO_ROUTE, routeSubServers } from './subserver-routes.js';
-import { mapSwapStatus, type SubServerHub } from './subservers.js';
+import { mapSwapStatus, mapUtxo, spentFromAddresses, SubServerHub, utxoAddressType } from './subservers.js';
 import { BridgeRequestError } from './session.js';
 
 function fakeHub(): SubServerHub & Record<string, ReturnType<typeof vi.fn>> {
@@ -27,6 +27,7 @@ function fakeHub(): SubServerHub & Record<string, ReturnType<typeof vi.fn>> {
     newAssetAddress: ok(),
     decodeAssetAddress: ok(),
     sendAsset: ok(),
+    utxos: vi.fn(async () => ({ utxos: [], spentFromAddresses: [], unresolvedSpends: 0, historyTransactions: 0 })),
   } as unknown as SubServerHub & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -86,6 +87,18 @@ describe('sub-server routes', () => {
     expect(hub.sendAsset).toHaveBeenCalledWith('taprt1aaa');
   });
 
+  it('serves GET /lnd/utxos from the hub', async () => {
+    const hub = fakeHub();
+    expect(await routeSubServers(hub, 'GET', '/lnd/utxos', body({}))).toEqual({
+      utxos: [],
+      spentFromAddresses: [],
+      unresolvedSpends: 0,
+      historyTransactions: 0,
+    });
+    expect(hub.utxos).toHaveBeenCalledOnce();
+    expect(await routeSubServers(hub, 'POST', '/lnd/utxos', body({}))).toBe(NO_ROUTE);
+  });
+
   it('only enables AutoLoop with an explicit enabled:true', async () => {
     const hub = fakeHub();
     expect(await status(routeSubServers(hub, 'POST', '/loop/autoloop', body({ enabled: 'yes' })))).toBe(400);
@@ -132,5 +145,115 @@ describe('mapSwapStatus', () => {
       Loop.SwapStatus.create({ type: Loop.SwapType.LOOP_IN, state: Loop.SwapState.FAILED, failureReason: Loop.FailureReason.TIMEOUT }),
     );
     expect(view).toMatchObject({ kind: 'loop-in', state: 'failed', done: true, failureReason: 'timeout' });
+  });
+});
+
+// Display-order txid (what explorers print) and its raw little-endian bytes.
+const TXID_A = '00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff';
+const TXID_A_RAW = Uint8Array.from(Buffer.from(TXID_A, 'hex').reverse());
+const TXID_B = 'b'.repeat(63) + '1';
+const TXID_C = 'c'.repeat(63) + '2';
+
+describe('mapUtxo', () => {
+  it('uses txid_str as-is (display order) and keeps the output index', () => {
+    const v = mapUtxo(
+      Utxo.create({
+        addressType: AddressType.TAPROOT_PUBKEY,
+        address: 'bcrt1pexample',
+        amountSat: 50_000n,
+        pkScript: '5120' + 'ab'.repeat(32),
+        outpoint: OutPoint.create({ txidStr: TXID_A, txidBytes: TXID_A_RAW, outputIndex: 3 }),
+        confirmations: 6n,
+      }),
+    );
+    expect(v).toEqual({
+      outpoint: `${TXID_A}:3`,
+      address: 'bcrt1pexample',
+      addressType: 'p2tr',
+      amountSat: 50_000,
+      confirmations: 6,
+      pkScript: '5120' + 'ab'.repeat(32),
+    });
+  });
+
+  it('reverses raw txid bytes when only txid_bytes is set', () => {
+    const v = mapUtxo(Utxo.create({ outpoint: OutPoint.create({ txidBytes: TXID_A_RAW, outputIndex: 0 }) }));
+    expect(v.outpoint).toBe(`${TXID_A}:0`);
+  });
+
+  it('collapses UNUSED_* address types onto their script family', () => {
+    expect(utxoAddressType(AddressType.WITNESS_PUBKEY_HASH)).toBe('p2wkh');
+    expect(utxoAddressType(AddressType.UNUSED_WITNESS_PUBKEY_HASH)).toBe('p2wkh');
+    expect(utxoAddressType(AddressType.NESTED_PUBKEY_HASH)).toBe('np2wkh');
+    expect(utxoAddressType(AddressType.UNUSED_NESTED_PUBKEY_HASH)).toBe('np2wkh');
+    expect(utxoAddressType(AddressType.TAPROOT_PUBKEY)).toBe('p2tr');
+    expect(utxoAddressType(AddressType.UNUSED_TAPROOT_PUBKEY)).toBe('p2tr');
+    expect(utxoAddressType(99 as AddressType)).toBe('unknown');
+  });
+});
+
+/** A: two receives to bcrt1qreused (0, 1) + one to bcrt1qfresh (2). B spends A:0. C spends a coin A/B never created. */
+function history(): Transaction[] {
+  return [
+    Transaction.create({
+      txHash: TXID_A,
+      outputDetails: [
+        { outputType: 2, address: 'bcrt1qreused', pkScript: '', outputIndex: 0n, amount: 1n, isOurAddress: true },
+        { outputType: 2, address: 'bcrt1qreused', pkScript: '', outputIndex: 1n, amount: 1n, isOurAddress: true },
+        { outputType: 2, address: 'bcrt1qfresh', pkScript: '', outputIndex: 2n, amount: 1n, isOurAddress: true },
+        { outputType: 2, address: 'bcrt1qsomeoneelse', pkScript: '', outputIndex: 3n, amount: 1n, isOurAddress: false },
+      ],
+    }),
+    Transaction.create({
+      txHash: TXID_B,
+      previousOutpoints: [
+        { outpoint: `${TXID_A}:0`, isOurOutput: true },
+        { outpoint: `${TXID_A}:3`, isOurOutput: false },
+      ],
+    }),
+    Transaction.create({ txHash: TXID_C, previousOutpoints: [{ outpoint: `${'d'.repeat(64)}:0`, isOurOutput: true }] }),
+  ];
+}
+
+describe('spentFromAddresses', () => {
+  it('maps our spent inputs back to the address they were paid to, and counts spends it cannot map', () => {
+    expect(spentFromAddresses(history())).toEqual({ addresses: ['bcrt1qreused'], unresolvedSpends: 1 });
+  });
+
+  it('never treats a foreign input as ours', () => {
+    const txs = history().slice(0, 2);
+    expect(spentFromAddresses(txs).addresses).not.toContain('bcrt1qsomeoneelse');
+  });
+
+  it('is empty for a wallet that never spent', () => {
+    expect(spentFromAddresses(history().slice(0, 1))).toEqual({ addresses: [], unresolvedSpends: 0 });
+  });
+});
+
+describe('SubServerHub.utxos', () => {
+  it('asks LND for every confirmation depth and joins the spend history', async () => {
+    const listUnspent = vi.fn((req: ListUnspentRequest) => ({
+      response: Promise.resolve({
+        utxos: [
+          Utxo.create({ address: 'bcrt1qreused', amountSat: 10n, addressType: AddressType.WITNESS_PUBKEY_HASH, outpoint: OutPoint.create({ txidStr: TXID_A, outputIndex: 1 }) }),
+          Utxo.create({ address: 'bcrt1qfresh', amountSat: 20n, addressType: AddressType.WITNESS_PUBKEY_HASH, outpoint: OutPoint.create({ txidStr: TXID_A, outputIndex: 2 }), confirmations: req.minConfs === 0 ? 0n : 1n }),
+        ],
+      }),
+    }));
+    const getTransactions = vi.fn((_req: GetTransactionsRequest) => ({ response: Promise.resolve({ transactions: history() }) }));
+    const lightning = { listUnspent, getTransactions } as unknown as LightningClient;
+    const hub = new SubServerHub({
+      network: 'regtest',
+      litdEndpoint: { rpcHost: '127.0.0.1', rpcPort: 1, tlsCertPath: '/nonexistent' },
+      superMacaroonPath: '/nonexistent',
+      plan: { extraSubServerArgs: [], operators: { loop: { mode: 'offline' }, pool: { mode: 'offline' } } },
+      lightning: async () => lightning,
+    });
+    const v = await hub.utxos();
+    expect(listUnspent.mock.calls[0]?.[0]).toMatchObject({ minConfs: 0, maxConfs: 2_147_483_647, account: '' });
+    expect(v.utxos.map((u) => u.outpoint)).toEqual([`${TXID_A}:2`, `${TXID_A}:1`]);
+    expect(v.spentFromAddresses).toEqual(['bcrt1qreused']);
+    expect(v.unresolvedSpends).toBe(1);
+    expect(v.historyTransactions).toBe(3);
   });
 });

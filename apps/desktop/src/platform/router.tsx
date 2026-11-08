@@ -50,6 +50,7 @@ export const ROUTES: readonly RouteDef[] = [
 
   { path: '/wallets', title: 'Wallets', group: 'Account', icon: 'wallets', page: page(() => import('./pages/account/wallets.js')), keywords: 'mode everyday advanced' },
   { path: '/security', title: 'Security & recovery', group: 'Account', icon: 'security', page: page(() => import('./pages/account/security.js')), keywords: 'backup scb seed restore lock' },
+  { path: '/quantum', title: 'Quantum exposure', group: 'Account', icon: 'chain', page: page(() => import('./pages/account/quantum.js')), keywords: 'quantum post-quantum bip-360 p2mr exposure taproot public key address reuse' },
   { path: '/privacy', title: 'Privacy', group: 'Account', icon: 'privacy', page: page(() => import('./pages/account/privacy.js')), keywords: 'tor egress disclosure' },
   { path: '/settings', title: 'Settings', group: 'Account', icon: 'settings', page: page(() => import('./pages/account/settings.js')), keywords: 'preferences unit denomination' },
   { path: '/developer', title: 'Developer tools', group: 'Account', icon: 'developer', page: page(() => import('./pages/account/developer.js')), keywords: 'api rpc logs diagnostics' },

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { Channel, CommitmentType, PendingChannelsResponse_PendingChannel } from '@sovereign/litd-proto';
 import {
   buildCloseChannelRequest,
+  commitmentTypeName,
   buildOpenChannelRequest,
   buildRestoreChanBackupRequest,
   buildSendCoinsRequest,
@@ -181,6 +183,31 @@ describe('channel display states', () => {
     const waiting = mapPendingChannel('waiting-close', { limboBalance: 420n });
     expect(waiting.state).toBe('waiting-close');
     expect(waiting.initiatorLabel).toContain('420');
+  });
+});
+
+describe('channel commitment type', () => {
+  it('names every LND commitment type, including the shared TAPROOT/SIMPLE_TAPROOT_FINAL value', () => {
+    expect(commitmentTypeName(CommitmentType.ANCHORS)).toBe('anchors');
+    expect(commitmentTypeName(CommitmentType.LEGACY)).toBe('legacy');
+    expect(commitmentTypeName(CommitmentType.STATIC_REMOTE_KEY)).toBe('static_remote_key');
+    expect(commitmentTypeName(CommitmentType.SCRIPT_ENFORCED_LEASE)).toBe('script_enforced_lease');
+    expect(commitmentTypeName(CommitmentType.SIMPLE_TAPROOT)).toBe('simple_taproot');
+    expect(commitmentTypeName(CommitmentType.SIMPLE_TAPROOT_OVERLAY)).toBe('simple_taproot_overlay');
+    expect(commitmentTypeName(CommitmentType.TAPROOT)).toBe('taproot');
+    expect(commitmentTypeName(CommitmentType.SIMPLE_TAPROOT_FINAL)).toBe('taproot');
+    expect(commitmentTypeName(CommitmentType.UNKNOWN_COMMITMENT_TYPE)).toBe('unknown');
+    expect(commitmentTypeName(undefined)).toBe('unknown');
+  });
+
+  it('carries the commitment type on open and pending rows', () => {
+    const open = mapOpenChannel(Channel.create({ channelPoint: 'aa:0', commitmentType: CommitmentType.SIMPLE_TAPROOT }));
+    expect(open.commitmentType).toBe('simple_taproot');
+    const pending = mapPendingChannel('pending-open', {
+      channel: PendingChannelsResponse_PendingChannel.create({ channelPoint: 'bb:0', commitmentType: CommitmentType.ANCHORS }),
+    });
+    expect(pending.commitmentType).toBe('anchors');
+    expect(mapPendingChannel('waiting-close', {}).commitmentType).toBe('unknown');
   });
 });
 

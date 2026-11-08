@@ -284,6 +284,9 @@ describe('Backup (everyday wallet)', () => {
 
     tab('Wallet');
     await open('Security and recovery');
+    // Ark VTXOs are taproot outputs: stated as exposed, never as quantum-safe.
+    expect(screen.getByText(/Your Ark funds \(VTXOs\) are taproot outputs/)).toBeTruthy();
+    expect(screen.getByText('Exposed')).toBeTruthy();
     await open('Backup');
     expect(await screen.findByText('Every word verified', {}, { timeout: 15_000 })).toBeTruthy();
     typeInto('Recovery phrase', [...SIM_WORDS.slice(0, 11), 'zoo'].join(' '));
@@ -315,6 +318,14 @@ describe('Network and sessions (remote node)', () => {
     expect(port.revoked).toEqual(['03bb'.padEnd(66, '2')]);
     // This phone's session is still connected.
     expect(screen.getAllByRole('tab')).toHaveLength(5);
+  });
+
+  it('points to the desktop app for quantum exposure (the LNC port has no coin list)', async () => {
+    await pairWith(new SimulatedLncPort());
+    tab('Wallet');
+    await open('Security and recovery');
+    expect(screen.getByText('See the desktop app')).toBeTruthy();
+    expect(screen.getByText(/this connection does not read/)).toBeTruthy();
   });
 
   it('says why sessions are unavailable when the port cannot list them', async () => {

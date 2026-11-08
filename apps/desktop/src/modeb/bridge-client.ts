@@ -85,6 +85,13 @@ export interface ChannelRowView {
   readonly remoteBalanceSat: string;
   readonly state: 'opening' | 'open' | 'open-inactive' | 'closing' | 'closing-force' | 'waiting-close';
   readonly initiatorLabel: string;
+  /**
+   * LND commitment type, named: 'legacy' | 'static_remote_key' | 'anchors' |
+   * 'script_enforced_lease' (P2WSH 2-of-2 funding) or 'simple_taproot' |
+   * 'simple_taproot_overlay' | 'taproot' (MuSig2 taproot funding) | 'unknown'.
+   * Absent from bridges older than this field.
+   */
+  readonly commitmentType?: string;
 }
 
 export interface ChannelsView {

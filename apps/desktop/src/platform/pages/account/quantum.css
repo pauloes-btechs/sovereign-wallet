@@ -1,0 +1,152 @@
+/*
+ * Quantum exposure page. Layout only; colors come from --sovl-* tokens.
+ * Exposed uses the warning tone, not-exposed-yet a neutral strong border
+ * (it is not "safe"), not-classified the info tone. Status is always also
+ * written in text.
+ */
+
+.qx-lead {
+  margin: 0;
+  font-size: var(--sovl-text-lg);
+  line-height: 1.5;
+  color: var(--sovl-text-secondary);
+}
+
+.qx-lead strong {
+  color: var(--sovl-text);
+  font-weight: 600;
+}
+
+.qx-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--sovl-surface-raised);
+  gap: 2px;
+}
+
+.qx-bar-seg,
+.qx-swatch {
+  min-width: 3px;
+}
+
+.qx-bar-seg[data-status='exposed'],
+.qx-swatch[data-status='exposed'] {
+  background: var(--sovl-warning);
+}
+
+.qx-bar-seg[data-status='hidden'],
+.qx-swatch[data-status='hidden'] {
+  background: var(--sovl-fund-onchain);
+}
+
+.qx-bar-seg[data-status='unclassified'],
+.qx-swatch[data-status='unclassified'] {
+  background: repeating-linear-gradient(-45deg, var(--sovl-info) 0 4px, var(--sovl-surface-raised) 4px 7px);
+}
+
+.qx-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: var(--sovl-space-2);
+}
+
+.qx-status-label {
+  display: inline-flex;
+  align-items: center;
+}
+
+.qx-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sovl-space-4);
+}
+
+.qx-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sovl-space-2);
+}
+
+.qx-table td {
+  vertical-align: top;
+}
+
+.qx-what {
+  min-width: 150px;
+}
+
+.qx-table .p-num {
+  white-space: nowrap;
+}
+
+.qx-what-title {
+  font-weight: 500;
+}
+
+.qx-what-meta {
+  display: flex;
+  flex-wrap: wrap;
+  white-space: nowrap;
+  align-items: center;
+  gap: var(--sovl-space-2);
+  margin: 4px 0 2px;
+  font-size: var(--sovl-text-xs);
+}
+
+.qx-text {
+  font-size: var(--sovl-text-sm);
+  color: var(--sovl-text-secondary);
+  line-height: 1.45;
+  min-width: 200px;
+  max-width: 560px;
+}
+
+.qx-text p {
+  margin: 0;
+}
+
+.qx-text p.qx-reduce {
+  margin-top: var(--sovl-space-2);
+}
+
+.qx-reduce strong {
+  color: var(--sovl-text);
+  font-weight: 500;
+}
+
+.qx-items .p-seg button {
+  white-space: nowrap;
+}
+
+.qx-items > .p-panel-head > .p-actions {
+  flex-shrink: 0;
+}
+
+.qx-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sovl-space-4);
+}
+
+.qx-check {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--sovl-space-2);
+  font-size: var(--sovl-text-sm);
+  line-height: 1.45;
+}
+
+.qx-check > svg {
+  margin-top: 2px;
+  color: var(--sovl-text-secondary);
+}
+
+.qx-check-title {
+  font-weight: 500;
+  color: var(--sovl-text);
+  margin-bottom: 2px;
+}

@@ -25,7 +25,7 @@ import type {
   WalletBalanceResponse,
 } from '@sovereign/litd-proto';
 // Enum members are used as values in the switch mappings below.
-import { ChannelCloseSummary_ClosureType } from '@sovereign/litd-proto';
+import { ChannelCloseSummary_ClosureType, CommitmentType } from '@sovereign/litd-proto';
 
 /** The lifecycle phase of the embedded LND wallet, as provable from RPCs. */
 export type LitdWalletPhase = 'missing' | 'locked' | 'ready';
@@ -196,6 +196,43 @@ export function pendingChannelDisplayState(kind: PendingChannelKind): ChannelDis
   }
 }
 
+/**
+ * LND `CommitmentType`, named. The taproot variants (`simple_taproot`,
+ * `simple_taproot_overlay`, `taproot`) fund the channel with a MuSig2 taproot
+ * output; the others with a P2WSH 2-of-2 multisig.
+ */
+export type ChannelCommitmentType =
+  | 'legacy'
+  | 'static_remote_key'
+  | 'anchors'
+  | 'script_enforced_lease'
+  | 'simple_taproot'
+  | 'simple_taproot_overlay'
+  | 'taproot'
+  | 'unknown';
+
+export function commitmentTypeName(t: CommitmentType | undefined): ChannelCommitmentType {
+  switch (t) {
+    case CommitmentType.LEGACY:
+      return 'legacy';
+    case CommitmentType.STATIC_REMOTE_KEY:
+      return 'static_remote_key';
+    case CommitmentType.ANCHORS:
+      return 'anchors';
+    case CommitmentType.SCRIPT_ENFORCED_LEASE:
+      return 'script_enforced_lease';
+    case CommitmentType.SIMPLE_TAPROOT:
+      return 'simple_taproot';
+    case CommitmentType.SIMPLE_TAPROOT_OVERLAY:
+      return 'simple_taproot_overlay';
+    // TAPROOT and SIMPLE_TAPROOT_FINAL share the value 7.
+    case CommitmentType.TAPROOT:
+      return 'taproot';
+    default:
+      return 'unknown';
+  }
+}
+
 export interface ChannelRowView {
   readonly channelPoint: string;
   readonly chanId: string;
@@ -205,6 +242,8 @@ export interface ChannelRowView {
   readonly remoteBalanceSat: bigint;
   readonly state: ChannelDisplayState;
   readonly initiatorLabel: string;
+  /** How the channel's funding output is built (see ChannelCommitmentType). */
+  readonly commitmentType: ChannelCommitmentType;
 }
 
 export function mapOpenChannel(channel: Channel): ChannelRowView {
@@ -217,6 +256,7 @@ export function mapOpenChannel(channel: Channel): ChannelRowView {
     remoteBalanceSat: channel.remoteBalance,
     state: openChannelDisplayState(channel),
     initiatorLabel: channel.initiator ? 'opened by you' : 'opened by peer',
+    commitmentType: commitmentTypeName(channel.commitmentType),
   };
 }
 
@@ -242,6 +282,7 @@ export function mapPendingChannel(
       kind === 'pending-open'
         ? 'confirming funding transaction'
         : `funds in limbo: ${pending.limboBalance ?? 0n} sat`,
+    commitmentType: commitmentTypeName(channel?.commitmentType),
   };
 }
 

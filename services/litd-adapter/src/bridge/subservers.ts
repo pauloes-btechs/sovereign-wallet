@@ -32,9 +32,12 @@ import {
   ListPeersRequest,
   FeeReportRequest,
   GetTransactionsRequest,
+  ListUnspentRequest,
   PolicyUpdateRequest,
   ChannelPoint,
   type LightningClient,
+  type Transaction,
+  type Utxo,
 } from '@sovereign/litd-proto';
 import {
   LiquidityManager,
@@ -251,6 +254,67 @@ export function mapSwapStatus(s: Readonly<Loop.SwapStatus>): SwapView {
   };
 }
 
+const INT32_MAX = 2_147_483_647;
+
+export function utxoAddressType(t: AddressType): UtxoAddressType {
+  switch (t) {
+    case AddressType.WITNESS_PUBKEY_HASH:
+    case AddressType.UNUSED_WITNESS_PUBKEY_HASH:
+      return 'p2wkh';
+    case AddressType.NESTED_PUBKEY_HASH:
+    case AddressType.UNUSED_NESTED_PUBKEY_HASH:
+      return 'np2wkh';
+    case AddressType.TAPROOT_PUBKEY:
+    case AddressType.UNUSED_TAPROOT_PUBKEY:
+      return 'p2tr';
+    default:
+      return 'unknown';
+  }
+}
+
+/** ListUnspent row → view. `txid_str` is already display order; raw `txid_bytes` are reversed (little-endian). */
+export function mapUtxo(u: Readonly<Utxo>): UtxoView {
+  const op = u.outpoint;
+  const txid = op === undefined ? '' : op.txidStr !== '' ? op.txidStr.toLowerCase() : txidHex(op.txidBytes);
+  return {
+    outpoint: op === undefined ? '' : `${txid}:${op.outputIndex}`,
+    address: u.address,
+    addressType: utxoAddressType(u.addressType),
+    amountSat: num(u.amountSat),
+    confirmations: num(u.confirmations),
+    pkScript: u.pkScript.toLowerCase(),
+  };
+}
+
+/**
+ * Addresses of ours that coins were spent from, from the wallet's own history:
+ * for every transaction, each input LND marks `is_our_output` is a spend of
+ * one of our coins; the earlier transaction's `output_details` (txid:index →
+ * address) names the address it was paid to.
+ */
+export function spentFromAddresses(txs: readonly Readonly<Transaction>[]): {
+  readonly addresses: readonly string[];
+  readonly unresolvedSpends: number;
+} {
+  const addressOf = new Map<string, string>();
+  for (const t of txs) {
+    for (const o of t.outputDetails) {
+      if (o.isOurAddress && o.address !== '') addressOf.set(`${t.txHash.toLowerCase()}:${num(o.outputIndex)}`, o.address);
+    }
+  }
+  const spent = new Set<string>();
+  let unresolved = 0;
+  for (const t of txs) {
+    for (const p of t.previousOutpoints) {
+      if (!p.isOurOutput) continue;
+      const address = addressOf.get(p.outpoint.toLowerCase());
+      if (address === undefined) unresolved += 1;
+      else spent.add(address);
+    }
+  }
+  return { addresses: [...spent].sort(), unresolvedSpends: unresolved };
+}
+
 export function mapAsset(a: Readonly<tapdAssets.Asset>): AssetView {
   const g = a.assetGenesis;
   return {
@@ -292,6 +356,39 @@ export interface OnchainTxView {
   readonly label: string;
   /** This wallet's own addresses among the outputs. */
   readonly addresses: readonly string[];
+}
+
+/** LND's address types, collapsed to the script family (UNUSED_* are the same scripts). */
+export type UtxoAddressType = 'p2wkh' | 'np2wkh' | 'p2tr' | 'unknown';
+
+export interface UtxoView {
+  /** txid:index, txid in display (explorer) byte order. */
+  readonly outpoint: string;
+  readonly address: string;
+  readonly addressType: UtxoAddressType;
+  readonly amountSat: number;
+  /** 0 = unconfirmed. */
+  readonly confirmations: number;
+  /** Output script, hex. */
+  readonly pkScript: string;
+}
+
+export interface UtxosView {
+  /** Every unspent output LND's wallet tracks, unconfirmed included. */
+  readonly utxos: readonly UtxoView[];
+  /**
+   * This wallet's addresses that coins were already spent FROM, derived from
+   * the wallet's own transaction history (GetTransactions): each of our
+   * transactions' inputs marked as ours, mapped back to the address of the
+   * earlier output it spends. Spending reveals the key behind the address.
+   * Limit: only history this node knows about — a restored wallet that lacks
+   * an old transaction cannot map that spend (see `unresolvedSpends`).
+   */
+  readonly spentFromAddresses: readonly string[];
+  /** Inputs of ours whose earlier output is missing from this wallet's history. */
+  readonly unresolvedSpends: number;
+  /** How many on-chain transactions the history above was derived from. */
+  readonly historyTransactions: number;
 }
 
 export interface PeerView {
@@ -426,6 +523,22 @@ export class SubServerHub {
         addresses: t.outputDetails.filter((o) => o.isOurAddress).map((o) => o.address),
       }))
       .sort((a, b) => b.at - a.at);
+  }
+
+  /** Unspent outputs (unconfirmed included) + addresses already spent from (see UtxosView). */
+  async utxos(): Promise<UtxosView> {
+    const ln = await this.options.lightning();
+    const [unspent, history] = await Promise.all([
+      ln.listUnspent(ListUnspentRequest.create({ minConfs: 0, maxConfs: INT32_MAX, account: '' }), T).response,
+      ln.getTransactions(GetTransactionsRequest.create({ startHeight: 0, endHeight: -1, account: '' }), T).response,
+    ]);
+    const spent = spentFromAddresses(history.transactions);
+    return {
+      utxos: unspent.utxos.map(mapUtxo).sort((a, b) => b.amountSat - a.amountSat),
+      spentFromAddresses: spent.addresses,
+      unresolvedSpends: spent.unresolvedSpends,
+      historyTransactions: history.transactions.length,
+    };
   }
 
   async peers(): Promise<readonly PeerView[]> {
