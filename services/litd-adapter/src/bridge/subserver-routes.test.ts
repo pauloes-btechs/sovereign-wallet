@@ -27,7 +27,7 @@ function fakeHub(): SubServerHub & Record<string, ReturnType<typeof vi.fn>> {
     newAssetAddress: ok(),
     decodeAssetAddress: ok(),
     sendAsset: ok(),
-    utxos: vi.fn(async () => ({ utxos: [], spentFromAddresses: [], unresolvedSpends: 0, historyTransactions: 0 })),
+    utxos: vi.fn(async () => ({ utxos: [], spentFromAddresses: [], unresolvedSpends: 0, spendEvidence: [], historyTransactions: 0 })),
   } as unknown as SubServerHub & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -110,6 +110,7 @@ describe('sub-server routes', () => {
       utxos: [],
       spentFromAddresses: [],
       unresolvedSpends: 0,
+      spendEvidence: [],
       historyTransactions: 0,
     });
     expect(hub.utxos).toHaveBeenCalledOnce();
@@ -234,7 +235,7 @@ function history(): Transaction[] {
 
 describe('spentFromAddresses', () => {
   it('maps our spent inputs back to the address they were paid to, and counts spends it cannot map', () => {
-    expect(spentFromAddresses(history())).toEqual({ addresses: ['bcrt1qreused'], unresolvedSpends: 1 });
+    expect(spentFromAddresses(history())).toMatchObject({ addresses: ['bcrt1qreused'], unresolvedSpends: 1 });
   });
 
   it('never treats a foreign input as ours', () => {
@@ -243,7 +244,72 @@ describe('spentFromAddresses', () => {
   });
 
   it('is empty for a wallet that never spent', () => {
-    expect(spentFromAddresses(history().slice(0, 1))).toEqual({ addresses: [], unresolvedSpends: 0 });
+    expect(spentFromAddresses(history().slice(0, 1))).toEqual({ addresses: [], unresolvedSpends: 0, spendEvidence: [] });
+  });
+
+  describe('spend evidence for generic script addresses', () => {
+    const P2WPKH_SCRIPT = '0014' + 'aa'.repeat(20);
+    const P2WSH_SCRIPT = '0020' + 'bb'.repeat(32);
+    const PUB = '02' + '11'.repeat(32);
+    const PUB2 = '03' + '22'.repeat(32);
+    const SIG = '30' + '44'.repeat(70);
+    const PREIMAGE = '55'.repeat(32);
+    const lenByte = (h: string): string => (h.length / 2).toString(16).padStart(2, '0');
+    const push = (h: string): string => lenByte(h) + h;
+    const HASHLOCK = `a8${push('99'.repeat(32))}87`;
+    const MULTISIG = `52${push(PUB)}${push(PUB2)}52ae`;
+    const rev = (h: string): string => (h.match(/../g) ?? []).reverse().join('');
+    /** One-input SegWit transaction spending `outpoint` with `witness`. */
+    const rawSpend = (outpoint: string, witness: readonly string[]): string => {
+      const [txid = '', index = '0'] = outpoint.split(':');
+      const idx = Number(index).toString(16).padStart(8, '0');
+      return (
+        '02000000' + '0001' + '01' + rev(txid) + rev(idx) + '00' + 'fdffffff' +
+        '01' + '1027000000000000' + '16' + '0014' + 'ee'.repeat(20) +
+        witness.length.toString(16).padStart(2, '0') +
+        witness.map(push).join('') +
+        '00000000'
+      );
+    };
+    const funding = (scripts: readonly string[]): Transaction =>
+      Transaction.create({
+        txHash: TXID_A,
+        outputDetails: scripts.map((pkScript, i) => ({
+          outputType: 2, address: `addr${i}`, pkScript, outputIndex: BigInt(i), amount: 1n, isOurAddress: true,
+        })),
+      });
+    const spend = (txHash: string, outpoint: string, rawTxHex: string): Transaction =>
+      Transaction.create({ txHash, rawTxHex, previousOutpoints: [{ outpoint, isOurOutput: true }] });
+
+    it('reads the spending input: a multisig witness script shows keys, a hash lock does not', () => {
+      const r = spentFromAddresses([
+        funding([P2WSH_SCRIPT, P2WSH_SCRIPT]),
+        spend(TXID_B, `${TXID_A}:0`, rawSpend(`${TXID_A}:0`, ['', SIG, SIG, MULTISIG])),
+        spend(TXID_C, `${TXID_A}:1`, rawSpend(`${TXID_A}:1`, [PREIMAGE, HASHLOCK])),
+      ]);
+      expect(r.spendEvidence).toEqual([
+        { address: 'addr0', revealsPublicKey: true },
+        { address: 'addr1', revealsPublicKey: false },
+      ]);
+    });
+
+    it('a script spend with no raw transaction, or an unreadable one, is unknown', () => {
+      const r = spentFromAddresses([
+        funding([P2WSH_SCRIPT, P2WSH_SCRIPT]),
+        spend(TXID_B, `${TXID_A}:0`, ''),
+        spend(TXID_C, `${TXID_A}:1`, 'deadbeef'),
+      ]);
+      expect(r.spendEvidence).toEqual([
+        { address: 'addr0', revealsPublicKey: null },
+        { address: 'addr1', revealsPublicKey: null },
+      ]);
+    });
+
+    it('key-hash addresses carry no evidence: their spend always reveals the key', () => {
+      const r = spentFromAddresses([funding([P2WPKH_SCRIPT]), spend(TXID_B, `${TXID_A}:0`, rawSpend(`${TXID_A}:0`, [SIG, PUB]))]);
+      expect(r.addresses).toEqual(['addr0']);
+      expect(r.spendEvidence).toEqual([]);
+    });
   });
 });
 

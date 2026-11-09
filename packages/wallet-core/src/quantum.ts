@@ -73,8 +73,16 @@ export type ExposureReason =
   | 'taproot-output'
   /** P2PK output: the full public key is in the scriptPubKey. */
   | 'bare-public-key'
-  /** Hashed address that was already spent from: that spend revealed its key. */
+  /**
+   * Address already spent from, and that spend revealed a public key: always
+   * for key-hash addresses (P2PKH, P2WPKH, nested P2WPKH); for generic P2SH /
+   * P2WSH only when the spending input actually showed a key.
+   */
   | 'reused-after-spend'
+  /** Generic P2SH / P2WSH already spent from; the revealed script holds no public key. */
+  | 'script-spent-no-key'
+  /** Generic P2SH / P2WSH already spent from; whether that spend revealed a key is unknown. */
+  | 'script-spend-unverified'
   /** Hashed output (P2WPKH, P2SH-P2WPKH, P2PKH, P2WSH) never spent from. */
   | 'hashed-unspent'
   /** Taproot channel: MuSig2 taproot funding output. */
@@ -156,10 +164,25 @@ export interface ExposureAssetInput {
   readonly isSpent: boolean;
 }
 
+/**
+ * What a past spend from a generic script-hash address (P2SH, P2WSH) revealed:
+ * true = a public key, false = a script with no key, null = unknown.
+ */
+export interface SpendEvidence {
+  readonly address: string;
+  readonly revealsPublicKey: boolean | null;
+}
+
 export interface ExposureInput {
   readonly utxos: readonly ExposureUtxoInput[];
   /** This wallet's addresses that coins were already spent from. */
   readonly spentFromAddresses: readonly string[];
+  /**
+   * For generic P2SH / P2WSH addresses in `spentFromAddresses`: what their
+   * spends revealed. Without evidence such an address is classified as
+   * unknown, never as exposed.
+   */
+  readonly spendEvidence?: readonly SpendEvidence[];
   readonly channels?: readonly ExposureChannelInput[];
   readonly assets?: readonly ExposureAssetInput[];
 }
@@ -194,7 +217,9 @@ export const REASON_ORDER: readonly ExposureReason[] = [
   'taproot-channel',
   'asset-anchor',
   'hashed-unspent',
+  'script-spent-no-key',
   'multisig-channel',
+  'script-spend-unverified',
   'unknown-script',
   'unknown-channel-type',
   'channel-closing',
@@ -207,6 +232,8 @@ export const REASON_STATUS: Readonly<Record<ExposureReason, ExposureStatus>> = {
   'taproot-channel': 'exposed',
   'asset-anchor': 'exposed',
   'hashed-unspent': 'hidden',
+  'script-spent-no-key': 'hidden',
+  'script-spend-unverified': 'unclassified',
   'multisig-channel': 'hidden',
   'unknown-script': 'unclassified',
   'unknown-channel-type': 'unclassified',
@@ -221,6 +248,8 @@ export const REASON_LABEL: Readonly<Record<ExposureReason, string>> = {
   'taproot-channel': 'Taproot channels',
   'asset-anchor': 'Taproot Assets anchors',
   'hashed-unspent': 'Hidden on-chain',
+  'script-spent-no-key': 'Scripts spent without revealing a key',
+  'script-spend-unverified': 'Scripts spent from, key status unknown',
   'multisig-channel': 'Hidden in channels',
   'unknown-script': 'Unrecognized output scripts',
   'unknown-channel-type': 'Channels of unknown type',
@@ -232,9 +261,22 @@ const P2WSH_COMMITMENTS = new Set(['legacy', 'static_remote_key', 'anchors', 'sc
 
 const plural = (n: number, one: string, many: string): string => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 
+/** Per address: any spend showed a key → true; else any unknown → null; else false. */
+function aggregateEvidence(evidence: readonly SpendEvidence[] | undefined): ReadonlyMap<string, boolean | null> {
+  const out = new Map<string, boolean | null>();
+  for (const e of evidence ?? []) {
+    const prev = out.get(e.address);
+    if (prev === true || e.revealsPublicKey === true) out.set(e.address, true);
+    else if (prev === null || e.revealsPublicKey === null) out.set(e.address, null);
+    else out.set(e.address, false);
+  }
+  return out;
+}
+
 function classifyUtxo(
   u: ExposureUtxoInput,
   spentFrom: ReadonlySet<string>,
+  evidence: ReadonlyMap<string, boolean | null>,
   coinsAtAddress: number,
   assets: readonly ExposureAsset[] | undefined,
 ): ExposureItem {
@@ -274,18 +316,55 @@ function classifyUtxo(
         reduce: 'Sending it to a fresh bc1q… address of this wallet hides the key behind a hash until that coin is spent.',
       };
     case 'p2wpkh':
-    case 'p2sh':
     case 'p2pkh':
+    case 'p2sh':
     case 'p2wsh': {
+      // Key-hash addresses reveal their key on every spend. A P2SH address is
+      // key-hash only when the node says it is nested P2WPKH; any other P2SH
+      // or P2WSH is a generic script whose spend may or may not show a key.
+      const keyHash = family === 'p2wpkh' || family === 'p2pkh' || (family === 'p2sh' && u.addressType === 'np2wkh');
+      const scriptWord = keyHash ? 'public key' : 'script';
       if (spentFrom.has(u.address)) {
+        if (keyHash) {
+          return {
+            ...base,
+            status: 'exposed',
+            reason: 'reused-after-spend',
+            why:
+              'This address was spent from before, and that spend put its public key on the blockchain. ' +
+              'This coin was paid to the same address, so its key is already public.',
+            reduce: 'Send it to a fresh address of this wallet, and never receive to an address again after spending from it.',
+          };
+        }
+        const revealed = evidence.get(u.address);
+        if (revealed === true) {
+          return {
+            ...base,
+            status: 'exposed',
+            reason: 'reused-after-spend',
+            why:
+              'An earlier spend from this address revealed its script, and that script contains a public key, so the key is already on the blockchain.',
+            reduce: 'Send it to a fresh address of this wallet, and never receive to an address again after spending from it.',
+          };
+        }
+        if (revealed === false) {
+          return {
+            ...base,
+            status: 'hidden',
+            reason: 'script-spent-no-key',
+            why:
+              'An earlier spend from this address revealed its script, but the script contains no public key, so no key is exposed. The script itself is public now.',
+            reduce: 'Nothing needed for quantum exposure. For privacy, avoid receiving again to an address you have spent from.',
+          };
+        }
         return {
           ...base,
-          status: 'exposed',
-          reason: 'reused-after-spend',
+          status: 'unclassified',
+          reason: 'script-spend-unverified',
           why:
-            'This address was spent from before, and that spend put its public key on the blockchain. ' +
-            'This coin was paid to the same address, so its key is already public.',
-          reduce: 'Send it to a fresh address of this wallet, and never receive to an address again after spending from it.',
+            'This script address was spent from before, but that spend could not be read, so whether it revealed a public key is unknown. ' +
+            'Some scripts contain keys and some (hash or time locks) do not.',
+          reduce: 'If the script contains a key, send this coin to a fresh address of this wallet.',
         };
       }
       const shared = coinsAtAddress > 1;
@@ -294,8 +373,8 @@ function classifyUtxo(
         status: 'hidden',
         reason: 'hashed-unspent',
         why:
-          'Only a hash of the public key is on the blockchain; the key itself appears when this coin is spent.' +
-          (shared ? ` ${plural(coinsAtAddress, 'coin shares', 'coins share')} this address, so spending any one of them reveals the key for all.` : ''),
+          `Only a hash of the ${scriptWord} is on the blockchain; the ${scriptWord} itself appears when this coin is spent.` +
+          (shared ? ` ${plural(coinsAtAddress, 'coin shares', 'coins share')} this address, so spending any one of them reveals it for all.` : ''),
         reduce: shared
           ? 'When you spend from this address, spend all of its coins together so none is left behind at a revealed address.'
           : 'Nothing needed now. Keep receiving to fresh addresses, which this wallet does by default.',
@@ -365,6 +444,7 @@ function classifyChannel(c: ExposureChannelInput): ExposureItem {
  */
 export function classifyExposure(input: ExposureInput): ExposureReport {
   const spentFrom = new Set(input.spentFromAddresses);
+  const evidence = aggregateEvidence(input.spendEvidence);
 
   const perAddress = new Map<string, number>();
   for (const u of input.utxos) if (u.address !== '') perAddress.set(u.address, (perAddress.get(u.address) ?? 0) + 1);
@@ -384,7 +464,7 @@ export function classifyExposure(input: ExposureInput): ExposureReport {
     const key = u.outpoint.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    items.push(classifyUtxo(u, spentFrom, perAddress.get(u.address) ?? 1, anchors.get(key)));
+    items.push(classifyUtxo(u, spentFrom, evidence, perAddress.get(u.address) ?? 1, anchors.get(key)));
   }
   for (const [outpoint, assets] of anchors) {
     if (seen.has(outpoint)) continue;

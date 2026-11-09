@@ -191,6 +191,13 @@ export interface UtxosView {
   readonly spentFromAddresses: readonly string[];
   /** Spends of ours whose earlier output is missing from this node's history (e.g. a restored wallet). */
   readonly unresolvedSpends: number;
+  /**
+   * Generic P2SH / P2WSH addresses spent from: whether each spend revealed a
+   * public key (true), a keyless script (false) or could not be read (null).
+   * Absent from older bridges and recorded demo data: those addresses then
+   * classify as unknown.
+   */
+  readonly spendEvidence?: readonly { readonly address: string; readonly revealsPublicKey: boolean | null }[];
   readonly historyTransactions: number;
 }
 

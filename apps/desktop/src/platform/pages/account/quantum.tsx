@@ -55,6 +55,8 @@ function itemLabel(it: ExposureItem): string {
     'bare-public-key': 'Pay-to-public-key output',
     'reused-after-spend': 'Address reused after a spend',
     'hashed-unspent': `${FAMILY_LABEL[it.family ?? 'unknown']} output`,
+    'script-spent-no-key': `${FAMILY_LABEL[it.family ?? 'unknown']} script, spent without a key`,
+    'script-spend-unverified': `${FAMILY_LABEL[it.family ?? 'unknown']} script, key status unknown`,
     'taproot-channel': 'Taproot channel',
     'multisig-channel': 'Multisig channel (P2WSH)',
     'asset-anchor': 'Taproot Assets anchor',
@@ -93,6 +95,7 @@ export default function QuantumPage() {
     return classifyExposure({
       utxos: utxos.data.utxos.map((u) => ({ outpoint: u.outpoint, address: u.address, pkScript: u.pkScript, addressType: u.addressType, amountSat: u.amountSat })),
       spentFromAddresses: utxos.data.spentFromAddresses,
+      spendEvidence: utxos.data.spendEvidence ?? [],
       channels: [...channels.data.open, ...channels.data.pending].map((c) => ({
         channelPoint: c.channelPoint,
         commitmentType: c.commitmentType,

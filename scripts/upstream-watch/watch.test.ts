@@ -198,8 +198,8 @@ function baseRoutes(): Record<string, StubRoute> {
 const BASELINE = {
   recordedAt: '2026-11-08',
   bips: {
-    '360': { file: 'bip-0360.mediawiki', present: true, status: 'Draft', version: '0.12.1' },
-    '361': { file: 'bip-0361.mediawiki', present: true, status: 'Draft', version: null },
+    '360': { file: 'bip-0360.mediawiki', present: true, status: 'Draft', version: '0.12.1', lastCommitSha: 'abc', lastCommitDate: '2026-10-30T00:00:00Z' },
+    '361': { file: 'bip-0361.mediawiki', present: true, status: 'Draft', version: null, lastCommitSha: null, lastCommitDate: null },
   },
   corePrs: [],
   shrincs: { prs: [], bips: [] },
@@ -213,7 +213,10 @@ describe('quantum readiness: BIP headers', () => {
 
   it('the committed baseline records BIP-360 as Draft 0.12.1', () => {
     const committed = readBaseline();
-    expect(committed.bips['360']).toEqual({ file: 'bip-0360.mediawiki', present: true, status: 'Draft', version: '0.12.1' });
+    expect(committed.bips['360']).toMatchObject({ file: 'bip-0360.mediawiki', present: true, status: 'Draft', version: '0.12.1' });
+    // Content is tracked by commit: both watched files carry a full commit SHA.
+    expect(committed.bips['360'].lastCommitSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(committed.bips['361'].lastCommitSha).toMatch(/^[0-9a-f]{40}$/);
   });
 });
 
@@ -300,5 +303,69 @@ describe('quantum readiness: observing and diffing', () => {
     delete routes[`${API}/repos/bitcoin/bips/contents/bip-0361.mediawiki`];
     const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
     expect((diffQuantum(BASELINE, obs) as { kind: string }[]).map((c) => c.kind)).toEqual(['bip-removed']);
+  });
+});
+
+describe('quantum readiness: BIP content changes (last commit)', () => {
+  const commitRoute = (sha: string, date = '2026-11-20T00:00:00Z') => ({ json: [{ sha, commit: { committer: { date } } }] });
+
+  it('flags a content change when the last commit moves but Status and Version do not', async () => {
+    const routes = baseRoutes();
+    routes[commitFor('bip-0360.mediawiki')] = commitRoute('def0123456789abcdef');
+    const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    const changes = diffQuantum(BASELINE, obs) as { track: string; kind: string; detail: string }[];
+    expect(changes.map((c) => [c.track, c.kind])).toEqual([['bips', 'bip-content']]);
+    expect(changes[0]!.detail).toContain('content changed');
+    expect(changes[0]!.detail).toContain('Status and Version unchanged');
+    expect(changes[0]!.detail).toContain('def012345678');
+    expect(quantumMarkdown(BASELINE, obs, changes)).toContain('`def012345678`');
+  });
+
+  it('reports a Status change once, not again as a content change', async () => {
+    const routes = baseRoutes();
+    routes[`${API}/repos/bitcoin/bips/contents/bip-0360.mediawiki`] = { text: BIP360_HEAD.replace('Status: Draft', 'Status: Complete') };
+    routes[commitFor('bip-0360.mediawiki')] = commitRoute('fff');
+    const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect((diffQuantum(BASELINE, obs) as { kind: string }[]).map((c) => c.kind)).toEqual(['bip-status']);
+  });
+
+  it('a failed commit lookup is an error, never a change, and recording keeps the previous SHA', async () => {
+    const routes = baseRoutes();
+    routes[commitFor('bip-0360.mediawiki')] = { status: 502, text: 'bad gateway' };
+    const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect(obs.errors.some((e: string) => e.includes('last commit of bip-0360.mediawiki'))).toBe(true);
+    expect(diffQuantum(BASELINE, obs)).toEqual([]);
+    expect(toBaseline(obs, BASELINE).bips['360']).toMatchObject({ lastCommitSha: 'abc', lastCommitDate: '2026-10-30T00:00:00Z' });
+  });
+
+  it('records the observed commit in the baseline, and a later run with the same commit is quiet', async () => {
+    const routes = baseRoutes();
+    routes[commitFor('bip-0360.mediawiki')] = commitRoute('0123abcd');
+    const first = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    const recorded = toBaseline(first, BASELINE);
+    expect(recorded.bips['360']).toMatchObject({ status: 'Draft', version: '0.12.1', lastCommitSha: '0123abcd', lastCommitDate: '2026-11-20T00:00:00Z' });
+    const again = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect(diffQuantum(recorded, again)).toEqual([]);
+  });
+
+  it('a baseline from before commits were tracked records the commit as a first observation', async () => {
+    const legacy = {
+      ...BASELINE,
+      bips: {
+        '360': { file: 'bip-0360.mediawiki', present: true, status: 'Draft', version: '0.12.1' },
+        '361': { file: 'bip-0361.mediawiki', present: true, status: 'Draft', version: null },
+      },
+    };
+    const obs = await observeQuantum(githubClient(stubFetch(baseRoutes()).impl, undefined));
+    const changes = diffQuantum(legacy, obs) as { kind: string; detail: string }[];
+    expect(changes.map((c) => c.kind)).toEqual(['first-observation']);
+    expect(changes[0]!.detail).toContain('last commit');
+  });
+
+  it('a removed file drops its commit from the baseline', async () => {
+    const routes = baseRoutes();
+    delete routes[`${API}/repos/bitcoin/bips/contents/bip-0360.mediawiki`];
+    const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined));
+    expect(toBaseline(obs, BASELINE).bips['360']).toMatchObject({ present: false, lastCommitSha: null });
   });
 });

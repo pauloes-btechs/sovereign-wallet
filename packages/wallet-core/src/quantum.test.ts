@@ -94,6 +94,83 @@ describe('classifyExposure — on-chain outputs', () => {
     expect(r.hiddenSat).toBe(5);
   });
 
+  describe('generic P2SH / P2WSH spent from (spending reveals a script, not necessarily a key)', () => {
+    it('without spend data is unknown, never exposed', () => {
+      const r = classifyExposure({
+        utxos: [utxo('s:1', 'wsh', P2WSH, 40), utxo('s:2', 'sh', P2SH, 30)],
+        spentFromAddresses: ['wsh', 'sh'],
+      });
+      for (const id of ['s:1', 's:2']) {
+        expect(r.items.find((i) => i.id === id)).toMatchObject({ status: 'unclassified', reason: 'script-spend-unverified' });
+      }
+      expect(r.exposedSat).toBe(0);
+      expect(r.unclassifiedSat).toBe(70);
+    });
+
+    it('unknown evidence (null) stays unknown', () => {
+      const r = classifyExposure({
+        utxos: [utxo('s:1', 'wsh', P2WSH, 40)],
+        spentFromAddresses: ['wsh'],
+        spendEvidence: [{ address: 'wsh', revealsPublicKey: null }],
+      });
+      expect(r.items[0]).toMatchObject({ status: 'unclassified', reason: 'script-spend-unverified' });
+    });
+
+    it('a spend that showed a key makes it exposed; one that showed a keyless script keeps it hidden', () => {
+      const r = classifyExposure({
+        utxos: [utxo('s:1', 'multisig', P2WSH, 40), utxo('s:2', 'hashlock', P2WSH, 10)],
+        spentFromAddresses: ['multisig', 'hashlock'],
+        spendEvidence: [
+          { address: 'multisig', revealsPublicKey: true },
+          { address: 'hashlock', revealsPublicKey: false },
+        ],
+      });
+      expect(r.items.find((i) => i.id === 's:1')).toMatchObject({ status: 'exposed', reason: 'reused-after-spend' });
+      const lock = r.items.find((i) => i.id === 's:2');
+      expect(lock).toMatchObject({ status: 'hidden', reason: 'script-spent-no-key' });
+      expect(lock?.why).toMatch(/contains no public key/);
+      expect(r.exposedSat).toBe(40);
+      expect(r.hiddenSat).toBe(10);
+    });
+
+    it('several spends from one address: any key wins, otherwise any unknown wins over "no key"', () => {
+      const one = (ev: readonly (boolean | null)[]) =>
+        classifyExposure({
+          utxos: [utxo('s:1', 'x', P2WSH, 1)],
+          spentFromAddresses: ['x'],
+          spendEvidence: ev.map((revealsPublicKey) => ({ address: 'x', revealsPublicKey })),
+        }).items[0]?.reason;
+      expect(one([false, true, null])).toBe('reused-after-spend');
+      expect(one([false, null])).toBe('script-spend-unverified');
+      expect(one([false, false])).toBe('script-spent-no-key');
+    });
+
+    it('key-hash addresses keep the definite rule: P2PKH and nested P2WPKH are exposed after a spend without evidence', () => {
+      const r = classifyExposure({
+        utxos: [utxo('k:1', 'legacy', P2PKH, 3), utxo('k:2', 'nested', P2SH, 4, { addressType: 'np2wkh' })],
+        spentFromAddresses: ['legacy', 'nested'],
+      });
+      for (const id of ['k:1', 'k:2']) {
+        expect(r.items.find((i) => i.id === id)).toMatchObject({ status: 'exposed', reason: 'reused-after-spend' });
+      }
+    });
+
+    it('evidence for a key-hash address cannot downgrade it: its spend revealed the key by definition', () => {
+      const r = classifyExposure({
+        utxos: [utxo('k:1', 'a', P2WPKH, 9)],
+        spentFromAddresses: ['a'],
+        spendEvidence: [{ address: 'a', revealsPublicKey: false }],
+      });
+      expect(r.items[0]).toMatchObject({ status: 'exposed', reason: 'reused-after-spend' });
+    });
+
+    it('an unspent generic script address says "hash of the script", not of a key', () => {
+      const r = classifyExposure({ utxos: [utxo('s:1', 'wsh', P2WSH, 1)], spentFromAddresses: [] });
+      expect(r.items[0]).toMatchObject({ status: 'hidden', reason: 'hashed-unspent' });
+      expect(r.items[0]?.why).toMatch(/hash of the script/);
+    });
+  });
+
   it('a taproot output stays "taproot-output" even if its address was spent from (already exposed)', () => {
     const r = classifyExposure({ utxos: [utxo('t:0', 'bcrt1p1', P2TR, 9)], spentFromAddresses: ['bcrt1p1'] });
     expect(r.items[0]?.reason).toBe('taproot-output');

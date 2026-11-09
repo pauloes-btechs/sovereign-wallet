@@ -175,8 +175,28 @@ export function diffQuantum(base, obs) {
       add('bips', b.present ? 'bip-appeared' : 'bip-removed', `${w.name}: ${b.present ? `\`${w.file}\` now in bitcoin/bips (Status ${b.status ?? '?'})` : `\`${w.file}\` no longer in bitcoin/bips`}`);
       continue;
     }
-    if (a.status !== b.status) add('bips', 'bip-status', `${w.name}: Status ${a.status ?? '—'} → **${b.status ?? '—'}**`);
-    if (a.version !== b.version) add('bips', 'bip-version', `${w.name}: Version ${a.version ?? '—'} → **${b.version ?? '—'}**`);
+    const statusChanged = a.status !== b.status;
+    const versionChanged = a.version !== b.version;
+    if (statusChanged) add('bips', 'bip-status', `${w.name}: Status ${a.status ?? '—'} → **${b.status ?? '—'}**`);
+    if (versionChanged) add('bips', 'bip-version', `${w.name}: Version ${a.version ?? '—'} → **${b.version ?? '—'}**`);
+    // Content: the file's last commit. A BIP can change in substance (new
+    // rules, renamed fields, a security note) without touching its Status or
+    // Version lines, so compare commits too. A commit this run failed to
+    // fetch (null) is an error, never a change; a baseline from before
+    // commits were recorded gets the commit as a first observation.
+    const shaNow = b.present ? (b.lastCommit?.sha ?? null) : null;
+    const shaBefore = a.lastCommitSha ?? null;
+    if (b.present && shaNow !== null) {
+      if (shaBefore === null) {
+        add('bips', 'first-observation', `${w.name}: last commit \`${shaNow.slice(0, 12)}\` recorded`);
+      } else if (shaBefore !== shaNow && !statusChanged && !versionChanged) {
+        add(
+          'bips',
+          'bip-content',
+          `${w.name}: content changed (commit \`${shaBefore.slice(0, 12)}\` → **\`${shaNow.slice(0, 12)}\`**${b.lastCommit?.date ? `, ${String(b.lastCommit.date).slice(0, 10)}` : ''}); Status and Version unchanged — read the diff: https://github.com/bitcoin/bips/commits/master/${w.file}`,
+        );
+      }
+    }
   }
 
   const prDiff = (track, label, before, after) => {
@@ -228,9 +248,11 @@ export function quantumMarkdown(base, obs, changes) {
   md.push('| --- | --- | --- |');
   for (const w of WATCHED_BIPS) {
     const fmt = (x) => (x === null || x === undefined ? '—' : x.present ? `Status ${x.status ?? '?'}${x.version ? ` · v${x.version}` : ''}` : 'not in bitcoin/bips');
+    const before = base.bips?.[w.bip];
     const now = obs.bips?.[w.bip];
-    const commit = now?.lastCommit ? ` (last commit ${String(now.lastCommit.date ?? '').slice(0, 10)})` : '';
-    md.push(`| ${w.name} | ${fmt(base.bips?.[w.bip])} | ${now === null ? '_request failed_' : fmt(now)}${commit} |`);
+    const beforeCommit = before?.lastCommitSha ? ` · \`${before.lastCommitSha.slice(0, 12)}\`` : '';
+    const commit = now?.lastCommit ? ` · \`${String(now.lastCommit.sha ?? '').slice(0, 12)}\` (${String(now.lastCommit.date ?? '').slice(0, 10)})` : '';
+    md.push(`| ${w.name} | ${fmt(before)}${beforeCommit} | ${now === null ? '_request failed_' : fmt(now)}${commit} |`);
   }
   md.push(`| Bitcoin Core PRs (BIP-360 / P2MR) | ${base.corePrs === null ? '_not recorded_' : base.corePrs.length} | ${prList(obs.corePrs)} |`);
   const sh = obs.shrincs;
@@ -258,7 +280,13 @@ export function readBaseline(file = baselinePath) {
 export function toBaseline(obs, previous = { bips: {}, corePrs: null, shrincs: null }) {
   const bips = { ...previous.bips };
   for (const [k, v] of Object.entries(obs.bips)) {
-    if (v !== null) bips[k] = { file: v.file, present: v.present, status: v.status, version: v.version };
+    if (v === null) continue;
+    // Keep the previous commit when this run could not fetch one; a file that
+    // is gone has none.
+    const prev = previous.bips?.[k];
+    const lastCommitSha = v.present ? (v.lastCommit?.sha ?? prev?.lastCommitSha ?? null) : null;
+    const lastCommitDate = v.present ? (v.lastCommit ? (v.lastCommit.date ?? null) : (prev?.lastCommitDate ?? null)) : null;
+    bips[k] = { file: v.file, present: v.present, status: v.status, version: v.version, lastCommitSha, lastCommitDate };
   }
   return {
     recordedAt: obs.observedAt.slice(0, 10),

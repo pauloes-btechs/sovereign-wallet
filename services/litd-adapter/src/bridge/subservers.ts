@@ -47,7 +47,7 @@ import {
   type QuoteResult,
 } from '@sovereign/liquidity';
 import { randomUUID } from 'node:crypto';
-import type { AssetIdHex } from '@sovereign/wallet-core';
+import { scriptFamily, spendRevealsPublicKey, type AssetIdHex } from '@sovereign/wallet-core';
 import { createLitdTransport, type LitdConnectionOptions } from '../client.js';
 import type { LitdNetwork } from '../config.js';
 import { LitdLoopPort } from '../loop-client.js';
@@ -295,24 +295,38 @@ export function mapUtxo(u: Readonly<Utxo>): UtxoView {
 export function spentFromAddresses(txs: readonly Readonly<Transaction>[]): {
   readonly addresses: readonly string[];
   readonly unresolvedSpends: number;
+  readonly spendEvidence: UtxosView['spendEvidence'];
 } {
-  const addressOf = new Map<string, string>();
+  const outputOf = new Map<string, { readonly address: string; readonly pkScript: string }>();
   for (const t of txs) {
     for (const o of t.outputDetails) {
-      if (o.isOurAddress && o.address !== '') addressOf.set(`${t.txHash.toLowerCase()}:${num(o.outputIndex)}`, o.address);
+      if (o.isOurAddress && o.address !== '') {
+        outputOf.set(`${t.txHash.toLowerCase()}:${num(o.outputIndex)}`, { address: o.address, pkScript: o.pkScript });
+      }
     }
   }
   const spent = new Set<string>();
+  const evidence: { address: string; revealsPublicKey: boolean | null }[] = [];
   let unresolved = 0;
   for (const t of txs) {
     for (const p of t.previousOutpoints) {
       if (!p.isOurOutput) continue;
-      const address = addressOf.get(p.outpoint.toLowerCase());
-      if (address === undefined) unresolved += 1;
-      else spent.add(address);
+      const out = outputOf.get(p.outpoint.toLowerCase());
+      if (out === undefined) {
+        unresolved += 1;
+        continue;
+      }
+      spent.add(out.address);
+      // Generic script-hash outputs: read what the spending input revealed.
+      // Key-hash outputs need no evidence (their spend always shows the key);
+      // an unreadable script stays unknown (null).
+      const family = scriptFamily(out.pkScript);
+      if (family === 'p2wsh' || family === 'p2sh' || family === 'unknown') {
+        evidence.push({ address: out.address, revealsPublicKey: t.rawTxHex === '' ? null : spendRevealsPublicKey(t.rawTxHex, p.outpoint) });
+      }
     }
   }
-  return { addresses: [...spent].sort(), unresolvedSpends: unresolved };
+  return { addresses: [...spent].sort(), unresolvedSpends: unresolved, spendEvidence: evidence };
 }
 
 export function mapAsset(a: Readonly<tapdAssets.Asset>): AssetView {
@@ -387,6 +401,13 @@ export interface UtxosView {
   readonly spentFromAddresses: readonly string[];
   /** Inputs of ours whose earlier output is missing from this wallet's history. */
   readonly unresolvedSpends: number;
+  /**
+   * For spent-from addresses whose script is a generic P2SH / P2WSH: whether
+   * each spend revealed a public key (true), a keyless script (false), or
+   * could not be read (null). Key-hash addresses are not listed: spending
+   * them always reveals the key.
+   */
+  readonly spendEvidence: readonly { readonly address: string; readonly revealsPublicKey: boolean | null }[];
   /** How many on-chain transactions the history above was derived from. */
   readonly historyTransactions: number;
 }
@@ -537,6 +558,7 @@ export class SubServerHub {
       utxos: unspent.utxos.map(mapUtxo).sort((a, b) => b.amountSat - a.amountSat),
       spentFromAddresses: spent.addresses,
       unresolvedSpends: spent.unresolvedSpends,
+      spendEvidence: spent.spendEvidence,
       historyTransactions: history.transactions.length,
     };
   }

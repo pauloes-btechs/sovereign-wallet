@@ -1,8 +1,22 @@
 {
   "recordedAt": "2026-11-08",
   "bips": {
-    "360": { "file": "bip-0360.mediawiki", "present": true, "status": "Draft", "version": "0.12.1" },
-    "361": { "file": "bip-0361.mediawiki", "present": true, "status": "Draft", "version": null }
+    "360": {
+      "file": "bip-0360.mediawiki",
+      "present": true,
+      "status": "Draft",
+      "version": "0.12.1",
+      "lastCommitSha": "e7263a4cfe500c89e4269889244606953691ca33",
+      "lastCommitDate": "2026-08-03T04:03:44Z"
+    },
+    "361": {
+      "file": "bip-0361.mediawiki",
+      "present": true,
+      "status": "Draft",
+      "version": null,
+      "lastCommitSha": "da7cc678d522c7ff09d3d4e3b5de1a1ccc1e90c9",
+      "lastCommitDate": "2026-04-17T16:44:09Z"
+    }
   },
   "corePrs": null,
   "shrincs": null
