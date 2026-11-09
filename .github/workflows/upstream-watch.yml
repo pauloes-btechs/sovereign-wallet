@@ -43,9 +43,9 @@ jobs:
       waved_newer: ${{ steps.check.outputs.waved_newer }}
       quantum_changed: ${{ steps.check.outputs.quantum_changed }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -81,7 +81,7 @@ jobs:
           tc="${{ steps.typecheck.outcome }}"
           [ "${{ steps.regen.outcome }}" = "failure" ] && tc=failure
           printf '{"typecheck":"%s","unitTests":"%s"}\n' "$tc" "${{ steps.unit.outcome }}" > uw/results.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: upstream-watch-api
@@ -99,9 +99,9 @@ jobs:
       SOVEREIGN_LND_IMAGE: lightninglabs/lnd:${{ needs.api.outputs.latest_lnd }}
       SOVEREIGN_SIDECARS_LOCK: ${{ github.workspace }}/canary.lock.json
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -111,7 +111,7 @@ jobs:
         run: |
           node scripts/upstream-watch/sidecar-lock.mjs --litd=${{ needs.api.outputs.target_litd }} --out="$SOVEREIGN_SIDECARS_LOCK"
           pnpm sidecar:fetch
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
       - run: go install github.com/btcsuite/btcd@v0.26.2
@@ -129,7 +129,7 @@ jobs:
       - name: Harness logs
         if: always()
         run: docker compose -f harness/regtest/docker-compose.yml logs --tail=300 > out/harness.log 2>&1 || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: upstream-watch-integration
@@ -151,9 +151,9 @@ jobs:
       SOVEREIGN_SIDECARS_LOCK: ${{ github.workspace }}/canary.lock.json
       SOVEREIGN_RECORD_DIR: ${{ github.workspace }}/recording
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -163,7 +163,7 @@ jobs:
         run: |
           node scripts/upstream-watch/sidecar-lock.mjs --litd=${{ needs.api.outputs.target_litd }} --out="$SOVEREIGN_SIDECARS_LOCK"
           pnpm sidecar:fetch
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.24'
       - run: go install github.com/btcsuite/btcd@v0.26.2
@@ -188,20 +188,20 @@ jobs:
             cat out/fixture-diff.md >> "$GITHUB_STEP_SUMMARY"
           fi
           printf '{"e2e":"%s"}\n' "${{ steps.e2e.outcome }}" > out/results.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: upstream-watch-e2e
           path: out/
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: upstream-watch-demo-fixture
           path: fixture/
           if-no-files-found: ignore
           retention-days: 30
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: upstream-watch-e2e-evidence
@@ -218,9 +218,9 @@ jobs:
     if: needs.api.outputs.waved_newer == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -244,7 +244,7 @@ jobs:
         run: |
           mkdir -p out
           printf '{"waved":"%s"}\n' "${{ steps.waved.outcome }}" > out/results.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: upstream-watch-waved
@@ -260,19 +260,19 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: upstream-watch-api, path: art/api }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with: { name: upstream-watch-integration, path: art/integration }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with: { name: upstream-watch-e2e, path: art/e2e }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with: { name: upstream-watch-waved, path: art/waved }
       - name: Build issue body
