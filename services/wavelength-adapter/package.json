@@ -21,7 +21,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@lightninglabs/wavelength-core": "0.2.0",
+    "@lightninglabs/wavelength-core": "0.2.1",
     "@sovereign/payments": "workspace:*",
     "@sovereign/wallet-core": "workspace:*"
   },

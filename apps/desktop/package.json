@@ -15,8 +15,8 @@
     "test:e2e:modeb": "playwright test -c playwright.modeb.config.ts"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-mono": "5.1.1",
-    "@fontsource/ibm-plex-sans": "5.1.1",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
     "@sovereign/daemon-lifecycle": "workspace:*",
     "@sovereign/payments": "workspace:*",
     "@sovereign/privacy": "workspace:*",
@@ -26,12 +26,12 @@
     "@sovereign/wavelength-adapter": "workspace:*",
     "@tauri-apps/api": "^2.2.0",
     "@tauri-apps/plugin-shell": "^2.2.0",
-    "qrcode-generator": "1.4.4",
+    "qrcode-generator": "1.5.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.50.0",
+    "@playwright/test": "^1.65.0",
     "@sovereign/harness-regtest": "workspace:*",
     "@sovereign/litd-adapter": "workspace:*",
     "@sovereign/litd-proto": "workspace:*",
