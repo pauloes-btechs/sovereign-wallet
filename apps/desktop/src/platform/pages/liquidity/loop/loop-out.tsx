@@ -16,6 +16,7 @@ import {
   useLoopStatus,
   type LoopStatus,
 } from './shared.js';
+import { externalAddressProblem } from '../../payments/address-guard.js';
 
 const STEPS = ['Amount', 'Channels and destination', 'Review', 'Status'] as const;
 
@@ -26,8 +27,6 @@ const SPEEDS = [
 ] as const;
 type Speed = (typeof SPEEDS)[number]['value'];
 
-/** Light format check only; LND/loopd validate the address for the network. */
-export const looksLikeAddress = (a: string): boolean => /^(bc1|tb1|bcrt1)[02-9ac-hj-np-z]{8,87}$/i.test(a) || /^[123mn][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(a);
 
 export function LoopOutWizard({ status: given }: { status?: LoopStatus }) {
   const own = useLoopStatus();
@@ -61,7 +60,7 @@ export function LoopOutWizard({ status: given }: { status?: LoopStatus }) {
   const amtErr = amountError(amount, range, { sats: accounts.lightningSpendableSat, what: 'spendable Lightning balance' });
   const sats = parseSats(amount);
   const chanErr = chanIds.length > 0 && sats !== null && sats > selectedOutbound ? 'The selected channels don’t have that much outbound. Select more channels or none.' : null;
-  const destErr = destKind === 'external' && dest.trim() !== '' && !looksLikeAddress(dest.trim()) ? 'That doesn’t look like a Bitcoin address.' : null;
+  const destErr = destKind === 'external' ? externalAddressProblem(dest) : null;
 
   const getQuote = async () => {
     if (sats === null) return;

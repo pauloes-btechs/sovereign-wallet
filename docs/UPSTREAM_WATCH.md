@@ -27,7 +27,8 @@ Mondays 14:17 UTC, or on demand: **Actions → Upstream watch → Run workflow**
 | `integration` | Boots the docker regtest harness on the **new** litd + LND images and fetches the new litd sidecar (hashes from its release manifest), then runs `pnpm test:integration`. | Runtime breakage in the adapter: wallet, channels, Loop, Pool, tapd, Neutrino. |
 | `e2e` | Same harness; runs the real desktop node-mode e2e (UI → bridge → litd) with the recorder on, rebuilds the demo fixture and diffs it against the committed one. | UI flows that break; any change in the shape, status or state of what the UI receives. |
 | `waved` | Fetches the newest `waved` (hash from its manifest) and runs the real-daemon lifecycle tests. | Wavelength daemon boot / health / wallet-persistence regressions. |
-| `report` | Opens one issue per release set (label `upstream-watch`), or updates it on re-runs. | — |
+| `api` (quantum track) | Reads BIP-360 / BIP-361 Status and Version from bitcoin/bips, searches Bitcoin Core for BIP-360 / P2MR PRs and bitcoin/bips for SHRINCS draft-BIP PRs (GitHub API with the workflow token), and compares with `scripts/upstream-watch/quantum-baseline.json`. See [QUANTUM_READINESS](QUANTUM_READINESS.md). | A BIP leaving Draft or bumping its version, a Core P2MR PR opening or merging, the SHRINCS draft getting a BIP number or merging. |
+| `report` | Opens one issue per release set (label `upstream-watch`), or updates it on re-runs. Adds a "Quantum readiness" section when the quantum track changed (or opens a quantum-only issue when no release changed). | — |
 
 The issue starts with a verdict: **compatible** (safe to bump), **api-breaking**
 (upstream broke API, but nothing we exercise fails) or **broken** (something
@@ -45,6 +46,7 @@ are still moved by hand against the signed manifests.
 node scripts/upstream-watch/check.mjs --out=upstream-watch-out      # API surface report (≈1 min)
 node scripts/upstream-watch/check.mjs --litd=v0.17.10 --write-protos # vendor a release's protos
 pnpm --filter @sovereign/litd-proto generate && pnpm typecheck        # …and see what stops compiling
+node scripts/upstream-watch/check.mjs --write-quantum-baseline       # accept the quantum track's observations as the baseline
 ```
 
 ## The replayed `/desktop/` demo

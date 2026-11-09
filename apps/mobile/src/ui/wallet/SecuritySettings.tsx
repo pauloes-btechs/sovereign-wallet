@@ -201,6 +201,22 @@ export function SecurityScreen({ host }: { host: WalletHost }): ReactNode {
           onChange={(screenCaptureProtection) => set({ screenCaptureProtection })}
         />
       </SettingsSection>
+
+      <SettingsSection title="Quantum exposure">
+        {host.kind === 'wavelength' ? (
+          <SettingRow
+            label="Quantum exposure"
+            value="Exposed"
+            description="Your Ark funds (VTXOs) are taproot outputs, so their public keys are not hidden behind a hash. A future quantum computer could target keys like these first. Nothing on Bitcoin today is quantum-safe, and there is no post-quantum output type to move to yet."
+          />
+        ) : (
+          <SettingRow
+            label="Quantum exposure"
+            value="See the desktop app"
+            description="Which of your node's coins and channels have a public key visible on the blockchain needs the node's coin list, which this connection does not read. The desktop app shows it under Account, Quantum exposure."
+          />
+        )}
+      </SettingsSection>
       <PreferencesStatus />
 
       <PinSheet

@@ -13,7 +13,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 
+import { outputType } from '@sovereign/wallet-core';
 import { BridgeRequestError, sessionJsonReplacer, type LitdBridgeSession } from './session.js';
+import { requireSendableAddress } from './address-policy.js';
 import { mapPaymentView } from '../state-mappings.js';
 import { NO_ROUTE, routeSubServers } from './subserver-routes.js';
 import type { SubServerHub } from './subservers.js';
@@ -251,6 +253,10 @@ export function createLitdBridgeServer(options: BridgeServerOptions): Server {
     if (method === 'POST' && path === '/onchain/address') {
       const body = await post();
       const type = optionalString(body, 'type') ?? 'p2wkh';
+      if (type === 'p2mr') {
+        const p2mr = outputType('p2mr').status;
+        throw new BridgeRequestError(400, p2mr.state === 'proposed' ? `p2mr: ${p2mr.reason}` : 'address type must be p2wkh or np2wkh');
+      }
       if (type !== 'p2wkh' && type !== 'np2wkh') {
         throw new BridgeRequestError(400, 'address type must be p2wkh or np2wkh');
       }
@@ -276,7 +282,7 @@ export function createLitdBridgeServer(options: BridgeServerOptions): Server {
         res,
         200,
         await session.sendCoins({
-          address: requireString(body, 'address'),
+          address: requireSendableAddress(requireString(body, 'address')),
           amountSat,
           sendAll,
           satPerVbyte: parseNumber(body.satPerVbyte, 'satPerVbyte', 0),

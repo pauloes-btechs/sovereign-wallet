@@ -8,7 +8,8 @@ import type { DecodedInvoiceView, PaymentOutcomeView } from '../../../../modeb/b
 import { usePlatform, usePoll } from '../../../context.js';
 import { Link } from '../../../router.js';
 import { Amount, CopyField, Field, Notice, QrCode, Segmented, shortId, Skeleton, Steps, Timeline } from '../../../ui.js';
-import { looksLikeAddress, LoopReview } from '../../liquidity/loop/loop-out.js';
+import { LoopReview } from '../../liquidity/loop/loop-out.js';
+import { externalAddressProblem } from '../address-guard.js';
 import { parseSats, SwapProgress, useLoopStatus } from '../../liquidity/loop/shared.js';
 import { bip21, type RouteAdapter, type RouteEnv } from './routes.js';
 
@@ -75,7 +76,7 @@ export function OnchainSendFlow({ adapter, env }: { adapter: RouteAdapter; env: 
   // LND's own suggestion for a 6-block target, when the bridge can provide one.
   const estimate = usePoll(() => bridge.estimateFee(6), null, [bridge]);
 
-  const addrErr = address.trim() !== '' && !looksLikeAddress(address.trim()) ? 'That doesn’t look like a Bitcoin address.' : null;
+  const addrErr = externalAddressProblem(address);
   const aErr = amountErr(amount, env.onchainSpendableSat, 'spendable on-chain balance');
   const sats = parseSats(amount);
   const rateNum = Number(rate);
@@ -429,7 +430,7 @@ export function LoopFlow({ adapter, env, destination }: { adapter: RouteAdapter;
     else if (sats > range.maxSat) aErr = `The swap server’s maximum is ${range.maxSat.toLocaleString('en-US')} sats.`;
   }
   const external = destination === 'external-address';
-  const destErr = external && dest.trim() !== '' && !looksLikeAddress(dest.trim()) ? 'That doesn’t look like a Bitcoin address.' : null;
+  const destErr = external ? externalAddressProblem(dest) : null;
   const ready = sats !== null && aErr === null && (!external || (dest.trim() !== '' && destErr === null));
 
   const getQuote = async () => {

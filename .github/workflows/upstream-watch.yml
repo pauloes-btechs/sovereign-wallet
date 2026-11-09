@@ -7,6 +7,12 @@ name: Upstream watch (Lightning Labs)
 # integration suite, the real desktop node-mode e2e (re-recording the hosted
 # demo's fixtures) and the real-daemon waved tests. Results land in one
 # GitHub issue per release set (label: upstream-watch). Nothing is pushed.
+#
+# Quantum-readiness track (scripts/upstream-watch/quantum.mjs): BIP-360 (P2MR)
+# and BIP-361 Status/Version in bitcoin/bips, Bitcoin Core BIP-360/P2MR PRs,
+# and the SHRINCS post-quantum signature draft BIP, compared with
+# scripts/upstream-watch/quantum-baseline.json. Any change adds a "Quantum
+# readiness" section to the issue (or opens one when no releases changed).
 
 on:
   schedule:
@@ -35,6 +41,7 @@ jobs:
       latest_waved: ${{ steps.check.outputs.latest_waved }}
       has_updates: ${{ steps.check.outputs.has_updates }}
       waved_newer: ${{ steps.check.outputs.waved_newer }}
+      quantum_changed: ${{ steps.check.outputs.quantum_changed }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -47,6 +54,7 @@ jobs:
         id: check
         env:
           LITD_INPUT: ${{ inputs.litd }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           args=(--out=uw --write-protos)
           if [ -n "${LITD_INPUT:-}" ]; then
@@ -246,7 +254,7 @@ jobs:
   report:
     name: Open / update the GitHub issue
     needs: [api, integration, e2e, waved]
-    if: always() && needs.api.result == 'success' && needs.api.outputs.has_updates == 'true'
+    if: always() && needs.api.result == 'success' && (needs.api.outputs.has_updates == 'true' || needs.api.outputs.quantum_changed == 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read

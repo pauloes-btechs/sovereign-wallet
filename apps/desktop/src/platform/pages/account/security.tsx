@@ -191,6 +191,10 @@ export default function SecurityPage() {
                 <p className="p-hint" style={{ margin: 0 }}>
                   See <Link to="/privacy" className="ac-link">Privacy</Link> for what this app and node connect to.
                 </p>
+                <p className="p-hint" style={{ margin: 0 }}>
+                  See <Link to="/quantum" className="ac-link">Quantum exposure</Link> for which of your coins and channels already have a public key visible
+                  on the blockchain.
+                </p>
               </div>
             </Panel>
           </div>

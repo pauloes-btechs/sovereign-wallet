@@ -80,7 +80,10 @@ export function railOptions(
   }
   if (destination.onchain !== null) {
     const feature = capabilities.features.onchainSend;
-    options.push({ rail: 'onchain', available: feature.available, reason: feature.available ? null : feature.reason });
+    // An unactivated SegWit version (e.g. BIP-360 P2MR) is never sendable,
+    // whatever the backend can do.
+    const reason = destination.onchain.sendRefusal ?? (feature.available ? null : feature.reason);
+    options.push({ rail: 'onchain', available: reason === null, reason });
   }
   return options;
 }

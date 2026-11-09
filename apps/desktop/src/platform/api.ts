@@ -175,6 +175,32 @@ export interface OnchainTxView {
   readonly addresses: readonly string[];
 }
 
+export interface UtxoView {
+  /** txid:index, txid in display (explorer) byte order. */
+  readonly outpoint: string;
+  readonly address: string;
+  readonly addressType: 'p2wkh' | 'np2wkh' | 'p2tr' | 'unknown';
+  readonly amountSat: number;
+  readonly confirmations: number;
+  readonly pkScript: string;
+}
+
+/** GET /lnd/utxos: unspent outputs + this wallet's addresses already spent from (from its own history). */
+export interface UtxosView {
+  readonly utxos: readonly UtxoView[];
+  readonly spentFromAddresses: readonly string[];
+  /** Spends of ours whose earlier output is missing from this node's history (e.g. a restored wallet). */
+  readonly unresolvedSpends: number;
+  /**
+   * Generic P2SH / P2WSH addresses spent from: whether each spend revealed a
+   * public key (true), a keyless script (false) or could not be read (null).
+   * Absent from older bridges and recorded demo data: those addresses then
+   * classify as unknown.
+   */
+  readonly spendEvidence?: readonly { readonly address: string; readonly revealsPublicKey: boolean | null }[];
+  readonly historyTransactions: number;
+}
+
 export interface PeerView {
   readonly pubkey: string;
   readonly address: string;
@@ -244,6 +270,7 @@ export class PlatformApi {
 
   invoices = async () => (await this.bridge.request<{ invoices: InvoiceView[] }>('GET', '/lnd/invoices')).invoices;
   transactions = async () => (await this.bridge.request<{ transactions: OnchainTxView[] }>('GET', '/lnd/transactions')).transactions;
+  utxos = () => this.bridge.request<UtxosView>('GET', '/lnd/utxos');
   peers = async () => (await this.bridge.request<{ peers: PeerView[] }>('GET', '/lnd/peers')).peers;
   feeReport = () => this.bridge.request<FeeReportView>('GET', '/lnd/fees');
   updateFeePolicy = (body: { channelPoint?: string; baseFeeMsat: number; feePpm: number; timeLockDelta: number }) =>

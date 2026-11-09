@@ -19,6 +19,7 @@
  *   GET  /lnd/invoices                received payments (newest first)
  *   GET  /lnd/peers                   connected peers
  *   GET  /lnd/transactions            on-chain transactions (newest first)
+ *   GET  /lnd/utxos                   unspent outputs + addresses already spent from
  *   GET  /lnd/fees                    per-channel routing fee policies + fees earned
  *   POST /lnd/fees                    { channelPoint?, baseFeeMsat, feePpm, timeLockDelta }
  *   GET  /pool                        market, accounts, orders, leases, durations
@@ -31,6 +32,7 @@
  */
 import type { AutoLoopBudgetPolicy } from '@sovereign/liquidity';
 import { BridgeRequestError } from './session.js';
+import { requireSendableAddress } from './address-policy.js';
 import type { SubServerHub, SwapAuthorization } from './subservers.js';
 
 type Json = Record<string, unknown>;
@@ -131,9 +133,10 @@ export async function routeSubServers(
   if (method === 'GET' && swapMatch !== null) return hub.swap(swapMatch[1] ?? '');
   if (method === 'POST' && path === '/loop/out') {
     const b = await post();
+    const destAddress = str(b, 'destAddress');
     return hub.loopOut({
       amountSat: sats(b, 'amountSat', true),
-      destAddress: str(b, 'destAddress'),
+      destAddress: destAddress === undefined ? undefined : requireSendableAddress(destAddress),
       sweepConfTarget: int(b, 'sweepConfTarget'),
       outgoingChanIds: strList(b, 'outgoingChanIds', /^[0-9]{1,20}$/, 'channel ids'),
       label: str(b, 'label'),
@@ -187,6 +190,7 @@ export async function routeSubServers(
   if (method === 'GET' && path === '/lnd/invoices') return { invoices: await hub.invoices() };
   if (method === 'GET' && path === '/lnd/peers') return { peers: await hub.peers() };
   if (method === 'GET' && path === '/lnd/transactions') return { transactions: await hub.transactions() };
+  if (method === 'GET' && path === '/lnd/utxos') return hub.utxos();
   if (method === 'GET' && path === '/lnd/fees') return hub.feeReport();
   if (method === 'POST' && path === '/lnd/fees') {
     const b = await post();
