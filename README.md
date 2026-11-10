@@ -71,6 +71,24 @@ The hosted demo runs the real Mode A screens and engine against an in-memory
 simulated Wavelength client. No real bitcoin, no network calls. See
 [docs/HOSTING.md](docs/HOSTING.md).
 
+### Loop on regtest (desktop)
+
+The bridge points Loop at a dead loopback address unless a swap server is
+configured, so the Loop pages say "swap server not configured" by default.
+For a real regtest swap server on your machine (Docker required):
+
+```sh
+pnpm build && pnpm sidecar:fetch
+echo '127.0.0.1 aperture' | sudo tee -a /etc/hosts   # once: loopd checks the server's TLS name
+scripts/dev/loop-regtest.sh start                    # prints the bridge URL + the server's node to channel with
+scripts/dev/loop-regtest.sh fund <address>           # 1 regtest BTC + 6 blocks
+scripts/dev/loop-regtest.sh mine 6
+scripts/dev/loop-regtest.sh stop
+```
+
+It builds the server from the same pinned lightninglabs/loop commit CI uses
+(`loop-wallet-path.yml`). Regtest only.
+
 ## Documentation
 
 - [Hosting & distribution](docs/HOSTING.md): where each surface runs, cost, secrets
