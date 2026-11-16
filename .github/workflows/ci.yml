@@ -116,7 +116,9 @@ jobs:
       # spawned host-side by the harness CLI (see harness/regtest/README.md).
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          # btcd v0.26.2 requires go >= 1.25. setup-go v6+ exports GOTOOLCHAIN=local,
+          # so Go no longer auto-downloads a newer toolchain; request one that fits.
+          go-version: '1.25'
       - run: go install github.com/btcsuite/btcd@v0.26.2
       - name: Boot the regtest harness
         run: |
@@ -194,7 +196,9 @@ jobs:
       - run: pnpm sidecar:fetch
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          # btcd v0.26.2 requires go >= 1.25. setup-go v6+ exports GOTOOLCHAIN=local,
+          # so Go no longer auto-downloads a newer toolchain; request one that fits.
+          go-version: '1.25'
       - run: go install github.com/btcsuite/btcd@v0.26.2
       # Same disposable regtest boot as the integration job. The drills go
       # further: they stop/wipe/re-init the compose nodes mid-run, reading
@@ -263,7 +267,9 @@ jobs:
       - run: pnpm sidecar:fetch
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          # btcd v0.26.2 requires go >= 1.25. setup-go v6+ exports GOTOOLCHAIN=local,
+          # so Go no longer auto-downloads a newer toolchain; request one that fits.
+          go-version: '1.25'
       - run: go install github.com/btcsuite/btcd@v0.26.2
       # Same regtest boot as the integration job — the e2e daemon harness
       # reuses it (its own bootstrap starts the btcd filter server again,

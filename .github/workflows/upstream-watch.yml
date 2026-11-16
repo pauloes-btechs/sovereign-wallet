@@ -113,7 +113,9 @@ jobs:
           pnpm sidecar:fetch
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          # btcd v0.26.2 requires go >= 1.25. setup-go v6+ exports GOTOOLCHAIN=local,
+          # so Go no longer auto-downloads a newer toolchain; request one that fits.
+          go-version: '1.25'
       - run: go install github.com/btcsuite/btcd@v0.26.2
       - name: Boot the regtest harness on the new images
         run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" scripts/upstream-watch/boot-harness.sh
@@ -165,7 +167,9 @@ jobs:
           pnpm sidecar:fetch
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          # btcd v0.26.2 requires go >= 1.25. setup-go v6+ exports GOTOOLCHAIN=local,
+          # so Go no longer auto-downloads a newer toolchain; request one that fits.
+          go-version: '1.25'
       - run: go install github.com/btcsuite/btcd@v0.26.2
       - name: Boot the regtest harness on the new images
         run: SOVEREIGN_BTCD_BIN="$(go env GOPATH)/bin/btcd" scripts/upstream-watch/boot-harness.sh
