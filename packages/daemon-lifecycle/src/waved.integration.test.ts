@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SidecarLifecycle } from './index.js';
+import { SidecarLifecycle, allProbes, httpListeningProbe, httpOkProbe } from './index.js';
 import { createNodeChildProcessRuntime } from './runtimes/node.js';
 import type { HealthProbe } from './types.js';
 
@@ -61,17 +61,13 @@ async function freePort(): Promise<number> {
   });
 }
 
-function livezProbe(port: number): HealthProbe {
-  return {
-    isAlive: async () => {
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/livez`);
-        return response.ok;
-      } catch {
-        return false;
-      }
-    },
-  };
+/** Live = /livez answers AND the REST gateway accepts connections (waved
+ * v0.2.1 serves /livez before its gateway listens). */
+function wavedProbe(healthPort: number, gatewayPort: number): HealthProbe {
+  return allProbes(
+    httpOkProbe(`http://127.0.0.1:${healthPort}/livez`),
+    httpListeningProbe(`http://127.0.0.1:${gatewayPort}/`),
+  );
 }
 
 describe('waved sidecar integration (real daemon)', () => {
@@ -90,7 +86,7 @@ describe('waved sidecar integration (real daemon)', () => {
     const runtime = createNodeChildProcessRuntime(waved, { stdio: 'ignore' });
     const lifecycle = new SidecarLifecycle({
       runtime,
-      health: livezProbe(healthPort),
+      health: wavedProbe(healthPort, gatewayPort),
       bootTimeoutMs: 30_000,
       healthPollIntervalMs: 250,
       maxRestarts: 0, // proof run: any crash surfaces immediately
@@ -114,6 +110,8 @@ describe('waved sidecar integration (real daemon)', () => {
     // Liveness is really served by the daemon.
     const livez = await fetch(`http://127.0.0.1:${healthPort}/livez`);
     expect(livez.status).toBe(200);
+    // ...and so is the gateway the app calls next.
+    expect(await httpListeningProbe(`http://127.0.0.1:${gatewayPort}/`).isAlive()).toBe(true);
 
     // Readiness is a DISTINCT state: the wallet is not initialized yet
     // (fresh data dir), so /readyz reports not-ready (waved v0.2.0
