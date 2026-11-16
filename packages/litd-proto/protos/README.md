@@ -1,4 +1,10 @@
-# Vendored LND protos — pinned to litd v0.17.8
+# Vendored LND protos — pinned to litd v0.17.8, unchanged through v0.17.10
+
+> litd v0.17.10 (LND v0.21.6-beta, tapd v0.8.8, Loop v0.35.2, Pool v0.7.2,
+> Faraday v0.2.20) ships all 13 of these files unchanged: the upstream watch
+> fetched each at the revision v0.17.10's go.mod pins and found no semantic
+> difference (issue #49, 2026-11-16). The provenance notes below still name the
+> v0.17.8 revisions they were first vendored from.
 
 These `.proto` files are vendored **unmodified** from
 [`lightningnetwork/lnd` at tag `v0.21.5-beta.rc1`](https://github.com/lightningnetwork/lnd/tree/v0.21.5-beta.rc1/lnrpc)
