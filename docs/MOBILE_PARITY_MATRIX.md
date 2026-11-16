@@ -25,7 +25,7 @@ here was run on a device. Desktop statuses come from the code and from
   below are separate on purpose.
 - **What "backend support" means.** For Wavelength: what
   `WavelengthProvider` (`services/wavelength-adapter/src/provider.ts`) and the
-  pinned SDK request types (`@lightninglabs/wavelength-core@0.2.0`,
+  pinned SDK request types (`@lightninglabs/wavelength-core@0.2.1`,
   `dist/requests.d.ts`) accept. For remote LND: what `LncRpcPort` exposes
   today, and separately what a litd LNC session could reach (marked
   "possible", not verified in this repo).

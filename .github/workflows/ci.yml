@@ -370,7 +370,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Fetch + hash-verify + smoke waved v0.2.0
+      - name: Fetch + hash-verify + smoke waved v0.2.1
         run: node scripts/fetch-waved.mjs --triple=x86_64-unknown-linux-gnu
       # The lifecycle integration tests import the Wavelength adapter
       # (@sovereign/wavelength-adapter), which resolves to built dist/.
