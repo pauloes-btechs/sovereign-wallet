@@ -47,3 +47,18 @@ export async function pollUntil<T>(what: string, probe: () => Promise<T>, timeou
     `timed out waiting for ${what}: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
   );
 }
+
+/**
+ * Settle `work` or reject after `ms` with an error naming `what`. Unlike a
+ * bare Promise.race against a resolving timer, a deadline is a FAILURE: a
+ * step that overruns is reported instead of silently skipped.
+ */
+export function withDeadline<T>(what: string, work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${what} did not finish within ${ms}ms`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}

@@ -22,6 +22,12 @@
  * - The wasm binary is fetched and checksum-pinned by
  *   harness/regtest/scripts/fetch-lnc-wasm.mjs and served over loopback
  *   HTTP here — no CDN dependency at pairing time.
+ * - Every LNC client runs in its own child process (IsolatedLncClient,
+ *   issue #44). The lnc-web Go/wasm runtime can spin without yielding to
+ *   the JS event loop (js/wasm has no async preemption); hosted in this
+ *   worker it froze every timer, so teardown bounds never fired and the
+ *   suite hung until the CI job limit. Out of process, every call and every
+ *   teardown step is bounded for real and a wedged client is SIGKILLed.
  * - Regtest only. Never point this suite at mainnet.
  */
 process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
@@ -32,12 +38,7 @@ import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import WebSocket from 'ws';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-
-// LNC's wasm transport expects a WHATWG WebSocket; Node provides one only
-// via the `ws` polyfill. Set before any pairing starts.
-(globalThis as Record<string, unknown>)['WebSocket'] = WebSocket;
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   GenSeedRequest,
@@ -75,7 +76,8 @@ import {
   type LaunchedLitd,
   type LitdConnectionOptions,
 } from '../index.js';
-import { pollUntil, sidecarBinaryPath } from './helpers.js';
+import { pollUntil, sidecarBinaryPath, withDeadline } from './helpers.js';
+import { IsolatedLncClient } from './lnc-isolated-client.js';
 
 // harness/regtest/services/... -> monorepo root (4 up)
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
@@ -93,55 +95,24 @@ let litdClient: LightningClient | undefined;
 let sessions: LncSessionManager | undefined;
 let wasmServer: Server | undefined;
 let wasmUrl = '';
-/** Set when any test fails — drives the forced worker exit in afterAll. */
-let sawFailure = false;
-afterEach(({ task }) => {
-  if (task.result?.state === 'fail') sawFailure = true;
-});
-/** Live wasm sessions — disconnected in afterAll so vitest can exit. */
-const liveManagers: Array<{ disconnect(): void }> = [];
+/** Live LNC client processes — disposed (shutdown, then SIGKILL) in afterAll. */
+const liveClients: IsolatedLncClient[] = [];
 
-interface LncCall {
-  /**
-   * RPC with an explicit timeout. The lnc-web client retries mailbox
-   * reconnects forever on a dead session — a revoked-session RPC can hang
-   * without ever rejecting — so callers must not await it unbounded.
-   */
-  request<T>(method: string, req?: object): Promise<T>;
-  isConnected(): boolean;
-  /** Disconnect this client — bounded so a wedged retry loop can't block. */
-  disconnect(): Promise<void>;
-}
-
-async function pairLnc(pairingPhrase: string, namespace: string): Promise<LncCall> {
-  const { WasmManager } = await import('@lightninglabs/lnc-web');
-  const manager = new WasmManager(namespace, wasmUrl, {
-    onLocalKeyCreated: () => {},
-    onRemoteKeyReceived: () => {},
+/**
+ * Pair a fresh LNC client in its own process. Every RPC carries a 20s
+ * deadline (the lnc-web client retries mailbox reconnects forever on a dead
+ * session); a client that stops answering is killed in teardown.
+ */
+async function pairLnc(pairingPhrase: string, namespace: string): Promise<IsolatedLncClient> {
+  const client = await IsolatedLncClient.start({
+    label: namespace,
+    // Regtest mailbox: self-signed certificate (see the header note).
+    env: { NODE_TLS_REJECT_UNAUTHORIZED: '0' },
+    callTimeoutMs: 20_000,
   });
-  await manager.preload();
-  await manager.run();
-  await manager.waitTilReady();
-  await manager.connect({ pairingPhrase, serverHost: MAILBOX_ADDR });
-  liveManagers.push(manager);
-  return {
-    request: <T,>(method: string, req?: object) => {
-      const CALL_TIMEOUT_MS = 20_000;
-      return Promise.race([
-        manager.request<T>(method, req ?? {}),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`${method} did not answer within ${CALL_TIMEOUT_MS}ms`)), CALL_TIMEOUT_MS),
-        ),
-      ]);
-    },
-    isConnected: () => manager.isConnected,
-    disconnect: async () => {
-      await Promise.race([
-        Promise.resolve(manager.disconnect()),
-        new Promise((r) => setTimeout(r, 5_000)),
-      ]);
-    },
-  };
+  liveClients.push(client);
+  await client.connect({ wasmUrl, namespace, pairingPhrase, serverHost: MAILBOX_ADDR }, 90_000);
+  return client;
 }
 
 /** Poll until the async call REJECTS — the mirror of pollUntil. */
@@ -240,41 +211,49 @@ beforeAll(async () => {
 }, 420_000);
 
 afterAll(async () => {
-  for (const manager of liveManagers.splice(0)) {
+  // Every step is bounded and runs even when an earlier one fails; failures
+  // are collected and rethrown so a stuck teardown is a clear red result,
+  // never a silent hang (issue #44).
+  const failures: unknown[] = [];
+  const step = async (what: string, run: () => Promise<unknown>, ms: number) => {
     try {
-      // A revoked-session client's internal retry loop can wedge the
-      // manager — bound every disconnect so teardown always completes.
-      await Promise.race([
-        Promise.resolve(manager.disconnect()),
-        new Promise((r) => setTimeout(r, 5_000)),
-      ]);
-    } catch {
-      // teardown best-effort
+      await withDeadline(what, run(), ms);
+    } catch (err) {
+      failures.push(err);
+      console.log('[e2e-marker]', new Date().toISOString(), `teardown step failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
-  console.log('[e2e-marker]', new Date().toISOString(), 'managers disconnected, stopping litd');
-  // litd's stop promise can hang after a fully green run (observed: teardown
-  // stalled between "stopping litd" and the forced exit) — bound every
-  // teardown step so the forced exit below always fires.
-  await Promise.race([Promise.resolve(launched?.stop()), new Promise((r) => setTimeout(r, 15_000))]);
+  };
+
+  // dispose(): ask each client to disconnect and exit, SIGKILL after 3s.
+  // lnc-web's mailbox retry loop survives disconnect(), so the processes are
+  // always ended, never left running.
+  await step(
+    'dispose LNC client processes',
+    async () => {
+      const results = await Promise.allSettled(liveClients.splice(0).map((c) => c.dispose()));
+      const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (rejected.length > 0) throw new AggregateError(rejected.map((r) => r.reason), 'LNC client teardown failed');
+    },
+    15_000,
+  );
+  console.log('[e2e-marker]', new Date().toISOString(), 'LNC clients disposed, stopping litd');
+  // stop(): SIGTERM, SIGKILL after 10s.
+  await step('stop litd', async () => launched?.stop(10_000), 20_000);
   console.log('[e2e-marker]', new Date().toISOString(), 'litd stopped, closing wasm server');
-  await Promise.race([
-    new Promise<void>((resolve) => {
-      wasmServer?.closeAllConnections?.();
-      wasmServer?.close(() => resolve());
-      setTimeout(resolve, 5_000);
-    }),
-    new Promise((r) => setTimeout(r, 10_000)),
-  ]);
-  // lnc-web 0.3.6-alpha's internal mailbox retry scheduler survives
-  // disconnect() and keeps spinning after litd stops, so the vitest worker
-  // never exits on its own (observed on every run: worker pegs a CPU core
-  // until an external timeout kills it). Force-exit ~2.5s after teardown
-  // with the correct code — verbose reporter lines are already flushed, so
-  // per-test results are on the record even without the final summary.
-  console.log('[e2e-marker]', new Date().toISOString(), `teardown complete, forcing exit (${sawFailure ? 'failures recorded' : 'all green'})`);
-  setTimeout(() => process.exit(sawFailure ? 1 : 0), 2_500);
-});
+  await step(
+    'close wasm server',
+    () =>
+      new Promise<void>((resolve) => {
+        if (wasmServer === undefined) return resolve();
+        wasmServer.closeAllConnections();
+        wasmServer.close(() => resolve());
+      }),
+    5_000,
+  );
+  console.log('[e2e-marker]', new Date().toISOString(), 'teardown complete');
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1) throw new AggregateError(failures, 'LNC suite teardown failed');
+}, 60_000);
 
 describe('LNC pairing to the user\u2019s own litd', () => {
   it('pairs with a 10-word phrase and reads node info over the encrypted session', async () => {
@@ -288,7 +267,8 @@ describe('LNC pairing to the user\u2019s own litd', () => {
     expect(handle.pairingPhrase.split(' ')).toHaveLength(10);
     expect(handle.revoked).toBe(false);
 
-    const { request } = await pairLnc(handle.pairingPhrase, 'lnc1');
+    const lnc1 = await pairLnc(handle.pairingPhrase, 'lnc1');
+    const request = <T,>(method: string, req?: object) => lnc1.request<T>(method, req);
     const info = await request<{ identityPubkey: string; syncedToChain: boolean }>('lnrpc.Lightning.GetInfo');
     const nodeInfo = await litdClient!.getInfo(GetInfoRequest.create({})).response;
     expect(info.identityPubkey).toBe(nodeInfo.identityPubkey);
@@ -307,7 +287,8 @@ describe('LNC pairing to the user\u2019s own litd', () => {
         { entity: 'invoices', action: 'write' },
       ],
     });
-    const { request } = await pairLnc(handle.pairingPhrase, 'lnc2');
+    const lnc2 = await pairLnc(handle.pairingPhrase, 'lnc2');
+    const request = <T,>(method: string, req?: object) => lnc2.request<T>(method, req);
 
     const invoice = await request<{ paymentRequest: string }>('lnrpc.Lightning.AddInvoice', {
       valueMsat: 1_234_000,
@@ -350,7 +331,8 @@ describe('LNC pairing to the user\u2019s own litd', () => {
         { entity: 'info', action: 'read' },
       ],
     });
-    const { request } = await pairLnc(handle.pairingPhrase, 'lnc3');
+    const lnc3 = await pairLnc(handle.pairingPhrase, 'lnc3');
+    const request = <T,>(method: string, req?: object) => lnc3.request<T>(method, req);
     const invoice = await request<{ paymentRequest: string; rHash: Uint8Array }>('lnrpc.Lightning.AddInvoice', {
       valueMsat: 500_000,
       memo: 'lnc-e2e payment',
@@ -494,14 +476,14 @@ describe('LNC pairing to the user\u2019s own litd', () => {
 
     // The session is dead, so nothing over it can succeed. We deliberately
     // do NOT issue RPCs against the revoked session: lnc-web 0.3.6-alpha's
-    // mailbox retry loop wedges the worker event loop while reconnecting a
+    // mailbox retry loop wedges its wasm runtime while reconnecting a
     // revoked stream (observed repeatedly in this suite — logs stop
-    // advancing, timers stop firing), so even a Promise.race-bounded call
-    // cannot recover. Revocation is enforced server-side (revoked=true
-    // above); tearing the client down immediately is the only safe client
-    // behavior, which is exactly what the production adapter must do when
-    // it observes a revoked session.
-    await lnc4.disconnect();
+    // advancing, timers stop firing). Revocation is enforced server-side
+    // (revoked=true above); tearing the client down immediately is the only
+    // safe client behavior, which is exactly what the production adapter
+    // must do when it observes a revoked session. dispose() ends the client
+    // process, SIGKILLing it if the wasm runtime no longer answers.
+    await lnc4.dispose();
     console.log('[e2e-marker]', new Date().toISOString(), 'revocation test complete');
   }, 120_000);
 });
