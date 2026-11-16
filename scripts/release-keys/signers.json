@@ -1,0 +1,23 @@
+{
+  "$comment": "Trust root for upstream release manifests. A sidecar pin (sidecars.lock.json, scripts/fetch-waved.mjs) may only hold hashes from a manifest that at least `minSignatures` of these keys signed (detached manifest-<signer>-<tag>.sig). Fingerprints are the primary-key fingerprints Lightning Labs publishes in lightningnetwork/lnd scripts/verify-install.sh (KEYS list); each .asc beside this file is that repo's scripts/keys/<signer>.asc, copied 2026-11-16. scripts/verify-release.mjs imports each key into its own keyring and accepts a signature only when gpg reports VALIDSIG for exactly the pinned fingerprint. Changing this file changes who we trust: review fingerprints against lnd's verify-install.sh before merging.",
+  "signers": {
+    "roasbeef": "A5B61896952D9FDA83BC054CDC42612E89237182",
+    "ViktorT-11": "C20A78516A0944900EBFCA29961CC8259AE675D4",
+    "bhandras": "9FC6B0BFD597A94DBF09708280E5375C094198D8",
+    "sputn1ck": "4DC235556B18694E08518DBB671103D881A5F0E4"
+  },
+  "releases": {
+    "litd": {
+      "repo": "lightninglabs/lightning-terminal",
+      "$comment": "lightning-terminal releases carry one release-manager signature (its release workflow: manifest-<signer>-<tag>.sig). v0.17.8 is signed by roasbeef, v0.17.10 and v0.17.11 by ViktorT-11.",
+      "signers": ["roasbeef", "ViktorT-11"],
+      "minSignatures": 1
+    },
+    "waved": {
+      "repo": "lightninglabs/wavelength",
+      "$comment": "Wavelength v0.2.0 and v0.2.1 are each signed by both bhandras and sputn1ck; require both.",
+      "signers": ["bhandras", "sputn1ck"],
+      "minSignatures": 2
+    }
+  }
+}

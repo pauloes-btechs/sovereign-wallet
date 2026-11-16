@@ -42,7 +42,7 @@ services:
       - ./data/bitcoind:/home/bitcoin/.bitcoin
 
   lnd-alice:
-    image: ${SOVEREIGN_LND_IMAGE:-lightninglabs/lnd:v0.21.5-beta.rc1}
+    image: ${SOVEREIGN_LND_IMAGE:-lightninglabs/lnd:v0.21.8-beta}
     command: ["--lnddir=/root/.lnd", "--configfile=/lnd.conf"]
     ports:
       - "127.0.0.1:10009:10009" # RPC
@@ -52,7 +52,7 @@ services:
       - ./data/lnd-alice:/root/.lnd
 
   lnd-bob:
-    image: ${SOVEREIGN_LND_IMAGE:-lightninglabs/lnd:v0.21.5-beta.rc1}
+    image: ${SOVEREIGN_LND_IMAGE:-lightninglabs/lnd:v0.21.8-beta}
     command: ["--lnddir=/root/.lnd", "--configfile=/lnd.conf"]
     ports:
       - "127.0.0.1:10010:10009" # RPC
@@ -65,7 +65,7 @@ services:
   # embedded-LND port (litd.rpclisten proxy is loopback-only inside the
   # container and not needed by the harness).
   litd:
-    image: ${SOVEREIGN_LITD_IMAGE:-lightninglabs/lightning-terminal:v0.17.8}
+    image: ${SOVEREIGN_LITD_IMAGE:-lightninglabs/lightning-terminal:v0.17.10}
     command: ["--configfile=/litd.conf"]
     ports:
       - "127.0.0.1:10011:19090" # embedded LND RPC
