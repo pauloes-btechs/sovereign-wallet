@@ -65,7 +65,7 @@ services:
   # embedded-LND port (litd.rpclisten proxy is loopback-only inside the
   # container and not needed by the harness).
   litd:
-    image: ${SOVEREIGN_LITD_IMAGE:-lightninglabs/lightning-terminal:v0.17.10}
+    image: ${SOVEREIGN_LITD_IMAGE:-lightninglabs/lightning-terminal:v0.17.11}
     command: ["--configfile=/litd.conf"]
     ports:
       - "127.0.0.1:10011:19090" # embedded LND RPC

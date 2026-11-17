@@ -90,7 +90,7 @@ describe('pin comparison', () => {
 });
 
 describe('committed pins match the committed signed manifest', () => {
-  it('sidecars.lock.json equals the v0.17.10 signed manifest', () => {
+  it('sidecars.lock.json equals the signed manifest committed for its pinned tag', () => {
     const lock = JSON.parse(read(path.join(root, 'sidecars.lock.json'))) as { litd: { tag: string; assetPrefix: string; sha256: Record<string, string> } };
     const manifest = parseManifest(read(path.join(fixtures, `manifest-${lock.litd.tag}.txt`)));
     const expected = expectedHashes(manifest, LITD_ASSETS, lock.litd.tag, `${lock.litd.assetPrefix}-`);
@@ -122,6 +122,15 @@ describe('real gpg against the committed keys', () => {
 
   it('verifies the litd v0.17.10 manifest signature', () => {
     expect(verifySignatureFile('ViktorT-11', VIKTOR, sig10, manifest10, work)).toMatchObject({ ok: true, primary: VIKTOR });
+  });
+
+  it('verifies the litd v0.17.11 manifest signature (the current pin)', () => {
+    const v = verifySignatureFile('ViktorT-11', VIKTOR, path.join(fixtures, 'manifest-ViktorT-11-v0.17.11.sig'), path.join(fixtures, 'manifest-v0.17.11.txt'), work);
+    expect(v).toMatchObject({ ok: true, primary: VIKTOR });
+  });
+
+  it('does not accept the v0.17.10 signature for the v0.17.11 manifest', () => {
+    expect(verifySignatureFile('ViktorT-11', VIKTOR, sig10, path.join(fixtures, 'manifest-v0.17.11.txt'), work).ok).toBe(false);
   });
 
   it('accepts roasbeef’s v0.17.8 signature, made before his key expired', () => {
