@@ -37,8 +37,28 @@ bundles, the per-proto change list, and the desktop-response diff.
 
 Nothing is pushed or bumped automatically. The canary binaries are verified
 against the hashes in their release manifests but **not** the manifest
-signatures; shipping pins (`sidecars.lock.json`, `scripts/fetch-waved.mjs`)
-are still moved by hand against the signed manifests.
+signatures. Shipping pins (`sidecars.lock.json`, `scripts/fetch-waved.mjs`)
+move only through `scripts/verify-release.mjs`, which checks the manifest's
+detached signatures (`manifest-<signer>-<tag>.sig`) with gpg against the keys
+pinned in `scripts/release-keys/signers.json` before it writes or accepts a
+hash. CI's **Release signatures** job re-runs that check on every PR, so a
+pin that doesn't match a signed manifest fails the build.
+
+```sh
+node scripts/verify-release.mjs litd     # committed litd pins vs. signed manifest
+node scripts/verify-release.mjs waved    # committed waved pins vs. signed manifest
+node scripts/verify-release.mjs litd --tag=v0.17.11 --write-lock \
+  --bundled="LND …, tapd …, Loop …, Pool …, Faraday …"   # re-pin litd
+node scripts/verify-release.mjs waved --tag=v0.2.1      # print signed waved hashes
+```
+
+The trust root is `scripts/release-keys/`: the primary-key fingerprints
+Lightning Labs publishes in `lightningnetwork/lnd` `scripts/verify-install.sh`,
+with each key file copied from that repo's `scripts/keys/`. lightning-terminal
+releases carry one release-manager signature (`minSignatures: 1`); Wavelength
+releases are signed by two maintainers and both are required. Adding a signer
+means adding their `.asc` and their fingerprint, checked against lnd's
+`verify-install.sh`, in a reviewed PR.
 
 ### Run the checks locally
 

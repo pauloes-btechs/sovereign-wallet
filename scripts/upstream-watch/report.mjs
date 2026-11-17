@@ -91,7 +91,7 @@ md.push('');
 md.push(
   [
     `1. Download the \`upstream-watch-demo-fixture\` artifact from the run and replace \`apps/desktop/src/demo/fixtures/modeb.json\` (refreshes the hosted /desktop/ demo).`,
-    `2. Update \`sidecars.lock.json\` to ${api.targetLitd}, verifying hashes against the **signed** \`manifest-${api.targetLitd}.txt\` (this run used the unsigned manifest for testing only).`,
+    `2. Re-pin \`sidecars.lock.json\` from the **signed** manifest: \`node scripts/verify-release.mjs litd --tag=${api.targetLitd} --write-lock --bundled="…"\` (verifies \`manifest-<signer>-${api.targetLitd}.sig\` against \`scripts/release-keys\` before writing; this run used the unsigned manifest for testing only).`,
     '3. Update the image tags in `harness/regtest/docker-compose.yml` and, if protos changed, re-vendor them (`node scripts/upstream-watch/check.mjs --write-protos`) and run `pnpm --filter @sovereign/litd-proto generate`.',
     '4. Open a PR; CI runs the full suite, including the recovery drills.',
   ].join('\n'),
