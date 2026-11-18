@@ -1,13 +1,18 @@
 /**
  * waved (Wavelength daemon v0.2.0) sidecar assembly for the desktop app.
  *
- * Liveness = /livez 200 once the daemon is up; readiness = /readyz, 503
+ * Liveness = /livez 200 AND the REST gateway accepting connections. waved
+ * v0.2.1 answers /livez before its gateway listens, so /livez alone let the
+ * app's first gateway call fail with ECONNREFUSED. Readiness = /readyz, 503
  * until the wallet is initialized (verified against waved v0.2.0). The
  * lifecycle engine gates start() on liveness; the UI reads readiness
  * separately — "daemon alive" and "wallet ready" are different states.
  */
 import {
   SidecarLifecycle,
+  allProbes,
+  httpListeningProbe,
+  httpOkProbe,
   type HealthProbe,
   type SidecarLifecycleOptions,
   type SidecarRuntime,
@@ -25,17 +30,34 @@ export interface WavedSidecarConfig {
   bootTimeoutMs?: number;
 }
 
-export function wavedLivezProbe(port: number): HealthProbe {
-  return {
-    isAlive: async () => {
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/livez`);
-        return response.ok;
-      } catch {
-        return false;
-      }
-    },
-  };
+/** waved's loopback REST gateway port (the webview's transport), pinned. */
+export const WAVED_GATEWAY_PORT = 10031;
+
+export function wavedLivenessProbe(healthPort: number, gatewayPort: number = WAVED_GATEWAY_PORT): HealthProbe {
+  return allProbes(
+    httpOkProbe(`http://127.0.0.1:${healthPort}/livez`),
+    httpListeningProbe(`http://127.0.0.1:${gatewayPort}/`),
+  );
+}
+
+/**
+ * Calls `attempt` until it resolves, retrying every `intervalMs` until
+ * `timeoutMs` has passed; then rejects with the last error. For startup
+ * artifacts that appear shortly after liveness (waved's admin macaroon).
+ */
+export async function retryUntil<T>(
+  attempt: () => Promise<T>,
+  { timeoutMs, intervalMs }: { readonly timeoutMs: number; readonly intervalMs: number },
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      return await attempt();
+    } catch (err) {
+      if (Date.now() >= deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
 }
 
 /** Readiness is surfaced separately from liveness — the UI gates wallet
@@ -65,7 +87,7 @@ export function wavedSidecarArgs(config: {
     `--health.listen=127.0.0.1:${config.healthPort}`,
     `--datadir=${config.dataDir}`,
     '--rpc.listenaddr=127.0.0.1:10029', // waved loopback defaults, pinned
-    '--rpc.gateway.listenaddr=127.0.0.1:10031',
+    `--rpc.gateway.listenaddr=127.0.0.1:${WAVED_GATEWAY_PORT}`,
     // The gateway 403s any browser origin not on this list (verified waved
     // v0.2.0). Cover both Tauri 2 webview origins: tauri://localhost on
     // macOS/Linux, http://tauri.localhost on Windows.
@@ -86,7 +108,7 @@ export function createWavedSidecar(config: WavedSidecarConfig): SidecarLifecycle
   validateSidecarListenArgs(args(), { label: 'waved' });
   const options: SidecarLifecycleOptions = {
     runtime,
-    health: wavedLivezProbe(healthPort),
+    health: wavedLivenessProbe(healthPort),
     args,
     bootTimeoutMs,
   };
