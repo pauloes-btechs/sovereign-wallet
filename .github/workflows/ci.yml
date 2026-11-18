@@ -14,9 +14,9 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -27,9 +27,9 @@ jobs:
     name: Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -43,9 +43,9 @@ jobs:
     name: Build & unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -57,9 +57,9 @@ jobs:
     name: Vercel services build (wallet-demo + desktop + storybook)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -81,9 +81,9 @@ jobs:
     name: Fuzz (destination, invoice, asset-id, listen-args parsers)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -101,9 +101,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -114,9 +114,11 @@ jobs:
       # btcd (pinned v0.26.2) is the BIP157 filter source for the Neutrino
       # sidecar test — bitcoind cannot serve compact filters. Built here and
       # spawned host-side by the harness CLI (see harness/regtest/README.md).
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          # btcd v0.26.2 requires go >= 1.25. setup-go v6+ exports GOTOOLCHAIN=local,
+          # so Go no longer auto-downloads a newer toolchain; request one that fits.
+          go-version: '1.25'
       - run: go install github.com/btcsuite/btcd@v0.26.2
       - name: Boot the regtest harness
         run: |
@@ -190,9 +192,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -201,9 +203,11 @@ jobs:
       # Checksum-verified litd sidecar binary — the asset-restore drill boots
       # two REAL litd daemons (integrated tapd) over Neutrino.
       - run: pnpm sidecar:fetch
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          # btcd v0.26.2 requires go >= 1.25. setup-go v6+ exports GOTOOLCHAIN=local,
+          # so Go no longer auto-downloads a newer toolchain; request one that fits.
+          go-version: '1.25'
       - run: go install github.com/btcsuite/btcd@v0.26.2
       # Same disposable regtest boot as the integration job. The drills go
       # further: they stop/wipe/re-init the compose nodes mid-run, reading
@@ -244,7 +248,7 @@ jobs:
         run: pnpm test:recovery
       - name: Upload drill evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: recovery-drill-results
           path: |
@@ -260,9 +264,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -270,9 +274,11 @@ jobs:
       - run: pnpm build
       # Checksum-verified litd sidecar binary the bridge launches (Neutrino).
       - run: pnpm sidecar:fetch
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          # btcd v0.26.2 requires go >= 1.25. setup-go v6+ exports GOTOOLCHAIN=local,
+          # so Go no longer auto-downloads a newer toolchain; request one that fits.
+          go-version: '1.25'
       - run: go install github.com/btcsuite/btcd@v0.26.2
       # Same regtest boot as the integration job — the e2e daemon harness
       # reuses it (its own bootstrap starts the btcd filter server again,
@@ -331,21 +337,21 @@ jobs:
             --base=apps/desktop/src/demo/fixtures/modeb.json --head=demo-fixture/modeb.json >> "$GITHUB_STEP_SUMMARY"
       - name: Upload demo fixture
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: demo-fixture
           path: demo-fixture/
           retention-days: 30
       - name: Visual evidence captures
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: modeb-e2e-evidence
           path: apps/desktop/test-results/modeb-evidence/
           retention-days: 7
       - name: Playwright trace on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: modeb-e2e-traces
           path: apps/desktop/test-results/
@@ -358,9 +364,9 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -388,9 +394,9 @@ jobs:
     name: waved integration (real daemon)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -426,9 +432,9 @@ jobs:
     continue-on-error: ${{ matrix.bestEffort == true }}
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -464,7 +470,7 @@ jobs:
       - name: Build debug bundle (dev artifact, unsigned)
         run: pnpm --filter @sovereign/desktop tauri build --debug
       - name: Upload bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sovereign-wallet-dev-${{ matrix.triple }}
           path: apps/desktop/src-tauri/target/debug/bundle/
@@ -548,9 +554,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -558,7 +564,7 @@ jobs:
       # included from apps/mobile/node_modules and autolinking invokes the
       # RN CLI from there.
       - run: pnpm install --frozen-lockfile
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -576,7 +582,7 @@ jobs:
             || { echo "::error::APK missing Hermes runtime (arm64)"; exit 1; }
           ls -la "$apk"
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sovereign-wallet-dev-android
           path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
@@ -587,9 +593,9 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -620,7 +626,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist"
           du -sh "$app"
       - name: Upload simulator app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sovereign-wallet-dev-ios-simulator
           path: apps/mobile/ios/build/Build/Products/Debug-iphonesimulator/SovereignWallet.app
@@ -630,9 +636,9 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

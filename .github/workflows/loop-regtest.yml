@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install prerequisites
         run: |
           sudo apt-get update -qq
@@ -70,7 +70,7 @@ jobs:
             docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" ps > loop-ci-logs/compose-ps.txt 2>&1 || true
             docker compose -p regtest -f "$LOOP_DIR/regtest/docker-compose.yml" logs --no-color --tail=400 > loop-ci-logs/compose-logs.txt 2>&1 || true
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: loop-regtest-diagnostics
