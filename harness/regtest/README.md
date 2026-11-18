@@ -11,7 +11,7 @@ are local-only throwaways.
 | bitcoind  | `bitcoin/bitcoin:27.0`                      | RPC 18443, P2P 18444   | Chain of record; mining via RPC |
 | lnd-alice | `lightninglabs/lnd:v0.21.8-beta`            | RPC 10009, P2P 19735   | Full-node LND; remote-LND test target (`rpcmiddleware.enable`) |
 | lnd-bob   | `lightninglabs/lnd:v0.21.8-beta`            | RPC 10010              | Second full-node LND; channel/Loop peer |
-| litd      | `lightninglabs/lightning-terminal:v0.17.10` | embedded-LND RPC 10011 | litd integrated mode, bitcoind backend (full-node option) |
+| litd      | `lightninglabs/lightning-terminal:v0.17.11` | embedded-LND RPC 10011 | litd integrated mode, bitcoind backend (full-node option) |
 
 The host-side Neutrino filter server (built in CI) follows bitcoind's chain and
 serves BIP157 compact filters on **127.0.0.1:18555**. It exists because

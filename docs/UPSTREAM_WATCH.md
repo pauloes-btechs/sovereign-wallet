@@ -103,6 +103,9 @@ recorded answer. CI recordings use the docker harness (bitcoind).
   Pool v0.7.2, Faraday v0.2.20): all 13 vendored protos unchanged; the full
   desktop node-mode scenario passed and every UI response kept its shape.
   Compatible.
+- **litd v0.17.11** (2026-11-16, issue #51; bundles LND v0.21.8-beta, Loop
+  v0.35.4-beta, otherwise as v0.17.10): all 13 vendored protos unchanged; every
+  check passed. Compatible; pinned 2026-11-17.
 - **waved v0.2.1**: all 13 real-daemon lifecycle tests pass. Compatible.
 - **Faraday is unavailable in the bridge on both versions**: on v0.17.8 calls
   fail with `invalid macaroon: verification failed: signature mismatch after
