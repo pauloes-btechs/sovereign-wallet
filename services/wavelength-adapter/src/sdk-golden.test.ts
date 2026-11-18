@@ -2,7 +2,7 @@
  * Golden tests for the consumed Wavelength SDK surface and the Mode A
  * capability declaration.
  *
- * Wavelength v0.2.0 APIs are explicitly unstable (research F3). These tests
+ * Wavelength v0.2.x APIs are explicitly unstable (research F3). These tests
  * fail CI the moment any consumed pin, constant, or capability copy drifts —
  * a version bump is a deliberate, reviewed re-pin, never a routine update.
  */
@@ -62,7 +62,7 @@ const unusedClient = {} as WavelengthClient;
 
 describe('version pins', () => {
   it('pins the exact SDK version and mirrors it in package.json', () => {
-    expect(SDK_PIN).toBe('0.2.0');
+    expect(SDK_PIN).toBe('0.2.1');
     expect(pkgJson.dependencies[SDK_PACKAGE]).toBe(SDK_PIN);
   });
 

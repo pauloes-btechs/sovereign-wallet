@@ -2,7 +2,7 @@
 /**
  * Downloads the pinned `waved` daemon binary for a Tauri target triple,
  * verifies it against the upstream release's per-binary SHA256 hashes
- * (pinned below, taken from the SIGNED release manifest of v0.2.0), and
+ * (pinned below, taken from the SIGNED release manifest of v0.2.1), and
  * installs it as a Tauri sidecar at apps/desktop/src-tauri/binaries/.
  *
  * Supply-chain posture: the hash pins live in THIS repository, not in the
@@ -22,20 +22,21 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-const PINNED_WAVES_VERSION = '0.2.0';
+const PINNED_WAVES_VERSION = '0.2.1';
 // SOVEREIGN_WAVED_VERSION + SOVEREIGN_WAVED_SHA256 test another release (the
 // weekly upstream watch reads the hash from that release's manifest). Both
 // must be set together; shipping builds never set them.
 const WAVES_VERSION = process.env.SOVEREIGN_WAVED_VERSION ?? PINNED_WAVES_VERSION;
 const WAVES_REPO = 'lightninglabs/wavelength';
-// Pinned from the SIGNED release manifest (manifest-v0.2.0.txt, signatures by
-// bhandras + sputn1ck), verified 2026-10-30. Keyed by Tauri target triple.
+// Pinned from the SIGNED release manifest (manifest-v0.2.1.txt, signatures by
+// bhandras 9FC6B0BF…094198D8 + sputn1ck 4DC23555…81A5F0E4, keys unchanged
+// since v0.2.0), verified 2026-11-16. Keyed by Tauri target triple.
 const WAVES_SHA256 = {
-  'x86_64-unknown-linux-gnu': '4874375e7d480126cafbe6b289765147b626cbdf3488ad45600d8497a90501f4',
-  'aarch64-unknown-linux-gnu': 'c125f34be8fe2db7e93150d3ee843ab31c0e457759744392dc43ec9351cfa12b',
-  'x86_64-pc-windows-msvc': 'fc7182e4fde24f210c814eac2adaf44c93f0ce60004060ef8f11d4bb93751d77',
-  'x86_64-apple-darwin': 'a87ae404bf19aec4383250ca4a593a79589a2e87889c55e4e161260871eacc7d',
-  'aarch64-apple-darwin': '7c5aa143a82b10450150b0136105543cc33eefff8f498099135cda1087b93094',
+  'x86_64-unknown-linux-gnu': 'f6cec36bcd3fde27c182ad37edfc5913cea3802896bfe8177eb3d312adbe59be',
+  'aarch64-unknown-linux-gnu': '23679b8c97c58af064847449366b5f9ef5c77fbb82e738a3b396c2a6bb5be6bd',
+  'x86_64-pc-windows-msvc': '3fa4bf6452d54fb0417b4350607b5433b7416b727041a30adbbde90a5a58c69d',
+  'x86_64-apple-darwin': '4102d498e238b7144faf7af9cb02adeaee3c42cc220a7259104da4fc64e5bfc4',
+  'aarch64-apple-darwin': '1f9180f4a09080efe5b613ed2551fa91de6f84f84ced439f8e844ea6388e9b6b',
 };
 
 // Tauri triple → upstream asset base name (wavelength-<asset>-v<version>).

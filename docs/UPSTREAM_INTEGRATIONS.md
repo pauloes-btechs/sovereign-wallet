@@ -29,8 +29,8 @@ no undisclosed egress, no telemetry.
 | Pool | `lightninglabs/pool` | v0.7.2-beta (bundled in litd v0.17.11) | Leased inbound liquidity market | litd gRPC surface behind market-availability detection | MIT | litd | As litd | Live market depth unverifiable from docs; thin market is a first-class UI state | Implemented (optional behind availability detection) |
 | Taproot Assets (tapd) | `lightninglabs/taproot-assets` | v0.8.8 (bundled in litd v0.17.11) | Asset issuance, transfer, proofs | litd gRPC surface (`services/litd-adapter`) | MIT | litd | As litd | Asset channels are experimental (peer lockstep, RFQ oracle, seed-only recovery impossible) — behind a flag, off by default; proof backup mandatory | L1 implemented; asset channels experimental/off |
 | Faraday | `lightninglabs/faraday` | v0.2.20-alpha (bundled in litd v0.17.11) | Node/channel analytics | litd gRPC surface | MIT | litd | As litd | Analytics only | Implemented (feeds Mode B health views) |
-| Wavelength SDK | `lightninglabs/wavelength` | v0.2.0 (first public mainnet release; APIs explicitly unstable) | Mode A engine: Ark VTXOs, on-chain Bitcoin, swap-based Lightning | `@lightninglabs/wavelength-core` npm package; ALL contact isolated in `services/wavelength-adapter` | MIT | Ark operator + swap server (disclosed verbatim via capability contract) | Browser WASM (documented), React Native; **no documented desktop runtime** | Unstable APIs — CI re-pin job + golden tests of the consumed surface; seed restore must complete before VTXO batch expiry | Implemented (adapter + Mode A flows) |
-| waved (Wavelength daemon) | `lightninglabs/wavelength` (same release) | v0.2.0, commit `b82bd54` (`waved --version` verified on Linux 2026-10-30) | Mode A desktop daemon | Tauri sidecar, hash-pinned from the signed upstream release manifest | MIT | Same operator dependencies as the SDK; local RPC + health server loopback-only | Per-triple release assets (linux/mac/win) | No documented desktop runtime upstream — sidecar behavior validated during implementation (AV false positives watched); `lwwallet` backend needs `--wallet.esploraurl` | Implemented (desktop Mode A) |
+| Wavelength SDK | `lightninglabs/wavelength` | v0.2.1 (patch over v0.2.0, the first public mainnet release; APIs explicitly unstable) | Mode A engine: Ark VTXOs, on-chain Bitcoin, swap-based Lightning | `@lightninglabs/wavelength-core` npm package; ALL contact isolated in `services/wavelength-adapter` | MIT | Ark operator + swap server (disclosed verbatim via capability contract) | Browser WASM (documented), React Native; **no documented desktop runtime** | Unstable APIs — CI re-pin job + golden tests of the consumed surface; seed restore must complete before VTXO batch expiry | Implemented (adapter + Mode A flows) |
+| waved (Wavelength daemon) | `lightninglabs/wavelength` (same release) | v0.2.1, commit `76fabd0` (`waved --version` verified on Linux 2026-11-16) | Mode A desktop daemon | Tauri sidecar, hash-pinned from the signed upstream release manifest | MIT | Same operator dependencies as the SDK; local RPC + health server loopback-only | Per-triple release assets (linux/mac/win) | No documented desktop runtime upstream — sidecar behavior validated during implementation (AV false positives watched); `lwwallet` backend needs `--wallet.esploraurl` | Implemented (desktop Mode A) |
 | LNC (`@lightninglabs/lnc-web`) | `lightninglabs/lnc-web` | 0.3.6-alpha | Mode B mobile: pairing to the user's own litd | npm package in `services/litd-adapter` (dev dep of the mobile stack) | MIT | 10-word pairing phrase, PAKE+Noise relay | Web/Node runtime; used by mobile Mode B | Alpha line; sessions are macaroon-scoped and revocable | Implemented (mobile Mode B) |
 
 ## Shell & platform
@@ -78,10 +78,15 @@ no undisclosed egress, no telemetry.
   `sidecars.lock.json` and re-checked against the signed manifest on every CI
   run (Release signatures job). The weekly upstream watch passed the full
   suite on v0.17.11 (issue #51), as it did on v0.17.10 (issue #49).
-- waved v0.2.0: signed release manifest (`manifest-v0.2.0.txt`, signatures by
-  bhandras + sputn1ck) — hashes in `scripts/fetch-waved.mjs`; `--version`
-  smoke verified on Linux 2026-10-30; health contract verified against
-  v0.2.0 on Linux 2026-10-30.
+- waved v0.2.1 (re-pinned from v0.2.0 on 2026-11-16 alongside
+  `@lightninglabs/wavelength-core@0.2.1`, whose `RUNTIME_MANIFEST_VERSION`
+  names it): signed release manifest (`manifest-v0.2.1.txt`, good signatures
+  by bhandras + sputn1ck, keys in `scripts/release-keys/` unchanged since v0.2.0) —
+  all five per-triple binary hashes in `scripts/fetch-waved.mjs` checked
+  against the downloaded assets; `--version` smoke and the real-daemon
+  lifecycle/persistence suite verified on Linux 2026-11-16. The SDK package
+  diff over 0.2.0 is the version constant plus a `mainnet` network preset,
+  which the adapter does not use (mainnet stays behind `allowMainnet`).
 - npm licenses: `npm view <pkg>@<version> license` (retrieved 2026-10-31).
 - Rust crate licenses: crates.io API (retrieved 2026-10-31).
 - Lightning Labs component versions/licenses: verified research artifacts

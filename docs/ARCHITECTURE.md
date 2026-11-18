@@ -61,7 +61,7 @@ at render time, not stubbed.
 - VTXO lifecycle is a first-class user-visible state machine:
   `fresh → expiring → at-risk → exiting`, with background refresh while the
   operator is reachable and a fee-funded unilateral exit as the fallback.
-- Desktop runs `waved` (Wavelength's Go daemon, v0.2.0) as a Tauri sidecar;
+- Desktop runs `waved` (Wavelength's Go daemon, v0.2.1) as a Tauri sidecar;
   mobile uses the native SDK bindings (`@lightninglabs/wavelength-core`).
 - All Wavelength contact is isolated in `services/wavelength-adapter` (a
   spec-locked edge, enforced by lint ignore + golden tests of the consumed

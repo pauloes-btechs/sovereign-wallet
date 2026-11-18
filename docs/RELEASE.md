@@ -89,7 +89,7 @@ When credentials exist, add — do not change:
 - **Antivirus false positives on sidecar-bearing installers** — flagged
   unverified in stack research; if a major AV engine flags the signed (or
   unsigned) bundle, document the vendor and resolution here.
-- **Wavelength API instability** — v0.2.0 APIs are explicitly unstable; any
+- **Wavelength API instability** — v0.2.x APIs are explicitly unstable; any
   Wavelength re-pin re-runs the full Mode A golden + drill set.
 
 ## Linux
