@@ -27,7 +27,7 @@ export interface LoopStatus {
 }
 
 export const LOOP_SERVER_FIX =
-  'On regtest, run Lightning Labs’ regtest swap server (the lightninglabs/loopserver image) and restart the bridge with --loopServer <host:port>. On signet and mainnet, loopd uses Lightning Labs’ hosted swap server automatically.';
+  'On regtest, run scripts/dev/loop-regtest.sh start: it builds Lightning Labs’ regtest swap server from source (the old lightninglabs/loopserver image can no longer be pulled) and launches a bridge with --loopServer pointed at it. On signet and mainnet, loopd uses Lightning Labs’ hosted swap server automatically.';
 
 export const isRange = (r: Range | undefined): r is { minSat: number; maxSat: number } => r !== undefined && !('error' in r);
 
