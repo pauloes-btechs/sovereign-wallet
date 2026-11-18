@@ -7,6 +7,7 @@
 export { SidecarLifecycle } from './lifecycle.js';
 export type { SidecarSnapshot } from './lifecycle.js';
 export { SidecarLifecycleError } from './types.js';
+export { allProbes, httpListeningProbe, httpOkProbe } from './probes.js';
 export type {
   HealthProbe,
   SidecarExit,

@@ -1,6 +1,6 @@
 /**
  * INTEGRATION TEST — wallet data persistence across a simulated app upgrade,
- * driven end-to-end against the REAL waved daemon (wavelength v0.2.0).
+ * driven end-to-end against the REAL waved daemon (wavelength v0.2.0; v0.2.1 on the weekly upstream run).
  *
  * Release-blocking acceptance ("Upgrade/uninstall leaves wallet data intact"):
  * 1. Boot "app v1": waved through the same lifecycle engine the Tauri app
@@ -25,7 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { SidecarLifecycle } from './index.js';
+import { SidecarLifecycle, allProbes, httpListeningProbe, httpOkProbe } from './index.js';
 import { createNodeChildProcessRuntime } from './runtimes/node.js';
 import type { HealthProbe } from './types.js';
 import { WavedGatewayClient } from '@sovereign/wavelength-adapter';
@@ -71,17 +71,14 @@ async function freePort(): Promise<number> {
   });
 }
 
-function livezProbe(port: number): HealthProbe {
-  return {
-    isAlive: async () => {
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/livez`);
-        return response.ok;
-      } catch {
-        return false;
-      }
-    },
-  };
+/** Live = /livez answers AND the REST gateway accepts connections. waved
+ * v0.2.1 serves /livez before the gateway listens, so /livez alone let the
+ * first gateway call race it (ECONNREFUSED on the weekly upstream run). */
+function wavedProbe(healthPort: number, gatewayPort: number): HealthProbe {
+  return allProbes(
+    httpOkProbe(`http://127.0.0.1:${healthPort}/livez`),
+    httpListeningProbe(`http://127.0.0.1:${gatewayPort}/`),
+  );
 }
 
 /**
@@ -161,7 +158,7 @@ async function bootApp(waved: string, dataDir: string, esploraUrl: string, label
   const runtime = createNodeChildProcessRuntime(waved, { stdio: 'ignore' });
   const lifecycle = new SidecarLifecycle({
     runtime,
-    health: livezProbe(healthPort),
+    health: wavedProbe(healthPort, gatewayPort),
     bootTimeoutMs: 30_000,
     healthPollIntervalMs: 250,
     maxRestarts: 0,

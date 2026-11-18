@@ -1,16 +1,16 @@
 {
-  "$comment": "Pinned sidecar binaries. SHA256 values are copied verbatim from the signed release manifest (manifest-v0.17.10.txt, signature manifest-ViktorT-11-v0.17.10.sig verified against scripts/release-keys by scripts/verify-release.mjs) of lightninglabs/lightning-terminal v0.17.10. Keys are `${process.platform}-${process.arch}`. Re-pin via: node scripts/verify-release.mjs litd --tag=<tag> --write-lock --bundled=\"…\" — never add an unverified hash.",
+  "$comment": "Pinned sidecar binaries. SHA256 values are copied verbatim from the signed release manifest (manifest-v0.17.11.txt, signature manifest-ViktorT-11-v0.17.11.sig verified against scripts/release-keys by scripts/verify-release.mjs) of lightninglabs/lightning-terminal v0.17.11. Keys are `${process.platform}-${process.arch}`. Re-pin via: node scripts/verify-release.mjs litd --tag=<tag> --write-lock --bundled=\"…\" — never add an unverified hash.",
   "litd": {
     "repo": "lightninglabs/lightning-terminal",
-    "tag": "v0.17.10",
+    "tag": "v0.17.11",
     "assetPrefix": "lightning-terminal",
-    "bundledUpstream": "LND v0.21.6-beta, tapd v0.8.8, Loop v0.35.2, Pool v0.7.2, Faraday v0.2.20",
+    "bundledUpstream": "LND v0.21.8-beta, tapd v0.8.8, Loop v0.35.4, Pool v0.7.2, Faraday v0.2.20",
     "sha256": {
-      "linux-x64": "455a981e65204618bbd03337b3b9b21e7253f7a282a49678545ba9911f30c59c",
-      "linux-arm64": "476b08288337c416f6bc2b43ec5655f92b446e0f12b7e947fbdf3a8b03c09677",
-      "darwin-x64": "f35e0a6f37f9da2143972c6f020955e10c56c018d4c67409af92bb840d74aeae",
-      "darwin-arm64": "2582a5e0d2fb9187909b5c8e700e7000f45dd153c8277ae3a02a9663677b9956",
-      "win32-x64": "4a80d7e9fd84b01500c7a288f7936d9fa2d6752e4241747ff0da310348844e6a"
+      "linux-x64": "2b806a04d9001e56c7e763dc8d7f42beb03519f4283728d1a667f61111be6130",
+      "linux-arm64": "1024e9b74575c65df6e308488bcdcd60509b57aae852d6ac32607836f568d082",
+      "darwin-x64": "5d44a03090e8d5ca33f0d12f279bb10895c81967f5de7777fb9dd3fface16c7f",
+      "darwin-arm64": "87c9121222fbb90b890ed1df66b236d41d869915dc1e72e3f3242c14ea4da81f",
+      "win32-x64": "4c8dd3279386b8fa0589bc3b26972e2269286b2d440d1b3a08cb63f1c9a3eb77"
     }
   }
 }

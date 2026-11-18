@@ -15,7 +15,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { path } from '@tauri-apps/api';
 import { createTauriSidecarRuntime } from './sidecar/tauri-runtime.js';
 import { useWavedSidecar, type WavedSidecarState } from './sidecar/use-waved-sidecar.js';
-import type { WavedSidecarConfig } from './sidecar/waved.js';
+import { WAVED_GATEWAY_PORT, retryUntil, type WavedSidecarConfig } from './sidecar/waved.js';
 import { WalletSessionProvider } from './wallet/WalletSessionProvider.js';
 import { WalletApp } from './wallet/WalletApp.js';
 import { devGatewayBootstrap, type GatewayBootstrap } from './wallet/session.js';
@@ -31,7 +31,6 @@ function isTauri(): boolean {
 }
 
 const WAVED_HEALTH_PORT = 10032; // loopback, distinct from waved's rpc/gateway defaults
-const WAVED_GATEWAY_PORT = 10031; // pinned in sidecar/waved.ts
 
 function useWavedSidecarConfig(): WavedSidecarConfig | null {
   const [config, setConfig] = useState<WavedSidecarConfig | null>(null);
@@ -93,7 +92,9 @@ function useGatewayBootstrap(sidecar: WavedSidecarConfig | null, sidecarPhase: W
     }
     if (!isTauri() || !sidecar || sidecarPhase !== 'live') return;
     let cancelled = false;
-    void readTauriMacaroon(sidecar.dataDir, sidecar.network ?? 'regtest')
+    // waved mints the admin macaroon during startup, which can finish after
+    // the sidecar turns live on a loaded machine: keep reading briefly.
+    void retryUntil(() => readTauriMacaroon(sidecar.dataDir, sidecar.network ?? 'regtest'), { timeoutMs: 15_000, intervalMs: 250 })
       .then((macaroonHex) => {
         if (cancelled) return;
         setBootstrap({ gatewayUrl: `http://127.0.0.1:${WAVED_GATEWAY_PORT}`, macaroonHex });

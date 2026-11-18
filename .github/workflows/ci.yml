@@ -167,7 +167,16 @@ jobs:
             sudo chown -R "$(id -u):$(id -g)" "harness/regtest/data/$d"
           done
       - name: Run integration suite
-        run: pnpm test:integration
+        # A healthy run takes ~2 minutes; fail fast with a clear error rather
+        # than sitting silent until the job limit (issue #44).
+        timeout-minutes: 20
+        run: |
+          status=0
+          timeout --kill-after=30s 15m pnpm test:integration || status=$?
+          if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+            echo "::error::integration suite exceeded 15 minutes and was killed: a test or its teardown hung; the last test named in the log above is where it stopped"
+          fi
+          exit "$status"
       - name: Teardown
         if: always()
         run: docker compose -f harness/regtest/docker-compose.yml down -v || true

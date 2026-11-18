@@ -93,7 +93,7 @@ export interface RouteAdapter {
 }
 
 const LOOP_SERVER_FIX_REGTEST =
-  'On regtest, run Lightning Labs’ lightninglabs/loopserver image and restart the bridge with --loopServer <host:port>. On signet and mainnet loopd uses Lightning Labs’ hosted swap server.';
+  'On regtest, run scripts/dev/loop-regtest.sh start: it builds Lightning Labs’ regtest swap server from source and launches a bridge with --loopServer pointed at it. On signet and mainnet loopd uses Lightning Labs’ hosted swap server.';
 
 /** Shared Loop provider check: sub-server running and swap server configured. */
 export function loopBlocker(env: RouteEnv): Blocker | null {
