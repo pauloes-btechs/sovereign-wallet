@@ -602,7 +602,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install CocoaPods dependencies
         working-directory: apps/mobile/ios
-        run: pod install
+        # React-Core-prebuilt's podspec downloads the RN core tarball from
+        # repo.reactnative.dev while it is evaluated; a transient connection
+        # reset there fails the whole job (run 44568284570). Retry the network
+        # step only — a podspec or lockfile error fails all three attempts.
+        run: |
+          for attempt in 1 2 3; do
+            if pod install; then exit 0; fi
+            [ "$attempt" -lt 3 ] || break
+            echo "::warning::pod install attempt $attempt failed; retrying in $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
+          echo "::error::pod install failed after 3 attempts"
+          exit 1
       - name: Build simulator app (unsigned)
         working-directory: apps/mobile/ios
         # Debug configuration loads JS from Metro at runtime — no bundle step
