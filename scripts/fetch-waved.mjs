@@ -15,12 +15,14 @@
  * Adds `--run-smoke` automatically when the triple matches this host.
  */
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { extractCommand } from './lib/archive-extract.mjs';
 
 const PINNED_WAVES_VERSION = '0.2.1';
 // SOVEREIGN_WAVED_VERSION + SOVEREIGN_WAVED_SHA256 test another release (the
@@ -75,23 +77,26 @@ function sha256(buf) {
   return createHash('sha256').update(buf).digest('hex');
 }
 
-/** Extracts the waved binary from the archive into dest. Shells out to tar
- *  (bsdtar reads zip too on macOS/Windows runners; GNU tar needs .tar.gz). */
+/** Extracts the waved binary from the archive into workDir and confirms it
+ *  landed (see scripts/lib/archive-extract.mjs for the tool choice). */
 function extract(archivePath, workDir) {
   const exeRel = path.join(innerDir, wavedName);
-  if (isWindowsTarget) {
-    // PowerShell Expand-Archive is always present on windows runners.
-    const r = spawnSync(
-      'powershell',
-      ['-NoProfile', '-Command', `Expand-Archive -Path '${archivePath}' -DestinationPath '${workDir}' -Force`],
-      { stdio: 'inherit' },
-    );
-    if (r.status !== 0) throw new Error(`Expand-Archive failed (${r.status})`);
-  } else {
-    const r = spawnSync('tar', ['-xzf', archivePath, '-C', workDir, exeRel], { stdio: 'inherit' });
-    if (r.status !== 0) throw new Error(`tar extraction failed (${r.status})`);
+  const { cmd, args } = extractCommand({
+    hostPlatform: process.platform,
+    systemRoot: process.env.SystemRoot,
+    archivePath,
+    workDir,
+    member: `${innerDir}/${wavedName}`,
+    isZip: isWindowsTarget,
+  });
+  const r = spawnSync(cmd, args, { stdio: 'inherit' });
+  if (r.error) throw new Error(`${cmd} could not run: ${r.error.message}`);
+  if (r.status !== 0) throw new Error(`${cmd} extraction failed (${r.status})`);
+  const out = path.join(workDir, exeRel);
+  if (!existsSync(out)) {
+    throw new Error(`extraction reported success but ${exeRel} is missing from ${archivePath}`);
   }
-  return path.join(workDir, exeRel);
+  return out;
 }
 
 /** Verifies the extracted binary executes and reports the pinned version. */
