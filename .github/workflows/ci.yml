@@ -179,6 +179,12 @@ jobs:
             echo "::error::integration suite exceeded 15 minutes and was killed: a test or its teardown hung; the last test named in the log above is where it stopped"
           fi
           exit "$status"
+      - name: Mailbox + litd logs (on failure)
+        # LNC pairing failures surface in the suite only as a connect
+        # timeout; the mailbox (aperture) and litd's session client logs
+        # say why. Captured before teardown removes the containers.
+        if: failure()
+        run: docker compose -f harness/regtest/docker-compose.yml logs --tail=300 aperture litd || true
       - name: Teardown
         if: always()
         run: docker compose -f harness/regtest/docker-compose.yml down -v || true
