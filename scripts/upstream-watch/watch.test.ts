@@ -74,8 +74,11 @@ describe('repo pins', () => {
     }
     // The shipped sidecar and the harness litd image move together.
     expect(pins.litdImage).toBe(pins.litd);
-    // aperture v0.5.0 was superseded by v0.6.x (upstream-watch #59).
-    expect(compareVersions(pins.apertureImage, 'v0.6.0')).toBeGreaterThanOrEqual(0);
+    // aperture v0.6.1 breaks LNC pairing: its websocket upgrade fails with
+    // "response does not implement http.Hijacker", so wasm clients never
+    // reach the mailbox (PR #60). Move past v0.6.x only once an upstream
+    // release fixes that and the Integration job's LNC tests pass on it.
+    expect(compareVersions(pins.apertureImage, 'v0.6.0')).toBeLessThan(0);
   });
 });
 
