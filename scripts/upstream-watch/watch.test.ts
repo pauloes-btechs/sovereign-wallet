@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — plain ESM script module, no type declarations
-import { compareVersions, diffModels, flattenImports, goVersionToRef, isPrerelease, parseGoMod, protoModel } from './lib.mjs';
+import { compareVersions, currentPins, diffModels, flattenImports, goVersionToRef, isPrerelease, parseGoMod, protoModel } from './lib.mjs';
 // @ts-expect-error — plain ESM script module, no type declarations
 import { diffFixtures } from './fixture-diff.mjs';
 // @ts-expect-error — plain ESM script module, no type declarations
@@ -65,6 +65,19 @@ message GetInfoResponse {
 }
 enum State { UNKNOWN = 0; OPEN = 1; PENDING = 3; }
 `;
+
+describe('repo pins', () => {
+  it('reads every harness image tag the watch compares, including the aperture mailbox', () => {
+    const pins = currentPins();
+    for (const key of ['litd', 'lndImage', 'litdImage', 'apertureImage', 'waved']) {
+      expect(pins[key], key).toMatch(/^v\d+\.\d+\.\d+/);
+    }
+    // The shipped sidecar and the harness litd image move together.
+    expect(pins.litdImage).toBe(pins.litd);
+    // aperture v0.5.0 was superseded by v0.6.x (upstream-watch #59).
+    expect(compareVersions(pins.apertureImage, 'v0.6.0')).toBeGreaterThanOrEqual(0);
+  });
+});
 
 describe('semantic proto diff', () => {
   const changes = diffModels(protoModel(OLD, 'a.proto'), protoModel(NEW, 'a.proto')) as { severity: string; kind: string; name: string }[];
