@@ -407,3 +407,27 @@ describe('quantum readiness: BIP content changes (last commit)', () => {
     expect(toBaseline(obs, BASELINE).bips['360']).toMatchObject({ present: false, lastCommitSha: null });
   });
 });
+
+describe('quantum readiness: committed baseline', () => {
+  // A track the baseline never recorded (null) re-reports as a
+  // "first-observation" change on every weekly run. The committed baseline
+  // must record every track so the issue only flags real changes.
+  it('records every watched track', () => {
+    const base = readBaseline() as {
+      recordedAt: string;
+      bips: Record<string, { present: boolean; lastCommitSha: string | null }>;
+      corePrs: { number: number; state: string }[] | null;
+      shrincs: { prs: { number: number; state: string }[]; bips: unknown[] } | null;
+    };
+    expect(base.recordedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    for (const bip of ['360', '361']) {
+      const b = base.bips[bip];
+      expect(b?.present).toBe(true);
+      expect(b?.lastCommitSha).toMatch(/^[0-9a-f]{40}$/);
+    }
+    expect(Array.isArray(base.corePrs)).toBe(true);
+    expect(base.shrincs).not.toBeNull();
+    expect(Array.isArray(base.shrincs?.prs)).toBe(true);
+    expect(Array.isArray(base.shrincs?.bips)).toBe(true);
+  });
+});
