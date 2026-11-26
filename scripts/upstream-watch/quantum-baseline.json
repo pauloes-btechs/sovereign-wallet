@@ -1,5 +1,5 @@
 {
-  "recordedAt": "2026-11-08",
+  "recordedAt": "2026-11-26",
   "bips": {
     "360": {
       "file": "bip-0360.mediawiki",
@@ -18,6 +18,53 @@
       "lastCommitDate": "2026-04-17T16:44:09Z"
     }
   },
-  "corePrs": null,
-  "shrincs": null
+  "corePrs": [
+    {
+      "number": 33163,
+      "title": "BIP360: Includes the following:",
+      "state": "closed",
+      "url": "https://github.com/bitcoin/bitcoin/pull/33163"
+    },
+    {
+      "number": 34826,
+      "title": "consensus: Pay to Schnorr Key Hash (P2SKH)",
+      "state": "closed",
+      "url": "https://github.com/bitcoin/bitcoin/pull/34826"
+    },
+    {
+      "number": 35106,
+      "title": "BIP360 P2MR for Quantum-Resistance Migration: Validation, Policy, and Functional Tests",
+      "state": "closed",
+      "url": "https://github.com/bitcoin/bitcoin/pull/35106"
+    },
+    {
+      "number": 35107,
+      "title": "script: Add BIP360 P2MR validation, policy plumbing, and tests",
+      "state": "closed",
+      "url": "https://github.com/bitcoin/bitcoin/pull/35107"
+    },
+    {
+      "number": 35108,
+      "title": "script: add BIP360 P2MR validation, policy plumbing, and tests",
+      "state": "closed",
+      "url": "https://github.com/bitcoin/bitcoin/pull/35108"
+    },
+    {
+      "number": 35109,
+      "title": "script: add BIP360 P2MR validation, policy plumbing, and tests",
+      "state": "closed",
+      "url": "https://github.com/bitcoin/bitcoin/pull/35109"
+    }
+  ],
+  "shrincs": {
+    "prs": [
+      {
+        "number": 2360,
+        "title": "BIP drafts: OP_TX, Extended Primitives, and Reusable Macros",
+        "state": "open",
+        "url": "https://github.com/bitcoin/bips/pull/2360"
+      }
+    ],
+    "bips": []
+  }
 }
