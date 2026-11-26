@@ -264,9 +264,26 @@ export function quantumMarkdown(base, obs, changes) {
   }
   md.push('');
   md.push(
-    'What this means for the wallet: sends to SegWit v2 (P2MR) stay refused and P2MR receive stays off until a soft fork **activates** BIP-360 — a Status change alone does not activate anything. When activation is scheduled, flip `p2mr` to `active` in `packages/wallet-core/src/addressTypes.ts` and follow `docs/QUANTUM_READINESS.md`. To accept these observations as the new baseline, run `node scripts/upstream-watch/check.mjs --write-quantum-baseline` (or copy `quantum.json` from the run artifact) and commit it.',
+    'What this means for the wallet: sends to SegWit v2 (P2MR) stay refused and P2MR receive stays off until a soft fork **activates** BIP-360 — a Status change alone does not activate anything. When activation is scheduled, flip `p2mr` to `active` in `packages/wallet-core/src/addressTypes.ts` and follow `docs/QUANTUM_READINESS.md`. To accept these observations as the new baseline, replace `scripts/upstream-watch/quantum-baseline.json` with the proposed baseline below (or run `node scripts/upstream-watch/check.mjs --write-quantum-baseline`) and commit it.',
   );
+  if (changes.length > 0) {
+    md.push('');
+    md.push(proposedBaselineMarkdown(base, obs));
+  }
   return md.join('\n');
+}
+
+/**
+ * Collapsed block with the exact `quantum-baseline.json` this run would
+ * write (same as `--write-quantum-baseline`), so the baseline can be
+ * accepted straight from the issue without downloading the run artifact.
+ */
+export function proposedBaselineMarkdown(base, obs) {
+  const json = JSON.stringify(toBaseline(obs, base), null, 2);
+  // Fence longer than any backtick run inside (PR titles are free text).
+  const longest = Math.max(0, ...(json.match(/`+/g) ?? []).map((r) => r.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return ['<details><summary>Proposed <code>quantum-baseline.json</code> (this run\'s observations)</summary>', '', `${fence}json`, json, fence, '', '</details>'].join('\n');
 }
 
 export function readBaseline(file = baselinePath) {

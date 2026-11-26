@@ -4,7 +4,7 @@ import { compareVersions, currentPins, diffModels, flattenImports, goVersionToRe
 // @ts-expect-error — plain ESM script module, no type declarations
 import { diffFixtures } from './fixture-diff.mjs';
 // @ts-expect-error — plain ESM script module, no type declarations
-import { diffQuantum, githubClient, observeQuantum, parseBipHeader, quantumMarkdown, readBaseline, toBaseline } from './quantum.mjs';
+import { diffQuantum, githubClient, observeQuantum, parseBipHeader, proposedBaselineMarkdown, quantumMarkdown, readBaseline, toBaseline } from './quantum.mjs';
 
 describe('version handling', () => {
   it('orders final releases after their release candidates', () => {
@@ -312,6 +312,28 @@ describe('quantum readiness: observing and diffing', () => {
     expect(quantumMarkdown(BASELINE, obs, changes)).toContain('Not observed this run');
     // Recording keeps the previous value for what failed.
     expect(toBaseline(obs, BASELINE).shrincs).toEqual(BASELINE.shrincs);
+  });
+
+  it('puts the exact baseline --write-quantum-baseline would record into the issue section', async () => {
+    const routes = baseRoutes();
+    routes[search('repo:bitcoin/bips is:pr SHRINCS')] = { json: { items: [pr(2360, 'Add OP_TX ```drafts```', 'open')] } };
+    routes[`${API}/repos/bitcoin/bips/pulls/2360/files?per_page=100`] = { json: [] };
+    const obs = await observeQuantum(githubClient(stubFetch(routes).impl, undefined), new Date('2026-11-24T01:38:00Z'));
+    const base = { ...BASELINE, corePrs: null, shrincs: null };
+    const changes = diffQuantum(base, obs) as unknown[];
+    expect(obs.errors).toEqual([]);
+    expect(changes.length).toBeGreaterThan(0);
+    const md = quantumMarkdown(base, obs, changes) as string;
+    expect(md).toContain('Proposed <code>quantum-baseline.json</code>');
+    // The fenced JSON round-trips to toBaseline(), even with backticks in a PR title.
+    const block = proposedBaselineMarkdown(base, obs) as string;
+    const m = /^(`{3,})json\n([\s\S]*?)\n\1$/m.exec(block);
+    expect(m).not.toBeNull();
+    expect(m![1]!.length).toBeGreaterThan(3);
+    expect(JSON.parse(m![2]!)).toEqual(toBaseline(obs, base));
+    expect(JSON.parse(m![2]!).recordedAt).toBe('2026-11-24');
+    // Nothing to accept when nothing changed.
+    expect(quantumMarkdown(BASELINE, obs, [])).not.toContain('Proposed <code>');
   });
 
   it('notices a watched BIP file disappearing', async () => {
