@@ -311,7 +311,7 @@ describe('channel close jobs', () => {
     await vi.waitFor(() => {
       const done = h.session.closeJob(job.id);
       expect(done?.state).toBe('closed');
-      expect(done?.closingTxid).toBe('abcd');
+      expect(done?.closingTxid).toBe('cdab'); // display order: bytes reversed
     });
   });
 

@@ -428,16 +428,16 @@ export class LitdBridgeSession {
     try {
       for await (const update of ops.closeChannel(request)) {
         if (update.update.oneofKind === 'closePending') {
-          const txidHex = Buffer.from(update.update.closePending.txid).toString('hex');
+          const closingTxid = txidHex(update.update.closePending.txid);
           const job = this.closeJobs.get(id);
-          if (job && txidHex !== '') {
-            this.closeJobs.set(id, { ...job, closingTxid: txidHex });
+          if (job && closingTxid !== '') {
+            this.closeJobs.set(id, { ...job, closingTxid });
           }
         }
         if (update.update.oneofKind === 'chanClose') {
           // Keep the txid seen at closePending — the close summary completes
           // the job, it does not replace what was already broadcast.
-          const summaryTxid = Buffer.from(update.update.chanClose.closingTxid).toString('hex');
+          const summaryTxid = txidHex(update.update.chanClose.closingTxid);
           const job = this.closeJobs.get(id);
           this.closeJobs.set(id, {
             id,
@@ -771,7 +771,7 @@ export function lightningOpsFromClient(clients: { readonly lightning: LightningC
         response.fundingTxid.oneofKind === 'fundingTxidStr'
           ? response.fundingTxid.fundingTxidStr
           : response.fundingTxid.oneofKind === 'fundingTxidBytes'
-            ? Buffer.from(response.fundingTxid.fundingTxidBytes).reverse().toString('hex')
+            ? txidHex(response.fundingTxid.fundingTxidBytes)
             : '';
       return { channelPoint: `${txid}:${response.outputIndex}` };
     },
@@ -853,6 +853,9 @@ export function lightningOpsFromClient(clients: { readonly lightning: LightningC
     },
   };
 }
+
+/** Raw txid hash bytes are little-endian; explorers, bitcoind and lnd print them reversed. */
+export const txidHex = (b: Uint8Array | undefined): string => (b === undefined ? '' : Buffer.from(b).reverse().toString('hex'));
 
 function streamToAsyncIterable<TRead, TOut>(options: {
   readonly responses: AsyncIterable<TRead>;
