@@ -55,7 +55,7 @@ import { LitdPoolPort } from '../pool-client.js';
 import { createTapdClients, type TapdClients } from '../assets/tapd-clients.js';
 import { AssetManager } from '../assets/asset-manager.js';
 import { RPC_UNARY_TIMEOUT_MS } from '../rpc-timeout.js';
-import { BridgeRequestError } from './session.js';
+import { BridgeRequestError, txidHex } from './session.js';
 import type { SubServerPlan } from './subserver-config.js';
 
 const T = { timeoutMs: RPC_UNARY_TIMEOUT_MS };
@@ -207,8 +207,6 @@ export interface AssetsOverviewView {
 // ——— helpers ———
 
 const hex = (b: Uint8Array | undefined): string => (b === undefined ? '' : Buffer.from(b).toString('hex'));
-/** Raw txid hash bytes are little-endian; explorers, bitcoind and lnd print them reversed. */
-export const txidHex = (b: Uint8Array | undefined): string => (b === undefined ? '' : Buffer.from(b).reverse().toString('hex'));
 const num = (v: bigint | number | undefined): number => (v === undefined ? 0 : Number(v));
 const ms = (sec: bigint | number | undefined): number => num(sec) * 1000;
 const enumName = (e: Record<string | number, string | number>, v: number): string =>
