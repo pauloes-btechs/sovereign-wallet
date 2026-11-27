@@ -167,6 +167,14 @@ describe('LiquidityManager — AutoLoop default and opt-in', () => {
     await fx.manager.disableAutoLoop('again');
     expect(fx.loop.paramsWrites).toHaveLength(2);
   });
+
+  it('disableAutoLoop turns the daemon off after a restart lost the in-memory policy', async () => {
+    await fx.manager.enableAutoLoop(policy);
+    const restarted = new LiquidityManager({ loop: fx.loop, pool: unavailablePool, journal: fx.journal, newId: () => 'r1', now: () => BASE_NOW });
+    expect(restarted.isAutoLoopEnabled()).toBe(false);
+    await restarted.disableAutoLoop('user turned it off');
+    expect(fx.loop.autoLoopParams?.autoloopEnabled).toBe(false);
+  });
 });
 
 describe('LiquidityManager — quotes', () => {

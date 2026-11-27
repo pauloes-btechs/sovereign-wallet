@@ -180,9 +180,12 @@ export class LiquidityManager {
     }));
   }
 
-  /** Turn automation off and journal why. Idempotent. */
+  /**
+   * Turn automation off and journal why. Idempotent. Always checks the
+   * daemon: loopd keeps AutoLoop on across an adapter restart or a failed
+   * earlier write, when this manager no longer holds a policy.
+   */
   async disableAutoLoop(reason: string): Promise<void> {
-    if (this.policy === null) return;
     this.policy = null;
     try {
       const current = await this.loop.getAutoLoopParams();
