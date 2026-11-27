@@ -86,9 +86,12 @@ export function createPaymentEngine(
 
 /**
  * What the send card shows once execute returns. 'in-flight' is an
- * ambiguous outcome (sent or timed out): it stays "sending" until recovery
- * reconciles it, and never offers a resend.
+ * ambiguous outcome (sent or timed out): the card stays "sending" with
+ * UNKNOWN_RESULT_TEXT and no resend button; startup recovery reconciles it.
  */
+export const UNKNOWN_RESULT_TEXT =
+  "This payment's result isn't known yet. Check Activity before sending again: paying again now could pay twice.";
+
 export function sendStatusOf(state: PaymentIntent['state']): 'settled' | 'sending' | 'failed' {
   if (state === 'settled') return 'settled';
   return state === 'failed' ? 'failed' : 'sending';

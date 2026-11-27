@@ -20,7 +20,7 @@ import {
 } from '@sovereign/ui';
 import { verifyRetypedPhrase } from '@sovereign/wallet-core';
 import type { QuotedSend } from '@sovereign/wavelength-adapter';
-import { reviewAmounts, sendStatusOf } from './payments.js';
+import { reviewAmounts, sendStatusOf, UNKNOWN_RESULT_TEXT } from './payments.js';
 import { useWalletSession } from './WalletSessionProvider.js';
 import { summarizeVtxos, type VtxoSummary } from './vtxo-summary.js';
 
@@ -225,12 +225,14 @@ function ReadyWallet(): React.ReactNode {
       const status = sendStatusOf((await engine.execute(intent.intentId)).state);
       setSendStatus(status);
       if (status === 'failed') setSendError('The payment failed. No funds were moved. Try again when ready.');
+      if (status === 'sending') setSendError(UNKNOWN_RESULT_TEXT);
       void refresh();
     } catch (err: unknown) {
       // A throw after submit may come after dispatch: stay in flight so the
       // user is never offered a resend that could pay twice.
       setSendStatus(submitted ? 'sending' : 'failed');
-      setSendError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setSendError(submitted ? `${UNKNOWN_RESULT_TEXT} (${message})` : message);
     }
   };
 

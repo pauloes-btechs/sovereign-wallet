@@ -156,6 +156,26 @@ describe('SendFlow — outcomes', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/Do not close the wallet/);
   });
 
+  it('an unknown result keeps the in-flight notice and offers a way back, never a resend', () => {
+    const onSendAnother = vi.fn();
+    render(
+      <SendFlow
+        draft={lightningDraft}
+        onDraftChange={vi.fn()}
+        lightningMechanism="swaps"
+        status="sending"
+        errorMessage="This payment's result isn't known yet."
+        onReview={noop}
+        onConfirm={onSendAnother}
+        onSendAnother={onSendAnother}
+      />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/result isn't known yet/);
+    expect(screen.queryByRole('button', { name: /confirm/i })).toBeNull();
+    screen.getByRole('button', { name: 'Back to send' }).click();
+    expect(onSendAnother).toHaveBeenCalledOnce();
+  });
+
   it('surfaces failure without pretending funds moved', () => {
     render(
       <SendFlow
