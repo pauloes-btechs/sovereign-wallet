@@ -5,7 +5,7 @@
  * fee is shown as rate × typical size and labeled as an estimate.
  */
 import { useEffect, useMemo, useState } from 'react';
-import type { DecodedInvoiceView, FeeEstimateView, PaymentOutcomeView } from '../../../modeb/bridge-client.js';
+import { sendMayHaveHappened, UNCONFIRMED_SEND_TEXT, type DecodedInvoiceView, type FeeEstimateView, type PaymentOutcomeView } from '../../../modeb/bridge-client.js';
 import { computeAccounts } from '../../balances.js';
 import { usePlatform, usePoll, usePrefs } from '../../context.js';
 import { Link, useLocation } from '../../router.js';
@@ -457,6 +457,7 @@ function OnchainSend() {
   const [error, setError] = useState<string | null>(null);
   const [txid, setTxid] = useState<string | null>(null);
   const [sent, setSent] = useState<{ address: string; amountSat: number | null; rate: number } | null>(null);
+  const [unconfirmed, setUnconfirmed] = useState(false);
 
   // Fee suggestions from lnd's estimator (targets in blocks — NOT a fee rate).
   // Asked one at a time; if the node can't estimate at all, stop after the first.
@@ -515,7 +516,11 @@ function OnchainSend() {
       toast({ title: 'Bitcoin sent', body: 'Broadcast to the network; waiting for the first confirmation.', tone: 'positive' });
       bumpRefresh();
     } catch (err) {
-      setError(errorText(err));
+      const unconfirmed = sendMayHaveHappened(err);
+      setUnconfirmed(unconfirmed);
+      // Leave review so "Authorize and send" is not one click away from a second broadcast.
+      if (unconfirmed) setReviewing(false);
+      setError(unconfirmed ? `${UNCONFIRMED_SEND_TEXT} (${errorText(err)})` : errorText(err));
     } finally {
       setBusy(false);
     }
@@ -700,7 +705,7 @@ function OnchainSend() {
         )}
         {error !== null ? (
           <div data-testid="send-error">
-            <Notice tone="danger" title="lnd didn't send the transaction">
+            <Notice tone="danger" title={unconfirmed ? 'Send not confirmed' : "lnd didn't send the transaction"}>
               {error}
             </Notice>
           </div>

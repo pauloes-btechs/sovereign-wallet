@@ -36,6 +36,19 @@ export class BridgeHttpError extends Error {
   }
 }
 
+/**
+ * Whether a failed write may still have reached lnd: no response at all
+ * (status 0) or a server-side failure. Only a 4xx proves nothing was sent,
+ * so anything else must not offer a one-click retry (it could pay twice).
+ */
+export function sendMayHaveHappened(err: unknown): boolean {
+  return !(err instanceof BridgeHttpError && err.status >= 400 && err.status < 500);
+}
+
+/** Shown instead of the raw error when sendMayHaveHappened is true. */
+export const UNCONFIRMED_SEND_TEXT =
+  'The bridge did not confirm this send, so it may have been broadcast. Check Activity for the transaction before you try again.';
+
 export type BridgePhase = 'ready' | 'locked' | 'missing' | 'undetermined';
 
 export interface NodeHealthView {
