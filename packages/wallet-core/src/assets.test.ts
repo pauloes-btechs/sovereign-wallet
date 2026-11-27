@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   AssetIdentifierError,
-  AssetRegistry,
   DEFAULT_STABLECOIN_TICKERS,
   classifyAsset,
   describeAssetSupport,
@@ -61,86 +60,54 @@ describe('validated asset identifiers', () => {
   });
 });
 
-describe('asset registry — verified metadata vs unverified issuer claims', () => {
+describe('classifyAsset — verified metadata vs unverified issuer claims', () => {
   const usdcClaim = {
     rawHex: Buffer.from(JSON.stringify({ name: 'USD Coin', ticker: 'USDC' })).toString('hex'),
     metaType: 'json' as const,
     json: { name: 'USD Coin', ticker: 'USDC' },
   };
+  const untrusted = { trustedIssuers: new Set<string>() };
 
   it('an unverified asset never renders as a trusted stablecoin', () => {
-    const registry = new AssetRegistry();
-    const entry = registry.record({
-      assetId: VALID_ASSET_ID,
-      metaHashAnchored: true, // bound to the genesis — but the issuer is unknown
-      meta: usdcClaim,
-    });
+    const entry = classifyAsset({ assetId: VALID_ASSET_ID, metaHashAnchored: true, meta: usdcClaim }, untrusted);
     expect(entry.trust).toBe('issuer-claimed');
     expect(entry.display.label).toBe('USD Coin (unverified issuer)');
     expect(entry.display.stablecoinImpersonationRisk).toBe(true);
   });
 
   it('anchored meta + trusted issuer is the only path to a verified label', () => {
-    const registry = new AssetRegistry();
+    const trusted = { trustedIssuers: new Set([VALID_ASSET_ID]) };
     // Anchored but untrusted: still claimed.
-    expect(registry.record({ assetId: VALID_ASSET_ID, metaHashAnchored: true, meta: usdcClaim }).trust).toBe('issuer-claimed');
+    expect(classifyAsset({ assetId: VALID_ASSET_ID, metaHashAnchored: true, meta: usdcClaim }, untrusted).trust).toBe('issuer-claimed');
     // Trusted but unanchored: still claimed (metadata not bound to the asset).
-    registry.trustIssuer(VALID_ASSET_ID);
-    expect(registry.record({ assetId: VALID_ASSET_ID, metaHashAnchored: false, meta: usdcClaim }).trust).toBe('issuer-claimed');
+    expect(classifyAsset({ assetId: VALID_ASSET_ID, metaHashAnchored: false, meta: usdcClaim }, trusted).trust).toBe('issuer-claimed');
     // Both: verified, clean label, no impersonation warning.
-    const verified = registry.record({ assetId: VALID_ASSET_ID, metaHashAnchored: true, meta: usdcClaim });
+    const verified = classifyAsset({ assetId: VALID_ASSET_ID, metaHashAnchored: true, meta: usdcClaim }, trusted);
     expect(verified.trust).toBe('issuer-verified');
     expect(verified.display.label).toBe('USD Coin');
     expect(verified.display.stablecoinImpersonationRisk).toBe(false);
   });
 
   it('trusting a group key verifies assets in that group', () => {
-    const registry = new AssetRegistry();
-    registry.trustIssuer(VALID_GROUP_KEY);
-    const entry = registry.record({
-      assetId: VALID_ASSET_ID,
-      groupKeyHex: VALID_GROUP_KEY,
-      metaHashAnchored: true,
-      meta: usdcClaim,
-    });
-    expect(entry.trust).toBe('issuer-verified');
-  });
-
-  it('classifyAsset is pure — trust outside the registry needs no instance', () => {
     const entry = classifyAsset(
-      { assetId: VALID_ASSET_ID, metaHashAnchored: true, meta: usdcClaim },
-      { trustedIssuers: new Set([VALID_ASSET_ID]) },
+      { assetId: VALID_ASSET_ID, groupKeyHex: VALID_GROUP_KEY, metaHashAnchored: true, meta: usdcClaim },
+      { trustedIssuers: new Set([VALID_GROUP_KEY]) },
     );
     expect(entry.trust).toBe('issuer-verified');
-    expect(entry.display.label).toBe('USD Coin');
   });
 
   it('unparseable or absent metadata renders as unknown and unverified, never a crash', () => {
-    const registry = new AssetRegistry();
-    const garbage = registry.record({
-      assetId: VALID_ASSET_ID,
-      metaHashAnchored: true,
-      meta: { rawHex: 'deadbeef', metaType: 'opaque' },
-    });
+    const garbage = classifyAsset({ assetId: VALID_ASSET_ID, metaHashAnchored: true, meta: { rawHex: 'deadbeef', metaType: 'opaque' } }, untrusted);
     expect(garbage.display.label).toBe('Unknown asset (unverified issuer)');
   });
 
   it('stablecoin lookalike matching is case-insensitive across name and ticker', () => {
-    const registry = new AssetRegistry();
-    const sneaky = registry.record({
-      assetId: VALID_ASSET_ID,
-      metaHashAnchored: true,
-      meta: { rawHex: '00', metaType: 'json', json: { name: 'Totally Real USDC Token', ticker: 'usdt' } },
-    });
+    const sneaky = classifyAsset(
+      { assetId: VALID_ASSET_ID, metaHashAnchored: true, meta: { rawHex: '00', metaType: 'json', json: { name: 'Totally Real USDC Token', ticker: 'usdt' } } },
+      untrusted,
+    );
     expect(sneaky.display.stablecoinImpersonationRisk).toBe(true);
     expect(DEFAULT_STABLECOIN_TICKERS).toContain('usdc');
-  });
-
-  it('displayInfo is keyed by the canonical asset id', () => {
-    const registry = new AssetRegistry();
-    registry.record({ assetId: VALID_ASSET_ID });
-    expect(registry.displayInfo(VALID_ASSET_ID.toUpperCase())?.trust).toBe('issuer-claimed');
-    expect(registry.displayInfo('ff'.repeat(32))).toBeUndefined();
   });
 });
 
