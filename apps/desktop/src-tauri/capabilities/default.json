@@ -1,16 +1,27 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core access plus a shell scope restricted to the bundled waved sidecar. No open/other shell permissions.",
+  "description": "Main window: core access plus spawn/kill of the bundled waved sidecar with its exact arguments. No open/other shell permissions.",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "shell:allow-kill",
     {
-      "identifier": "shell:allow-execute",
+      "identifier": "shell:allow-spawn",
       "allow": [
         {
           "name": "binaries/waved",
-          "sidecar": true
+          "sidecar": true,
+          "args": [
+            { "validator": "--health\\.listen=127\\.0\\.0\\.1:[0-9]{1,5}" },
+            { "validator": "--datadir=.+" },
+            "--rpc.listenaddr=127.0.0.1:10029",
+            "--rpc.gateway.listenaddr=127.0.0.1:10031",
+            "--rpc.gateway.allowedorigins=tauri://localhost",
+            "--rpc.gateway.allowedorigins=http://tauri.localhost",
+            { "validator": "--network=(regtest|signet|testnet|mainnet)" },
+            "--wallet.esploraurl=http://127.0.0.1:1"
+          ]
         }
       ]
     }

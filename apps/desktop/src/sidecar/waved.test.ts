@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MemoryKeyringStore } from '@sovereign/secure-store';
 import { validateSidecarListenArgs } from '@sovereign/privacy/loopback';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WAVED_GATEWAY_PORT, retryUntil, wavedLivenessProbe, wavedSidecarArgs } from './waved.js';
@@ -104,5 +105,25 @@ describe('retryUntil (admin macaroon minted after liveness)', () => {
     await expect(retryUntil(async () => {
       throw new Error('ENOENT: admin.macaroon');
     }, { timeoutMs: 20, intervalMs: 5 })).rejects.toThrow('ENOENT: admin.macaroon');
+  });
+});
+
+describe('Tauri shell capability', () => {
+  // The packaged app may only spawn waved with arguments this scope allows; keep the two in step.
+  it('allows exactly the arguments wavedSidecarArgs builds', () => {
+    const capability = JSON.parse(readFileSync(new URL('../../src-tauri/capabilities/default.json', import.meta.url), 'utf8')) as {
+      permissions: Array<string | { identifier: string; allow: Array<{ name: string; args: Array<string | { validator: string }> }> }>;
+    };
+    expect(capability.permissions).toContain('shell:allow-kill');
+    const spawn = capability.permissions.find((p) => typeof p !== 'string' && p.identifier === 'shell:allow-spawn');
+    if (spawn === undefined || typeof spawn === 'string') throw new Error('no shell:allow-spawn scope');
+    const scope = spawn.allow.find((a) => a.name === 'binaries/waved');
+    const args = wavedSidecarArgs({ healthPort: 44123, dataDir: '/Users/x/Library/Application Support/wallet', network: 'regtest' });
+    expect(scope?.args).toHaveLength(args.length);
+    args.forEach((arg, i) => {
+      const allowed = scope!.args[i]!;
+      if (typeof allowed === 'string') expect(arg).toBe(allowed);
+      else expect(arg).toMatch(new RegExp(`^${allowed.validator}$`));
+    });
   });
 });
