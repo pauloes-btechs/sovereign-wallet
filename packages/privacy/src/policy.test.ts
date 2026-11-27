@@ -46,6 +46,21 @@ describe('SecurityPolicyEngine', () => {
     expect(engine.decide('https://other.example.org:8443/v1/wallets').allowed).toBe(false); // host
   });
 
+  it('still checks path and Tor when the disclosed port is the default one', () => {
+    const engine = new SecurityPolicyEngine().register({
+      id: 'gateway',
+      scheme: 'https',
+      host: 'h.example.org',
+      port: 443,
+      pathPrefix: '/v1',
+      purpose: 'test',
+      allowTor: false,
+    });
+    expect(engine.decide('https://h.example.org/v1/x').allowed).toBe(true);
+    expect(engine.decide('https://h.example.org/admin').allowed).toBe(false);
+    expect(engine.decide('https://h.example.org/v1/x', { transport: 'tor' }).allowed).toBe(false);
+  });
+
   it('refuses Tor routing for endpoints that did not disclose allowTor', () => {
     const engine = new SecurityPolicyEngine().register({
       id: 'esplora',

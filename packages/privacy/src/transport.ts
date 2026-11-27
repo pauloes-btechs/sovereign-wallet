@@ -32,7 +32,8 @@ export class DirectPrivacyTransport implements PrivacyTransport {
   async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const url = inputToUrl(input);
     this.engine.assertEgressAllowed(url, { transport: this.kind });
-    return this.fetchImpl(input, init);
+    // A followed redirect would reach a host the policy never checked.
+    return this.fetchImpl(input, { ...init, redirect: 'error' });
   }
 }
 
