@@ -4,7 +4,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import type { LoopQuote, QuoteResult } from '../../../api.js';
-import type { DecodedInvoiceView, PaymentOutcomeView } from '../../../../modeb/bridge-client.js';
+import { sendMayHaveHappened, UNCONFIRMED_SEND_TEXT, type DecodedInvoiceView, type PaymentOutcomeView } from '../../../../modeb/bridge-client.js';
 import { usePlatform, usePoll } from '../../../context.js';
 import { Link } from '../../../router.js';
 import { Amount, CopyField, Field, Notice, QrCode, Segmented, shortId, Skeleton, Steps, Timeline } from '../../../ui.js';
@@ -70,6 +70,7 @@ export function OnchainSendFlow({ adapter, env }: { adapter: RouteAdapter; env: 
   const [rate, setRate] = useState('');
   const [label, setLabel] = useState('');
   const [agree, setAgree] = useState(false);
+  const [unconfirmed, setUnconfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [txid, setTxid] = useState<string | null>(null);
@@ -106,7 +107,11 @@ export function OnchainSendFlow({ adapter, env }: { adapter: RouteAdapter; env: 
       toast({ title: 'On-chain payment sent', body: `Transaction ${shortId(r.txid)}`, tone: 'positive' });
       bumpRefresh();
     } catch (e) {
-      setErr(errText(e));
+      const unsure = sendMayHaveHappened(e);
+      setUnconfirmed(unsure);
+      // Make the user re-confirm after reading the warning, never a blind second broadcast.
+      if (unsure) setAgree(false);
+      setErr(unsure ? `${UNCONFIRMED_SEND_TEXT} (${errText(e)})` : errText(e));
     } finally {
       setBusy(false);
     }
@@ -164,7 +169,7 @@ export function OnchainSendFlow({ adapter, env }: { adapter: RouteAdapter; env: 
               Send <Amount sats={sats} /> to <span className="p-mono">{shortId(address.trim(), 10, 8)}</span> at {rateNum} sat/vB. I checked the address; on-chain payments can’t be reversed.
             </span>
           </label>
-          {err ? <Notice tone="danger" title="Nothing was sent">{err}</Notice> : null}
+          {err ? <Notice tone="danger" title={unconfirmed ? 'Send not confirmed' : 'Nothing was sent'}>{err}</Notice> : null}
           <Actions>
             <button type="button" className="p-btn p-btn-ghost" onClick={() => setStep(0)} disabled={busy}>
               Back
@@ -722,6 +727,7 @@ export function AssetSendFlow({ adapter, balances }: { adapter: RouteAdapter; ba
   const [decodeErr, setDecodeErr] = useState<string | null>(null);
   const [decoding, setDecoding] = useState(false);
   const [agree, setAgree] = useState(false);
+  const [unconfirmed, setUnconfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [txid, setTxid] = useState<string | null>(null);
@@ -752,7 +758,10 @@ export function AssetSendFlow({ adapter, balances }: { adapter: RouteAdapter; ba
       toast({ title: 'Asset sent', body: `Anchor transaction ${shortId(r.txid)}`, tone: 'positive' });
       bumpRefresh();
     } catch (e) {
-      setErr(errText(e));
+      const unsure = sendMayHaveHappened(e);
+      setUnconfirmed(unsure);
+      if (unsure) setAgree(false);
+      setErr(unsure ? `${UNCONFIRMED_SEND_TEXT} (${errText(e)})` : errText(e));
     } finally {
       setBusy(false);
     }
@@ -829,7 +838,7 @@ export function AssetSendFlow({ adapter, balances }: { adapter: RouteAdapter; ba
               Send {BigInt(decoded.amount).toLocaleString('en-US')} units of {held.name} to this address. Asset transfers can’t be reversed.
             </span>
           </label>
-          {err ? <Notice tone="danger" title="Nothing was sent">{err}</Notice> : null}
+          {err ? <Notice tone="danger" title={unconfirmed ? 'Send not confirmed' : 'Nothing was sent'}>{err}</Notice> : null}
           <Actions>
             <button type="button" className="p-btn p-btn-ghost" onClick={() => setStep(0)} disabled={busy}>
               Back
