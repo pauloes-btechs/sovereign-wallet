@@ -733,7 +733,7 @@ export function mapPayReq(decoded: PayReq): DecodedInvoiceView {
 export function multiChanBackupHex(snapshot: ChanBackupSnapshot): string {
   const multi = snapshot.multiChanBackup;
   if (multi === undefined || multi.multiChanBackup.length === 0) {
-    throw new RequestValidationError('the node returned no multi-channel backup — nothing to save');
+    throw new Error('the node returned no multi-channel backup — nothing to save'); // lnd's answer, not bad input: a 502
   }
   return Buffer.from(multi.multiChanBackup).toString('hex');
 }
