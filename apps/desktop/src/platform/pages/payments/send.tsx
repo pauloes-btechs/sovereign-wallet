@@ -11,6 +11,7 @@ import { usePlatform, usePoll, usePrefs } from '../../context.js';
 import { Link, useLocation } from '../../router.js';
 import { Amount, Breakdown, Field, Icon, Notice, PageHeader, Panel, Skeleton, Stat, formatSats, shortId } from '../../ui.js';
 import { CopyValue, Details, addressLooksWrong, errorText, readSats } from './send-kit.js';
+import { feeCapText } from './fee-cap.js';
 
 type Tab = 'lightning' | 'onchain';
 
@@ -94,10 +95,6 @@ function FundsPanel({ focus }: { focus: Tab }) {
 
 // ——— Lightning ———
 
-function defaultFeeCap(amountSat: number): number {
-  return Math.max(10, Math.ceil(amountSat * 0.005));
-}
-
 function failureExplanation(reason: string | undefined): string {
   switch (reason) {
     case 'no route found':
@@ -120,7 +117,7 @@ function LightningSend() {
   const [invoice, setInvoice] = useState('');
   const [decoded, setDecoded] = useState<DecodedInvoiceView | null>(null);
   const [amountInput, setAmountInput] = useState('');
-  const [feeCap, setFeeCap] = useState('');
+  const [feeCapInput, setFeeCapInput] = useState<string | null>(null); // null: follow the amount
   const [busy, setBusy] = useState<'decode' | 'pay' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<PaymentOutcomeView | null>(null);
@@ -145,8 +142,7 @@ function LightningSend() {
       const d = await bridge.decodeInvoice(pr);
       setDecoded(d);
       setInvoice(pr);
-      const amt = d.amountSat !== undefined ? Number(d.amountSat) : 0;
-      setFeeCap(String(defaultFeeCap(amt)));
+      setFeeCapInput(null);
       setAmountInput('');
     } catch (err) {
       setError(`Couldn't read this invoice: ${errorText(err)}`);
@@ -158,6 +154,7 @@ function LightningSend() {
   const zeroAmount = decoded !== null && (decoded.amountSat === undefined || decoded.amountSat === '0');
   const chosen = readSats(amountInput);
   const amountSat = decoded === null ? 0 : zeroAmount ? chosen.value ?? 0 : Number(decoded.amountSat);
+  const feeCap = feeCapText(feeCapInput, amountSat);
   const cap = readSats(feeCap);
   const capSat = cap.value ?? 0;
   const ownInvoice = decoded !== null && decoded.destination === node.info?.identityPubkey;
@@ -266,7 +263,7 @@ function LightningSend() {
                 >
                   {(id) => (
                     <div className="p-input-affix">
-                      <input id={id} className="p-input" inputMode="numeric" value={feeCap} onChange={(e) => setFeeCap(e.target.value)} aria-invalid={cap.error ? true : undefined} />
+                      <input id={id} className="p-input" inputMode="numeric" value={feeCap} onChange={(e) => setFeeCapInput(e.target.value)} aria-invalid={cap.error ? true : undefined} />
                       <span>sats</span>
                     </div>
                   )}
