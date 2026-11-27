@@ -471,7 +471,7 @@ export class SubServerHub {
   private transport: GrpcTransport | undefined;
   private loopPort: LitdLoopPort | undefined;
   private poolPort: LitdPoolPort | undefined;
-  private manager: LiquidityManager | undefined;
+  private manager: Promise<LiquidityManager> | undefined;
   private tapd: TapdClients | undefined;
   private readonly journal: LiquidityJournal;
 
@@ -505,14 +505,19 @@ export class SubServerHub {
     return this.loopPort;
   }
 
-  private async liquidity(): Promise<LiquidityManager> {
-    if (this.manager === undefined) {
+  private liquidity(): Promise<LiquidityManager> {
+    // One promise, so concurrent callers share one started manager: two would
+    // journal every swap twice and double the spend counted against the budget.
+    this.manager ??= (async () => {
       this.poolPort ??= await LitdPoolPort.create(await this.conn());
       const manager = new LiquidityManager({ loop: await this.loop(), pool: this.poolPort, journal: this.journal, newId: randomUUID });
       // Without start() no swap event reaches the manager, so the daily and per-action caps never trip.
       await manager.start();
-      this.manager = manager;
-    }
+      return manager;
+    })().catch((err: unknown) => {
+      this.manager = undefined; // e.g. litd still starting: retry on the next call
+      throw err;
+    });
     return this.manager;
   }
 
