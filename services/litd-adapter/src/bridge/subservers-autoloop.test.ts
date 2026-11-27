@@ -53,4 +53,11 @@ describe('SubServerHub AutoLoop governance', () => {
     }
     await vi.waitFor(() => expect(loop.state.params?.autoloopEnabled).toBe(false));
   });
+
+  it('starts one manager for concurrent callers, so each swap is counted once', async () => {
+    loop.listeners.clear();
+    const h = await hub();
+    await Promise.all([h.autoloop(), h.autoloop(), h.enableAutoloop({ perActionCapSat: 1_000, dailyBudgetSat: 5_000, monthlyBudgetSat: 30_000 })]);
+    expect(loop.listeners.size).toBe(1);
+  });
 });
