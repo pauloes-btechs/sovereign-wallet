@@ -309,12 +309,44 @@ describe('lookup — the ONLY method recovery may call', () => {
     });
     const c = fakeClient({ list: vi.fn().mockResolvedValue(listPage([e])) });
     const d = new WavelengthPaymentDispatcher({ client: c, sdkPin: SDK_PIN });
-    const result = await d.lookup(
-      intent({
-        kind: 'onchain',
-        payload: { onchainAddress: 'bcrt1qdest', amountSat: 5_000, quote: { ...QUOTE, sendIntentId: 'other-intent' } },
-      }),
-    );
+    const result = await d.lookup(onchainIntentDispatchedAt('2026-10-29T23:59:59.500Z'));
     expect(result.status).toBe('settled');
   });
+
+  it('never correlates an on-chain send with an older entry to the same address and amount', async () => {
+    // An earlier failed send A (same address, same amount) must not mark B failed:
+    // the user would resend while B is still being broadcast.
+    const older = entry({
+      id: 'entry-a',
+      status: EntryStatusFailed,
+      amountSat: 5_000,
+      createdAt: '2026-10-30T00:00:00Z',
+      request: { type: EntryRequestTypeOnchain, lightningInvoice: '', paymentHash: '', onchainAddress: 'bcrt1qdest', arkAddress: '' },
+    });
+    const c = fakeClient({ list: vi.fn().mockResolvedValue(listPage([older])) });
+    const d = new WavelengthPaymentDispatcher({ client: c, sdkPin: SDK_PIN });
+    expect(await d.lookup(onchainIntentDispatchedAt('2026-10-30T00:05:00.000Z'))).toEqual({ status: 'unknown' });
+  });
+
+  it('does not correlate an on-chain intent that was never dispatched', async () => {
+    const e = entry({
+      status: EntryStatusComplete,
+      amountSat: 5_000,
+      request: { type: EntryRequestTypeOnchain, lightningInvoice: '', paymentHash: '', onchainAddress: 'bcrt1qdest', arkAddress: '' },
+    });
+    const c = fakeClient({ list: vi.fn().mockResolvedValue(listPage([e])) });
+    const d = new WavelengthPaymentDispatcher({ client: c, sdkPin: SDK_PIN });
+    const signing = intent({ state: 'signing', kind: 'onchain', payload: { onchainAddress: 'bcrt1qdest', amountSat: 5_000, quote: QUOTE } });
+    expect(await d.lookup(signing)).toEqual({ status: 'not-found' });
+  });
 });
+
+function onchainIntentDispatchedAt(at: string): PaymentIntent {
+  return intent({
+    state: 'in-flight',
+    kind: 'onchain',
+    payload: { onchainAddress: 'bcrt1qdest', amountSat: 5_000, quote: { ...QUOTE, sendIntentId: 'other-intent' } },
+    backendRef: 'local-ref',
+    attempts: [{ at, result: 'dispatched', backendRef: 'local-ref' }],
+  });
+}
