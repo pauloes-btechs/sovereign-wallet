@@ -23,7 +23,7 @@ import {
   WavelengthPaymentDispatcher,
   SDK_PIN,
 } from '@sovereign/wavelength-adapter';
-import type { WavelengthClient } from '@sovereign/wavelength-adapter';
+import type { PrepareSendResult, WavelengthClient } from '@sovereign/wavelength-adapter';
 
 const STORAGE_KEY = 'sovereign.payment-intents.v1';
 
@@ -92,4 +92,10 @@ export function createPaymentEngine(
 export function sendStatusOf(state: PaymentIntent['state']): 'settled' | 'sending' | 'failed' {
   if (state === 'settled') return 'settled';
   return state === 'failed' ? 'failed' : 'sending';
+}
+
+/** Amount and fee the review card must show before the user confirms. An unknown fee shows nothing, never 0. */
+export function reviewAmounts(quote: PrepareSendResult | undefined): { amountSat: bigint | null; feeSat: bigint | null } {
+  if (quote === undefined) return { amountSat: null, feeSat: null };
+  return { amountSat: BigInt(quote.amountSat), feeSat: quote.feeKnown ? BigInt(quote.expectedFeeSat) : null };
 }

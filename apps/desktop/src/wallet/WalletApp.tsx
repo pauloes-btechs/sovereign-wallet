@@ -19,7 +19,7 @@ import {
   type SendStatus,
 } from '@sovereign/ui';
 import type { QuotedSend } from '@sovereign/wavelength-adapter';
-import { sendStatusOf } from './payments.js';
+import { reviewAmounts, sendStatusOf } from './payments.js';
 import { useWalletSession } from './WalletSessionProvider.js';
 import { summarizeVtxos, type VtxoSummary } from './vtxo-summary.js';
 
@@ -256,8 +256,8 @@ function ReadyWallet(): React.ReactNode {
         lightningMechanism="swaps"
         swapServiceReachable={capabilities?.lightningSend ?? false}
         status={sendStatus}
-        reviewAmountSat={null}
-        feeQuoteSat={null}
+        reviewAmountSat={reviewAmounts(quoted?.quote).amountSat}
+        feeQuoteSat={reviewAmounts(quoted?.quote).feeSat}
         errorMessage={sendError}
         onReview={() => void reviewSend()}
         onConfirm={() => void confirmSend()}
