@@ -83,3 +83,13 @@ export function createPaymentEngine(
     newId: () => crypto.randomUUID(),
   });
 }
+
+/**
+ * What the send card shows once execute returns. 'in-flight' is an
+ * ambiguous outcome (sent or timed out): it stays "sending" until recovery
+ * reconciles it, and never offers a resend.
+ */
+export function sendStatusOf(state: PaymentIntent['state']): 'settled' | 'sending' | 'failed' {
+  if (state === 'settled') return 'settled';
+  return state === 'failed' ? 'failed' : 'sending';
+}

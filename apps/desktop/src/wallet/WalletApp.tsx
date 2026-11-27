@@ -19,6 +19,7 @@ import {
   type SendStatus,
 } from '@sovereign/ui';
 import type { QuotedSend } from '@sovereign/wavelength-adapter';
+import { sendStatusOf } from './payments.js';
 import { useWalletSession } from './WalletSessionProvider.js';
 import { summarizeVtxos, type VtxoSummary } from './vtxo-summary.js';
 
@@ -193,14 +194,19 @@ function ReadyWallet(): React.ReactNode {
     if (!engine || !quoted || quoted.quote === undefined) return;
     setSendStatus('sending');
     setSendError(null);
+    let submitted = false;
     try {
       const kind = draft.kind === 'lightning' ? 'lightning-invoice' : 'onchain';
       const intent = await engine.submit(kind, { ...quoted.payload, quote: quoted.quote });
-      await engine.execute(intent.intentId);
-      setSendStatus('settled');
+      submitted = true;
+      const status = sendStatusOf((await engine.execute(intent.intentId)).state);
+      setSendStatus(status);
+      if (status === 'failed') setSendError('The payment failed. No funds were moved. Try again when ready.');
       void refresh();
     } catch (err: unknown) {
-      setSendStatus('failed');
+      // A throw after submit may come after dispatch: stay in flight so the
+      // user is never offered a resend that could pay twice.
+      setSendStatus(submitted ? 'sending' : 'failed');
       setSendError(err instanceof Error ? err.message : String(err));
     }
   };
