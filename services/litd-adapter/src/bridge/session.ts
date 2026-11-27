@@ -599,9 +599,16 @@ export async function createRealBridgeDeps(options: {
 }): Promise<LitdBridgeDeps> {
   const { createLightningClient, createRouterClient, createWalletUnlockerClient } = await import('../client.js');
   const conn = options.connectionOptions;
+  // One gRPC channel for the bridge's lifetime: /state probes call createUnlocker
+  // every few seconds while no wallet exists, and each new client opened a channel.
+  let unlockerClient: ReturnType<typeof createWalletUnlockerClient> | undefined;
   return {
     createUnlocker: async () => {
-      const client = await createWalletUnlockerClient(conn);
+      unlockerClient ??= createWalletUnlockerClient(conn).catch((err: unknown) => {
+        unlockerClient = undefined; // retry on the next call, e.g. once the TLS cert exists
+        throw err;
+      });
+      const client = await unlockerClient;
       return {
         genSeed: async () => {
           const { response } = await client.genSeed({

@@ -228,12 +228,18 @@ async function main(): Promise<void> {
     }),
   );
 
+  let lightningClient: ReturnType<typeof createLightningClient> | undefined;
   const subServers = new SubServerHub({
     network: args.network,
     litdEndpoint: litdMux,
     superMacaroonPath,
     plan,
-    lightning: () => createLightningClient(connectionOptionsFromConfig(resolvedConfig)),
+    lightning: () =>
+      // One client for the bridge's lifetime: a new one per /lnd/* call leaked a gRPC channel each time.
+      (lightningClient ??= createLightningClient(connectionOptionsFromConfig(resolvedConfig)).catch((err: unknown) => {
+        lightningClient = undefined;
+        throw err;
+      })),
     onLog: log,
   });
 
