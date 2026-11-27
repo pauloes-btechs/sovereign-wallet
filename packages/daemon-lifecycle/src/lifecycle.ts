@@ -320,8 +320,8 @@ function defaultBackoff(attempt: number): number {
 
 function describeExit(exit: SidecarExit): string {
   if (exit.spawnError) return `spawn failed: ${exit.spawnError}`;
-  if (exit.signal != null) return `terminated by signal ${exit.signal}`;
-  return `process exited with code ${exit.code}`;
+  const base = exit.signal != null ? `terminated by signal ${exit.signal}` : `process exited with code ${exit.code}`;
+  return exit.stderrTail ? `${base}; stderr: ${exit.stderrTail}` : base;
 }
 
 function describeError(error: unknown): string {

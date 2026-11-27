@@ -18,6 +18,13 @@ export interface SidecarExit {
   readonly signal?: number | string | null;
   /** Set when the process could not be spawned at all (binary missing, permission denied). */
   readonly spawnError?: string;
+  /**
+   * Last lines the process wrote to stderr before exiting, when the runtime
+   * captures them. A daemon that fails at boot says WHY only there (waved
+   * v0.2.1: `daemon gateway listen: listen tcp …: bind: address already in
+   * use`, exit 1), so boot-exit errors include it.
+   */
+  readonly stderrTail?: string;
 }
 
 /** Handle to one running sidecar process instance. */

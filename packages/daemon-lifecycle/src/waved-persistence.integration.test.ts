@@ -20,7 +20,6 @@
  */
 import { access, constants, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import http from 'node:http';
-import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +27,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { SidecarLifecycle, allProbes, httpListeningProbe, httpOkProbe } from './index.js';
 import { createNodeChildProcessRuntime } from './runtimes/node.js';
 import type { HealthProbe } from './types.js';
+import { freePort, retryOnPortCollision } from './testing/ports.js';
 import { WavedGatewayClient } from '@sovereign/wavelength-adapter';
 
 const BINARIES_DIR = path.resolve(
@@ -58,17 +58,6 @@ async function binaryPath(): Promise<string | undefined> {
   } catch {
     return undefined;
   }
-}
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address() as net.AddressInfo;
-      server.close(() => resolve(port));
-    });
-    server.on('error', reject);
-  });
 }
 
 /** Live = /livez answers AND the REST gateway accepts connections. waved
@@ -151,11 +140,21 @@ afterAll(async () => {
   for (const dispose of disposables.reverse()) await dispose();
 });
 
+/** Boot on fresh ports, retrying only when a port was taken between
+ * freePort() and the daemon's bind (see testing/ports.ts). */
 async function bootApp(waved: string, dataDir: string, esploraUrl: string, label: string): Promise<Booted> {
+  return retryOnPortCollision(() => bootAppOnce(waved, dataDir, esploraUrl, label), {
+    onRetry: (error, n) => console.warn(`${label}: attempt ${n} hit a port collision, retrying on fresh ports (${error.message})`),
+  });
+}
+
+async function bootAppOnce(waved: string, dataDir: string, esploraUrl: string, label: string): Promise<Booted> {
   const healthPort = await freePort();
   const rpcPort = await freePort();
   const gatewayPort = await freePort();
-  const runtime = createNodeChildProcessRuntime(waved, { stdio: 'ignore' });
+  // Keep waved's last stderr lines: a boot exit then says why (bind error,
+  // lock, bad flag) instead of a bare "exited with code 1".
+  const runtime = createNodeChildProcessRuntime(waved, { stdio: 'ignore', stderrTailLines: 5 });
   const lifecycle = new SidecarLifecycle({
     runtime,
     health: wavedProbe(healthPort, gatewayPort),
