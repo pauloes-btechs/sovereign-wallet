@@ -64,7 +64,12 @@ function assertFeeWithinBudget(
   quote: { expectedFeeSat: number; feeKnown: boolean },
   maxFeeSat: number | undefined,
 ): void {
-  if (maxFeeSat !== undefined && quote.expectedFeeSat > maxFeeSat) {
+  if (maxFeeSat === undefined) return;
+  // An unknown fee reads as 0 here; it cannot be proven within the budget.
+  if (!quote.feeKnown) {
+    throw new Error(`The fee for this payment is not known yet, so it cannot be checked against your ${maxFeeSat}-sat fee limit.`);
+  }
+  if (quote.expectedFeeSat > maxFeeSat) {
     throw new FeeExceedsBudgetError(BigInt(quote.expectedFeeSat), maxFeeSat);
   }
 }

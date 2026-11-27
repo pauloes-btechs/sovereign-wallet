@@ -65,6 +65,11 @@ describe('quoteLightningSend — authorization-time fee gate', () => {
     expect(c.prepareSend).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a quote with an unknown fee when a budget is set', async () => {
+    const c = client(quoteResult({ feeKnown: false, expectedFeeSat: 0 }));
+    await expect(quoteLightningSend(c, { invoice: 'lnbcrt1u', amountSat: 200 }, 50)).rejects.toThrow(/fee .* not known/);
+  });
+
   it('passes without a budget check when no maxFeeSat is set', async () => {
     const c = client(quoteResult());
     const { payload } = await quoteLightningSend(c, { invoice: 'lnbcrt1y' });
