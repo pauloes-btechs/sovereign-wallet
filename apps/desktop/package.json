@@ -35,7 +35,7 @@
     "@sovereign/harness-regtest": "workspace:*",
     "@sovereign/litd-adapter": "workspace:*",
     "@sovereign/litd-proto": "workspace:*",
-    "@tauri-apps/cli": "^2.12.5",
+    "@tauri-apps/cli": "^2.12.6",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
