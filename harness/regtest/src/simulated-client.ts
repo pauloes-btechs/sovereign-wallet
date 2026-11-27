@@ -557,8 +557,9 @@ export class SimulatedWavelengthClient implements WavelengthClient {
               onchainAddress: prepared.destinationSummary,
               arkAddress: '',
             },
-      createdAt: '2026-10-30T00:00:00Z',
-      updatedAt: '2026-10-30T00:00:00Z',
+      // Stamped at send time like waved: recovery only correlates entries created after dispatch.
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       note: prepared.invoiceDescription,
       failureReason: '',
       cursor: this.seq,
