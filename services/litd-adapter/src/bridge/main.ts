@@ -17,7 +17,7 @@
  *     --remoteRpcServer=host:port --remoteMacaroon=/path/admin.macaroon \
  *     --remoteTlsCert=/path/tls.cert
  */
-import { mkdir, writeFile, chmod } from 'node:fs/promises';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 
@@ -253,8 +253,11 @@ async function main(): Promise<void> {
     launched: args.launch,
   };
   await mkdir(path.dirname(bootstrapPath), { recursive: true });
-  await writeFile(bootstrapPath, JSON.stringify(bootstrap, null, 2));
-  await chmod(bootstrapPath, 0o600);
+  // Created 0600 then renamed: the bearer token is never readable by other local users, even briefly.
+  const tmpPath = `${bootstrapPath}.tmp`;
+  await rm(tmpPath, { force: true }); // a stale .tmp from a crash would keep its old mode
+  await writeFile(tmpPath, JSON.stringify(bootstrap, null, 2), { mode: 0o600 });
+  await rename(tmpPath, bootstrapPath);
 
   log(`litd-bridge listening on 127.0.0.1:${bridgePort} (bootstrap: ${bootstrapPath})`);
 
