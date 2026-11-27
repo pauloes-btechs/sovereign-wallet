@@ -127,8 +127,8 @@ export class SecurityPolicyEngine {
   private matches(ep: DisclosedEndpoint, url: URL, transport: TransportKind): boolean {
     const scheme = url.protocol === 'https:' ? 'https' : 'http';
     if (ep.scheme !== scheme || ep.host !== url.hostname.toLowerCase()) return false;
-    if (ep.port !== undefined && url.port !== '' && Number(url.port) !== ep.port) return false;
-    if (ep.port !== undefined && url.port === '') return scheme === 'https' ? ep.port === 443 : ep.port === 80;
+    const port = url.port === '' ? (scheme === 'https' ? 443 : 80) : Number(url.port);
+    if (ep.port !== undefined && port !== ep.port) return false;
     if (ep.pathPrefix !== undefined && !url.pathname.startsWith(ep.pathPrefix)) return false;
     if (transport === 'tor' && !ep.allowTor) return false;
     return true;

@@ -112,6 +112,17 @@ describe('egress: in-process refusal of telemetry and account endpoints', () => 
     expect(monitor.events()).toEqual([]);
   });
 
+  it('policy fetch refuses to follow redirects to unchecked hosts', async () => {
+    const engine = new SecurityPolicyEngine();
+    const seen: (RequestInit | undefined)[] = [];
+    const policyFetch = createPolicyFetch(engine, async (_input, init) => {
+      seen.push(init);
+      return new Response('ok');
+    });
+    await policyFetch('http://127.0.0.1:10031/v1/x');
+    expect(seen[0]?.redirect).toBe('error');
+  });
+
   it('ships with zero pre-disclosed remote endpoints (no hidden services)', () => {
     expect(DEFAULT_DISCLOSED_ENDPOINTS).toEqual([]);
     const engine = new SecurityPolicyEngine();
