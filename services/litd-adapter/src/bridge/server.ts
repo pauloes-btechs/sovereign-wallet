@@ -16,7 +16,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { outputType } from '@sovereign/wallet-core';
 import { BridgeRequestError, sessionJsonReplacer, type LitdBridgeSession } from './session.js';
 import { requireSendableAddress } from './address-policy.js';
-import { mapPaymentView } from '../state-mappings.js';
+import { mapPaymentView, RequestValidationError } from '../state-mappings.js';
 import { NO_ROUTE, routeSubServers } from './subserver-routes.js';
 import type { SubServerHub } from './subservers.js';
 
@@ -197,6 +197,11 @@ export function createLitdBridgeServer(options: BridgeServerOptions): Server {
         sendJson(res, err.httpStatus, { error: err.message });
         return;
       }
+      // The request builders reject bad input before lnd is called: a client error, not an upstream one.
+      if (err instanceof RequestValidationError) {
+        sendJson(res, 400, { error: err.message });
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       sendJson(res, 502, { error: message });
     }
@@ -266,8 +271,11 @@ export function createLitdBridgeServer(options: BridgeServerOptions): Server {
     if (method === 'POST' && path === '/onchain/estimate-fee') {
       const body = await post();
       const address = typeof body.address === 'string' && body.address.trim() ? body.address.trim() : undefined;
-      const output =
-        address === undefined ? undefined : { address, amountSat: BigInt(parseNumber(body.amountSat, 'amountSat')) };
+      const amountSat = parseSat(body.amountSat, 'amountSat');
+      if (address !== undefined && amountSat === undefined) {
+        throw new BridgeRequestError(400, 'amountSat is required with an address');
+      }
+      const output = address === undefined || amountSat === undefined ? undefined : { address, amountSat };
       sendJson(res, 200, await session.estimateFee(parseNumber(body.targetConf, 'targetConf'), output));
       return;
     }

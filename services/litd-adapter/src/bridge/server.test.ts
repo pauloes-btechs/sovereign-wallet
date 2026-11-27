@@ -2,6 +2,7 @@ import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { LitdBridgeSession } from './session.js';
 import { createLitdBridgeServer } from './server.js';
+import { buildSendCoinsRequest } from '../state-mappings.js';
 
 const TOKEN = 'test-token';
 
@@ -121,7 +122,8 @@ describe('bridge server routes — refusing unactivated SegWit versions (BIP-360
     sends = [];
     newAddressCalls = [];
     const session = {
-      sendCoins: async (input: { address: string }) => {
+      sendCoins: async (input: { address: string; satPerVbyte: number }) => {
+        buildSendCoinsRequest({ address: input.address, amountSat: 10_000n, satPerVbyte: input.satPerVbyte });
         sends.push(input);
         return { txid: 'ff'.repeat(32) };
       },
@@ -159,6 +161,17 @@ describe('bridge server routes — refusing unactivated SegWit versions (BIP-360
     const res = await post('/onchain/send', { address: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSat: '10000', satPerVbyte: 2 });
     expect(res.status).toBe(200);
     expect(sends).toHaveLength(1);
+  });
+
+  it('returns 400, not 502, when the request builder rejects the input', async () => {
+    const res = await post('/onchain/send', { address: 'bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080', amountSat: '10000', satPerVbyte: 0 });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toMatch(/fee must be/);
+  });
+
+  it('returns 400 for a fractional amount in a fee estimate', async () => {
+    const res = await post('/onchain/estimate-fee', { targetConf: 6, address: 'bcrt1qexample', amountSat: 1.5 });
+    expect(res.status).toBe(400);
   });
 
   it('explains why a P2MR receive address cannot be created', async () => {
