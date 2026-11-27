@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { Button, Card, TextField } from '@sovereign/ui';
 
+import { verifyRetypedPhrase } from '@sovereign/wallet-core';
 import type { BridgeClient } from '../bridge-client.js';
 
 function errorMessage(err: unknown): string {
@@ -56,7 +57,7 @@ export function CreateWalletScreen(props: {
   readonly onDone: () => void;
 }): React.ReactNode {
   const [mnemonic, setMnemonic] = useState<readonly string[] | null>(null);
-  const [writeDown, setWriteDown] = useState(false);
+  const [retyped, setRetyped] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,8 +77,11 @@ export function CreateWalletScreen(props: {
   };
 
   const submit = async (): Promise<void> => {
-    if (mnemonic === null || !writeDown) {
-      setError('Confirm you have written the seed down first.');
+    if (mnemonic === null) return;
+    // Proof the seed was written down: the user types it back in full.
+    const check = verifyRetypedPhrase(mnemonic, retyped);
+    if (!check.correct) {
+      setError(`Seed word ${(check.firstMismatch ?? 0) + 1} doesn't match what was shown. Check what you wrote down.`);
       return;
     }
     if (password.length < 8) {
@@ -128,10 +132,7 @@ export function CreateWalletScreen(props: {
           <li key={`${word}-${i}`}>{word}</li>
         ))}
       </ol>
-      <label style={{ display: 'block', margin: '8px 0' }}>
-        <input type="checkbox" checked={writeDown} onChange={(e) => setWriteDown(e.target.checked)} />{' '}
-        I have written the 24 words down and understand this wallet needs them to recover.
-      </label>
+      <TextField label="Type the 24 words again, in order" value={retyped} onChange={setRetyped} />
       <TextField label="Unlock password (min 8 chars)" value={password} onChange={setPassword} masked />
       <TextField label="Confirm password" value={confirm} onChange={setConfirm} masked />
       <Button disabled={busy} onClick={() => void submit()}>

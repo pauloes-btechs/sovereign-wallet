@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import { Text } from 'react-native';
 import { BACKUP_EXPIRY_CONSEQUENCE, mechanismLabel } from '@sovereign/ui/copy';
 import type { ModeAController, ModeAState } from '../flows/modeAController.js';
-import { verifyWordInputs, type WordEntry } from './verifyWords.js';
+import { verifyWordInputs, type WordEntry } from '@sovereign/wallet-core';
 import {
   MobileButton,
   MobileButtonGroup,

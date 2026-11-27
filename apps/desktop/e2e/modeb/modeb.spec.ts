@@ -149,7 +149,8 @@ test('create → ready: aezeed wallet creation over the real sidecar', async ({ 
   // 24-word aezeed, shown once, with the write-down confirmation.
   await expect(page.getByTestId('seed-words').locator('li')).toHaveCount(24);
 
-  await page.getByLabel(/I have written the 24 words/).check();
+  const seed = await page.getByTestId('seed-words').locator('li').allTextContents();
+  await page.getByLabel('Type the 24 words again, in order').fill(seed.join(' '));
   await page.getByLabel('Unlock password (min 8 chars)').fill('correct horse battery staple');
   await page.getByLabel('Confirm password').fill('correct horse battery staple');
   await page.getByRole('button', { name: 'Create wallet' }).click();

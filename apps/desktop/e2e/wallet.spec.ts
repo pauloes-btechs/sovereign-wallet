@@ -46,7 +46,11 @@ test('create → backup → ready: the everyday flow over the real daemon', asyn
   // Backup confirmation shows 24 words and the VTXO-expiry consequence, verbatim.
   await expect(page.getByTestId('expiry-consequence')).toBeVisible();
   await expect(page.getByTestId('seed-word')).toHaveCount(24);
+  const words = await page.getByTestId('seed-word').allTextContents();
   await page.getByRole('button', { name: 'I wrote it down' }).click();
+  // Each grid cell renders its index then the word ("1abandon").
+  await page.getByLabel('Type the words again, in order').fill(words.map((w) => w.replace(/^\d+/, '')).join(' '));
+  await page.getByRole('button', { name: 'Confirm backup' }).click();
 
   // Ready wallet: balance renders from the polled daemon (zero on regtest).
   await expect(page.getByTestId('balance-total')).toBeVisible({ timeout: 15_000 });
