@@ -52,6 +52,8 @@ export const DEFAULT_DISPATCH_TIMEOUT_MS = 30_000;
 
 /** Upper bound on activity pages scanned during recovery lookup. */
 const MAX_LOOKUP_PAGES = 50;
+/** waved may stamp createdAt at whole seconds; our dispatch time has milliseconds. */
+const CREATED_AT_SLACK_MS = 2_000;
 
 /** Thrown when an intent payload does not match its declared payment kind. */
 export class PayloadValidationError extends Error {
@@ -184,9 +186,17 @@ export class WavelengthPaymentDispatcher implements PaymentDispatcher {
           const byTxid = await this.findEntry((e) => entryMatchesBackendRef(e, ref));
           return this.reconcileResultFor(byTxid, ref, intent);
         }
-        const correlated = await this.findEntry((e) =>
-          entryMatchesOnchainPayload(e, payload.onchainAddress, payload.amountSat),
-        );
+        // Only entries created after our dispatch can be this payment: an older
+        // send to the same address and amount must not settle or fail it.
+        // shortcut: two concurrent sends to one address and amount still collide; key on a waved request id if it ever exposes one.
+        const dispatchedAt = Date.parse(intent.attempts.find((a) => a.result === 'dispatched')?.at ?? '');
+        const correlated = Number.isNaN(dispatchedAt)
+          ? undefined
+          : await this.findEntry(
+              (e) =>
+                entryMatchesOnchainPayload(e, payload.onchainAddress, payload.amountSat) &&
+                Date.parse(e.createdAt) >= dispatchedAt - CREATED_AT_SLACK_MS,
+            );
         return this.reconcileResultFor(correlated, ref ?? 'unavailable', intent);
       }
       case 'ark-vtxo':
