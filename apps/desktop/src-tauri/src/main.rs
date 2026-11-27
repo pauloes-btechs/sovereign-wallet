@@ -13,17 +13,27 @@ use tauri::Manager;
 ///
 /// The gateway rejects every RPC without it (verified waved v0.2.0). The
 /// macaroon is minted at daemon STARTUP, before wallet creation, and lives
-/// at `<data_dir>/data/<network>/admin.macaroon`. Reading it in the MAIN
-/// process keeps all filesystem access out of the WebView.
+/// at `<app data dir>/data/<network>/admin.macaroon`. Reading it in the MAIN
+/// process keeps all filesystem access out of the WebView. The directory is
+/// the app's own (the sidecar's `--datadir`), never a path from the WebView,
+/// so a script there cannot read another node's admin macaroon.
 #[tauri::command]
-fn read_admin_macaroon(data_dir: String, network: String) -> Result<String, String> {
-    let path = PathBuf::from(data_dir)
-        .join("data")
-        .join(network)
-        .join("admin.macaroon");
+fn read_admin_macaroon(app: tauri::AppHandle, network: String) -> Result<String, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app data dir unavailable: {e}"))?;
+    let path = admin_macaroon_path(data_dir, &network)?;
     std::fs::read(&path)
         .map(|bytes| bytes.iter().map(|b| format!("{:02x}", b)).collect())
         .map_err(|e| format!("admin macaroon unavailable at {}: {e}", path.display()))
+}
+
+fn admin_macaroon_path(data_dir: PathBuf, network: &str) -> Result<PathBuf, String> {
+    if !matches!(network, "regtest" | "signet" | "testnet" | "mainnet") {
+        return Err(format!("unknown network {network:?}"));
+    }
+    Ok(data_dir.join("data").join(network).join("admin.macaroon"))
 }
 
 // ——— platform keyring (macOS Keychain / Windows Credential Manager / Secret
@@ -329,6 +339,17 @@ mod tests {
         apply_sqlcipher_key(&conn, TEST_KEY)?;
         conn.execute(KV_SCHEMA, []).map_err(|e| e.to_string())?;
         Ok(conn)
+    }
+
+    #[test]
+    fn admin_macaroon_path_stays_inside_the_app_data_dir() {
+        let dir = PathBuf::from("/app");
+        assert_eq!(
+            admin_macaroon_path(dir.clone(), "regtest").unwrap(),
+            PathBuf::from("/app/data/regtest/admin.macaroon")
+        );
+        assert!(admin_macaroon_path(dir.clone(), "../../.lnd/data/chain/bitcoin/mainnet").is_err());
+        assert!(admin_macaroon_path(dir, "").is_err());
     }
 
     #[test]

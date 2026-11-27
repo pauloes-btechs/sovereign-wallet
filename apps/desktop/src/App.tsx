@@ -81,8 +81,9 @@ function useGatewayBootstrap(sidecar: WavedSidecarConfig | null, sidecarPhase: W
     isTauri() ? null : devGatewayBootstrap(window.location.search),
   );
 
-  const readTauriMacaroon = useCallback(async (dataDir: string, network: string): Promise<string> => {
-    return invoke<string>('read_admin_macaroon', { dataDir, network });
+  const readTauriMacaroon = useCallback(async (network: string): Promise<string> => {
+    // The main process resolves the app data dir itself (the sidecar's --datadir).
+    return invoke<string>('read_admin_macaroon', { network });
   }, []);
 
   useEffect(() => {
@@ -94,7 +95,7 @@ function useGatewayBootstrap(sidecar: WavedSidecarConfig | null, sidecarPhase: W
     let cancelled = false;
     // waved mints the admin macaroon during startup, which can finish after
     // the sidecar turns live on a loaded machine: keep reading briefly.
-    void retryUntil(() => readTauriMacaroon(sidecar.dataDir, sidecar.network ?? 'regtest'), { timeoutMs: 15_000, intervalMs: 250 })
+    void retryUntil(() => readTauriMacaroon(sidecar.network ?? 'regtest'), { timeoutMs: 15_000, intervalMs: 250 })
       .then((macaroonHex) => {
         if (cancelled) return;
         setBootstrap({ gatewayUrl: `http://127.0.0.1:${WAVED_GATEWAY_PORT}`, macaroonHex });
