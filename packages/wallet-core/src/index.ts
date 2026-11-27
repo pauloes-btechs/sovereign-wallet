@@ -17,4 +17,5 @@ export * from './destinations.js';
 export * from './quantum.js';
 export * from './spendReveal.js';
 export * from './addressTypes.js';
+export * from './verifyWords.js';
 export * from '@sovereign/payments';

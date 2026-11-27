@@ -28,3 +28,14 @@ export function verifyWordInputs(
   }
   return { correct: true, firstMismatch: null };
 }
+
+/**
+ * Checks a phrase the user typed back in full (words separated by any
+ * whitespace). A missing or extra word is a mismatch at that position.
+ */
+export function verifyRetypedPhrase(words: readonly string[], typed: string): WordCheckResult {
+  const entered = typed.trim().split(/\s+/).filter((w) => w.length > 0);
+  const result = verifyWordInputs(words, words.map((_, index) => ({ index, text: entered[index] ?? '' })));
+  if (!result.correct || entered.length === words.length) return result;
+  return { correct: false, firstMismatch: words.length };
+}

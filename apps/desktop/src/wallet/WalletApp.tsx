@@ -18,6 +18,7 @@ import {
   type SendDraft,
   type SendStatus,
 } from '@sovereign/ui';
+import { verifyRetypedPhrase } from '@sovereign/wallet-core';
 import type { QuotedSend } from '@sovereign/wavelength-adapter';
 import { reviewAmounts, sendStatusOf } from './payments.js';
 import { useWalletSession } from './WalletSessionProvider.js';
@@ -78,18 +79,40 @@ function OnboardingScreen(): React.ReactNode {
 
 function BackupScreen(): React.ReactNode {
   const { state, backupAcknowledged, refresh } = useWalletSession();
+  const [step, setStep] = useState<'show' | 'verify'>('show');
+  const [typed, setTyped] = useState('');
+  const [error, setError] = useState<string | null>(null);
   if (state.phase !== 'backup-confirm') return null;
+
+  // The backup only counts once the user proves they wrote every word down.
+  const confirm = (): void => {
+    const result = verifyRetypedPhrase(state.mnemonic, typed);
+    if (!result.correct) {
+      setError(`Word ${(result.firstMismatch ?? 0) + 1} doesn't match. Check what you wrote down.`);
+      return;
+    }
+    backupAcknowledged();
+    void refresh();
+  };
+
   return (
     <Card title="Back up your recovery phrase">
       <BackupConfirmation
         words={state.mnemonic}
-        step="show"
-        onAcknowledge={() => {
-          backupAcknowledged();
-          void refresh();
+        step={step}
+        onAcknowledge={() => setStep('verify')}
+        onBackToShow={() => {
+          setStep('show');
+          setError(null);
         }}
-        onBackToShow={null}
       />
+      {step === 'verify' ? (
+        <>
+          <TextField label="Type the words again, in order" value={typed} onChange={setTyped} />
+          {error ? <p role="alert" style={{ color: '#ff6b6b' }}>{error}</p> : null}
+          <Button onClick={confirm}>Confirm backup</Button>
+        </>
+      ) : null}
     </Card>
   );
 }
