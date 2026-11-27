@@ -221,12 +221,12 @@ function OnchainReceive() {
     { title: 'Address ready', body: 'Share it with the sender. Each address should be used once.', state: address ? 'done' : 'current' },
     {
       title: 'Seen on the network',
-      body: incoming ? 'An incoming transaction is waiting for a block.' : 'A full-node backend shows it within seconds. With Neutrino (a light client, this app\u2019s default) it appears only once mined.',
+      body: incoming ? 'Your unconfirmed balance went up. Check Activity to see that it went to this address.' : 'A full-node backend shows it within seconds. With Neutrino (a light client, this app\u2019s default) it appears only once mined.',
       state: incoming || confirmedUp ? 'done' : address ? 'current' : 'pending',
     },
     {
       title: 'Confirmed and spendable',
-      body: confirmedUp ? 'The deposit is in a block and can be spent or used to open a channel.' : 'After 1 confirmation, about 10 minutes on mainnet.',
+      body: confirmedUp ? 'Your confirmed balance went up. Check Activity to see that it went to this address.' : 'After 1 confirmation, about 10 minutes on mainnet.',
       state: confirmedUp ? 'done' : incoming ? 'current' : 'pending',
     },
   ];
@@ -324,12 +324,12 @@ function OnchainReceive() {
                 ]}
               />
               {incoming ? (
-                <Notice tone="info" title="Deposit incoming">
-                  <Amount sats={unconfNow - Number(base?.unconfirmedSat ?? 0)} /> is waiting for its first confirmation.
+                <Notice tone="info" title="Unconfirmed balance went up">
+                  Up <Amount sats={unconfNow - Number(base?.unconfirmedSat ?? 0)} /> since this address was created. This is the wallet&apos;s balance, not this address: change from your own sends and channel closes count too.
                 </Notice>
               ) : confirmedUp ? (
-                <Notice tone="positive" title="Deposit confirmed">
-                  Your confirmed balance is up <Amount sats={confNow - Number(base?.confirmedSat ?? 0)} /> since this address was created.
+                <Notice tone="positive" title="Confirmed balance went up">
+                  Up <Amount sats={confNow - Number(base?.confirmedSat ?? 0)} /> since this address was created. This is the wallet&apos;s balance, not this address: change from your own sends and channel closes count too.
                 </Notice>
               ) : null}
             </div>
