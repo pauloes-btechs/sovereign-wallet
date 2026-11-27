@@ -51,6 +51,25 @@ describe('lightningOpsFromClient newAddress', () => {
   });
 });
 
+describe('lightningOpsFromClient closeChannel', () => {
+  it('yields whole CloseStatusUpdate messages, as runCloseJob reads them', async () => {
+    const update = { update: { oneofKind: 'chanClose', chanClose: { closingTxid: new Uint8Array([1]), success: true } } };
+    const ops = lightningOpsFromClient({
+      lightning: {
+        closeChannel: () => ({
+          responses: (async function* () {
+            yield update;
+          })(),
+        }),
+      } as never,
+      router: {} as never,
+    });
+    const seen = [];
+    for await (const u of ops.closeChannel({} as never)) seen.push(u);
+    expect(seen).toEqual([update]);
+  });
+});
+
 describe('createRealBridgeDeps unlocker', () => {
   it('aezeed passphrase round-trips: default initWallet matches genSeed', async () => {
     const deps = await createRealBridgeDeps({

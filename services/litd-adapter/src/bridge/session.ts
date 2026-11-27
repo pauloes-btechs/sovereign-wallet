@@ -775,11 +775,7 @@ export function lightningOpsFromClient(clients: { readonly lightning: LightningC
             : '';
       return { channelPoint: `${txid}:${response.outputIndex}` };
     },
-    closeChannel: (request) =>
-      streamToAsyncIterable({
-        responses: lightning.closeChannel(request).responses,
-        read: (u) => u.update,
-      }) as AsyncIterable<CloseStatusUpdate>,
+    closeChannel: (request) => lightning.closeChannel(request).responses,
     addInvoice: async (input) => {
       const { response } = await lightning.addInvoice({
         memo: input.memo ?? '',
