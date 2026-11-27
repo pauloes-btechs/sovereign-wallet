@@ -45,7 +45,15 @@ pub struct PasswordReply {
     pub password: Option<String>,
 }
 
+/// The only keyring service the WebView may touch (KEYRING_SERVICE in
+/// packages/secure-store); without this a script there could read or
+/// overwrite other apps' credentials.
+const KEYRING_SERVICE: &str = "io.btechs.sovereign-wallet";
+
 fn keyring_entry(service: &str, account: &str) -> Result<keyring::Entry, String> {
+    if service != KEYRING_SERVICE {
+        return Err(format!("keyring: service {service:?} is not this app's"));
+    }
     keyring::Entry::new(service, account).map_err(|e| format!("keyring entry: {e}"))
 }
 
@@ -353,6 +361,13 @@ mod tests {
     }
 
     #[test]
+    fn keyring_commands_refuse_other_services() {
+        assert!(keyring_entry("git:https://github.com", "me").is_err());
+        assert!(keyring_get_password("git:https://github.com".into(), "me".into()).is_err());
+        assert!(delete_keyring_password("other.app", "db-key:mode-a").is_err());
+    }
+
+    #[test]
     fn sqlcipher_engages_and_rejects_non_hex_keys() {
         let conn = Connection::open_in_memory().map_err(|e| e.to_string()).unwrap();
         // cipher_version must report an actual SQLCipher build.
@@ -411,9 +426,10 @@ mod tests {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     #[test]
     fn keyring_round_trip_on_platform_store() {
-        let service = format!("io.btechs.sovereign-wallet.test.{}", std::process::id());
-        let account = "db-key:mode-a";
-        let entry = keyring::Entry::new(&service, account).unwrap();
+        // The commands only serve KEYRING_SERVICE; a per-run account keeps the test isolated.
+        let service = KEYRING_SERVICE;
+        let account = &format!("test-db-key:{}", std::process::id());
+        let entry = keyring::Entry::new(service, account).unwrap();
 
         assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
 
@@ -427,7 +443,7 @@ mod tests {
         assert!(matches!(entry.get_password(), Err(keyring::Error::NoEntry)));
         // Idempotent delete — through the command's own error mapping, since
         // keyring v3 reports NoEntry (not Ok) for an absent credential.
-        assert_eq!(delete_keyring_password(&service, account), Ok(()));
+        assert_eq!(delete_keyring_password(service, account), Ok(()));
     }
 }
 
