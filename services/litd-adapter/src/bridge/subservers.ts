@@ -510,7 +510,10 @@ export class SubServerHub {
   private async liquidity(): Promise<LiquidityManager> {
     if (this.manager === undefined) {
       this.poolPort ??= await LitdPoolPort.create(await this.conn());
-      this.manager = new LiquidityManager({ loop: await this.loop(), pool: this.poolPort, journal: this.journal, newId: randomUUID });
+      const manager = new LiquidityManager({ loop: await this.loop(), pool: this.poolPort, journal: this.journal, newId: randomUUID });
+      // Without start() no swap event reaches the manager, so the daily and per-action caps never trip.
+      await manager.start();
+      this.manager = manager;
     }
     return this.manager;
   }
