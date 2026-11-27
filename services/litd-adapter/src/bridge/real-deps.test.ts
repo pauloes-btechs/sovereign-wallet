@@ -26,6 +26,7 @@ vi.mock('../client.js', () => ({
 }));
 
 import { createRealBridgeDeps, lightningOpsFromClient } from './session.js';
+import { createWalletUnlockerClient } from '../client.js';
 import { AddressType } from '@sovereign/litd-proto';
 
 describe('lightningOpsFromClient newAddress', () => {
@@ -71,6 +72,16 @@ describe('lightningOpsFromClient closeChannel', () => {
 });
 
 describe('createRealBridgeDeps unlocker', () => {
+  it('reuses one unlocker client across calls instead of opening a channel each time', async () => {
+    const deps = await createRealBridgeDeps({
+      connectionOptions: { rpcHost: '127.0.0.1', rpcPort: 10009, tlsCertPath: '/tmp/litd-tls.cert' },
+    });
+    vi.mocked(createWalletUnlockerClient).mockClear();
+    await deps.createUnlocker();
+    await deps.createUnlocker();
+    expect(createWalletUnlockerClient).toHaveBeenCalledTimes(1);
+  });
+
   it('aezeed passphrase round-trips: default initWallet matches genSeed', async () => {
     const deps = await createRealBridgeDeps({
       connectionOptions: { rpcHost: '127.0.0.1', rpcPort: 10009, tlsCertPath: '/tmp/litd-tls.cert' },
