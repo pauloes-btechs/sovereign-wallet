@@ -333,8 +333,8 @@ describe('SCB round-trip', () => {
   it('extracts the multi-channel blob as hex and refuses empty backups', () => {
     const blob = multiChanBackupHex({ multiChanBackup: { chanPoints: [], multiChanBackup: new Uint8Array([1, 2, 3]) } } as never);
     expect(blob).toBe(Buffer.from([1, 2, 3]).toString('hex'));
-    expect(() => multiChanBackupHex({} as never)).toThrow(RequestValidationError);
-    expect(() => multiChanBackupHex({ multiChanBackup: { chanPoints: [], multiChanBackup: new Uint8Array() } } as never)).toThrow(RequestValidationError);
+    expect(() => multiChanBackupHex({} as never)).toThrow(/no multi-channel backup/);
+    expect(() => multiChanBackupHex({ multiChanBackup: { chanPoints: [], multiChanBackup: new Uint8Array() } } as never)).toThrow(/no multi-channel backup/);
   });
 
   it('rebuilds a restore request from saved hex', () => {
