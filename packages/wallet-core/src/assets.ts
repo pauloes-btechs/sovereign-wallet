@@ -251,60 +251,6 @@ function trustedGroup(entry: AssetRegistryEntryInput, trustedIssuers: ReadonlySe
   return typeof groupKey === 'string' && groupKey.length > 0 && trustedIssuers.has(groupKey);
 }
 
-/**
- * The asset registry. Holds one entry per asset ID — balances, identities,
- * and histories are never merged across assets (the same boundary rule the
- * provider contract applies to wallets). Trust is user-curated: an entry
- * becomes verified ONLY via `trustIssuer` (or `trustGroup`).
- */
-export class AssetRegistry {
-  private readonly entries = new Map<AssetIdHex, AssetRegistryEntry & { display: AssetDisplayInfo }>();
-  private readonly trustedIssuers = new Set<string>();
-
-  constructor(options: Readonly<{ stablecoinTickers?: readonly string[]; pretrustedIssuers?: readonly string[] }> = {}) {
-    for (const issuer of options.pretrustedIssuers ?? []) {
-      this.trustedIssuers.add(issuer);
-    }
-    this.stablecoinTickers = options.stablecoinTickers ?? DEFAULT_STABLECOIN_TICKERS;
-  }
-
-  private readonly stablecoinTickers: readonly string[];
-
-  /** Marks an issuer (asset ID or group key) as trusted — the ONLY path to verified. */
-  trustIssuer(idOrGroupKey: string): void {
-    this.trustedIssuers.add(idOrGroupKey.toLowerCase());
-    this.reclassify(idOrGroupKey);
-  }
-
-  /** Records (or re-records) an asset from live daemon data. */
-  record(entry: AssetRegistryEntryInput): AssetRegistryEntry & { display: AssetDisplayInfo } {
-    const classified = classifyAsset(entry, { trustedIssuers: this.trustedIssuers, stablecoinTickers: this.stablecoinTickers });
-    this.entries.set(entry.assetId, classified);
-    return classified;
-  }
-
-  get(assetId: AssetIdHex): (AssetRegistryEntry & { display: AssetDisplayInfo }) | undefined {
-    return this.entries.get(assetId.toLowerCase());
-  }
-
-  list(): ReadonlyArray<AssetRegistryEntry & { display: AssetDisplayInfo }> {
-    return [...this.entries.values()];
-  }
-
-  /** Display info by id — the only render input the UI gets. */
-  displayInfo(assetId: AssetIdHex): AssetDisplayInfo | undefined {
-    return this.entries.get(assetId.toLowerCase())?.display;
-  }
-
-  private reclassify(idOrGroupKey: string): void {
-    for (const [id, entry] of this.entries) {
-      if (id === idOrGroupKey || entry.groupKeyHex === idOrGroupKey) {
-        this.record(entry);
-      }
-    }
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Capability copy
 // ---------------------------------------------------------------------------

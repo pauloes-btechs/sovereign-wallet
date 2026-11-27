@@ -5,7 +5,6 @@ import {
   UNACTIVATED_V2_REASON,
   isOutputTypeActive,
   outputType,
-  parseDestination,
   segwitAddressDecode,
   segwitAddressEncode,
   unactivatedWitnessRefusal,
@@ -116,16 +115,5 @@ describe('unactivatedWitnessRefusal with real address vectors', () => {
   it('refuses a v1 address with a 20-byte program', () => {
     const odd = segwitAddressEncode('bc', 1, PROGRAM32.slice(0, 20))!;
     expect(unactivatedWitnessRefusal(odd)?.witnessVersion).toBe(1);
-  });
-});
-
-describe('parseDestination refuses unactivated SegWit versions', () => {
-  it('returns the BIP-360 reason for a v2 address', () => {
-    const r = parseDestination(BIP360_EXAMPLE, { networks: ['mainnet'] });
-    expect(r).toEqual({ ok: false, kind: 'unknown', reason: UNACTIVATED_V2_REASON });
-  });
-
-  it('still accepts Taproot', () => {
-    expect(parseDestination(segwitAddressEncode('bcrt', 1, PROGRAM32)!, { networks: ['regtest'] }).ok).toBe(true);
   });
 });

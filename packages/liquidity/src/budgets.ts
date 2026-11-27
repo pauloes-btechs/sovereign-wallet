@@ -5,7 +5,7 @@
  * a projected cost is checked before any new automation is allowed.
  */
 
-import type { LiquidityJournal, LiquidityJournalEntry } from './journal.js';
+import type { LiquidityJournalEntry } from './journal.js';
 import type { SwapUpdate } from './types.js';
 
 /** Opt-in budget policy governing AutoLoop. All values are satoshis. */
@@ -167,9 +167,4 @@ export function swapUpdateToEntry(update: Readonly<SwapUpdate>, automation: bool
       costSat: update.costSat,
     },
   };
-}
-
-/** Convenience for reading back spend from a journal. */
-export async function readJournal(journal: LiquidityJournal): Promise<LiquidityJournalEntry[]> {
-  return journal.list();
 }
