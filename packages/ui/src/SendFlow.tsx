@@ -116,6 +116,19 @@ export function SendFlow({
           <p className="sovl-notice-title">Sending…</p>
           <p className="sovl-notice-body">Do not close the wallet while the payment is in flight.</p>
         </div>
+        {errorMessage ? (
+          // The result is not known: say so, and leave a way out that is not a resend.
+          <div className="sovl-notice sovl-notice--warning" role="alert">
+            <p className="sovl-notice-body">{errorMessage}</p>
+            {onSendAnother ? (
+              <div className="sovl-notice-actions">
+                <Button variant="secondary" onClick={onSendAnother}>
+                  Back to send
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </Card>
     );
   }
